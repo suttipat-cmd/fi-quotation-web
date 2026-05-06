@@ -6341,3 +6341,924 @@ async function withAction(key, action) {
     hidePageBusy();
   }
 }
+
+// =======================================================
+// v1.4 Dashboard Polish + App Branding + Resume Hard Fix
+// =======================================================
+
+Object.assign(appState, {
+  appBranding: {
+    login_logo_url: "",
+    favicon_url: "",
+  },
+  resumeInProgress: false,
+  lastSuccessfulRenderAt: 0,
+});
+
+async function initApp() {
+  showBootPage();
+
+  if (!isConfigured) {
+    hideBootPage();
+    showLoginPage();
+    showSetupWarningOnLogin();
+    return;
+  }
+
+  bindEvents();
+  await loadAndApplyAppBranding();
+
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (data.session?.user) {
+      appState.user = data.session.user;
+      await loadProfile();
+      hideBootPage();
+      showAppShell();
+      await renderCurrentPage({ force: true, reason: "initial-session" });
+    } else {
+      hideBootPage();
+      showLoginPage();
+    }
+  } catch (error) {
+    console.error(error);
+    hideBootPage();
+    showLoginPage();
+    showLoginError("ไม่สามารถตรวจสอบ session ได้ กรุณาเข้าสู่ระบบใหม่");
+  }
+
+  if (!window.__fiAuthListenerV14) {
+    window.__fiAuthListenerV14 = true;
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      if (event === "TOKEN_REFRESHED" && session?.user) {
+        appState.user = session.user;
+        return;
+      }
+
+      if (session?.user) {
+        appState.user = session.user;
+        try {
+          await loadProfile();
+          hideBootPage();
+          showAppShell();
+          await loadAndApplyAppBranding();
+          await renderCurrentPage({ force: true, reason: `auth-${event}` });
+        } catch (error) {
+          console.error(error);
+          showToast("โหลดข้อมูลผู้ใช้ไม่สำเร็จ", "error");
+        }
+      } else if (event === "SIGNED_OUT") {
+        appState.user = null;
+        appState.profile = null;
+        appState.selectedQuotationIds?.clear?.();
+        hideBootPage();
+        showLoginPage();
+      }
+    });
+  }
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v14Bound) {
+    elements.loginForm.dataset.v14Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v14Bound) {
+    elements.logoutButton.dataset.v14Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV14) {
+    window.__fiHashBoundV14 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      await renderCurrentPage({ force: true, reason: "hashchange" });
+    });
+  }
+
+  if (!window.__fiDelegatedClickV14) {
+    window.__fiDelegatedClickV14 = true;
+    document.addEventListener("click", handleDelegatedClick, true);
+    document.addEventListener("change", handleDelegatedChange, true);
+  }
+
+  if (!window.__fiLifecycleBoundV14) {
+    window.__fiLifecycleBoundV14 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+
+  const mobileMenuButton = $("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v14Bound) {
+    mobileMenuButton.dataset.v14Bound = "true";
+    mobileMenuButton.addEventListener("click", () => {
+      elements.sidebarMenu?.classList.toggle("is-open");
+    });
+  }
+}
+
+function handleDelegatedClick(event) {
+  const menuButton = event.target.closest(".menu-item[data-page]");
+  if (menuButton) {
+    event.preventDefault();
+    const targetPage = menuButton.dataset.page;
+    navigateToPage(targetPage, { force: targetPage === getPageFromHash() });
+    elements.sidebarMenu?.classList.remove("is-open");
+    return;
+  }
+
+  const compactLink = event.target.closest("[data-quotation-link]");
+  if (compactLink) {
+    event.preventDefault();
+    navigateToPage(`quotation-view/${compactLink.dataset.quotationLink}`);
+    return;
+  }
+
+  const tableViewButton = event.target.closest("[data-action='view'][data-id]");
+  if (tableViewButton) {
+    event.preventDefault();
+    navigateToPage(`quotation-view/${tableViewButton.dataset.id}`);
+    return;
+  }
+
+  const sortButton = event.target.closest("[data-sort-key]");
+  if (sortButton) {
+    event.preventDefault();
+    updateQuotationSort(sortButton.dataset.sortKey);
+    renderQuotationTableFromState();
+    return;
+  }
+}
+
+function navigateToPage(page, options = {}) {
+  const nextHash = `#${page}`;
+  const sameHash = location.hash === nextHash;
+
+  if (!sameHash) {
+    location.hash = nextHash;
+    return;
+  }
+
+  if (options.force) {
+    appState.currentPage = page;
+    renderCurrentPage({ force: true, reason: "same-page-click" });
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient) return;
+  if (appState.resumeInProgress) return;
+
+  appState.resumeInProgress = true;
+
+  try {
+    hidePageBusy();
+    appState.activeActions?.clear?.();
+
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (!data.session?.user) {
+      appState.user = null;
+      appState.profile = null;
+      showLoginPage();
+      showToast("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = data.session.user;
+    await loadProfile();
+    showAppShell();
+    await loadAndApplyAppBranding();
+
+    // Force content re-fetch every time the tab becomes active again.
+    await renderCurrentPage({ force: true, reason });
+
+    // A second delayed check catches browsers that resume the page before network/state is ready.
+    window.setTimeout(async () => {
+      try {
+        if (!elements.pageContent || elements.pageContent.textContent.trim() === "") {
+          await renderCurrentPage({ force: true, reason: `${reason}-empty-retry` });
+        }
+      } catch (retryError) {
+        console.error("resume retry", retryError);
+      }
+    }, 450);
+  } catch (error) {
+    console.error("recoverAppAfterResume", reason, error);
+    showToast("โหลดข้อมูลใหม่ไม่สำเร็จ กรุณาลองกดเมนูอีกครั้ง", "warning", { duration: 4200 });
+    try {
+      await renderCurrentPage({ force: true, reason: `${reason}-fallback` });
+    } catch (renderError) {
+      console.error(renderError);
+      renderErrorStateWithRetry("ไม่สามารถโหลดข้อมูลได้", "ลองโหลดหน้านี้อีกครั้ง");
+    }
+  } finally {
+    appState.resumeInProgress = false;
+  }
+}
+
+async function renderCurrentPage(options = {}) {
+  if (!appState.profile) {
+    if (supabaseClient) {
+      const { data } = await supabaseClient.auth.getSession();
+      if (data.session?.user) {
+        appState.user = data.session.user;
+        await loadProfile();
+      } else {
+        showLoginPage();
+        return;
+      }
+    } else {
+      return;
+    }
+  }
+
+  const renderToken = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  appState.renderToken = renderToken;
+  appState.currentPage = getPageFromHash();
+  renderMenu();
+  updateHeaderUser();
+  hidePageBusy();
+
+  const page = appState.currentPage;
+
+  try {
+    if (page === "dashboard") {
+      await renderDashboardPage();
+    } else if (page === "quotations") {
+      await renderQuotationsPage();
+    } else if (page === "quotation-new") {
+      await renderQuotationCreatePage();
+    } else if (page.startsWith("quotation-edit/")) {
+      await renderQuotationEditPage(page.replace("quotation-edit/", ""));
+    } else if (page.startsWith("quotation-view/")) {
+      await renderQuotationViewPage(page.replace("quotation-view/", ""));
+    } else if (page.startsWith("quotation-print/")) {
+      await renderQuotationPrintPage(page.replace("quotation-print/", ""));
+    } else if (page === "customers") {
+      await renderCustomersPage();
+    } else if (page === "products") {
+      await renderProductsPage();
+    } else if (page === "product-new") {
+      await renderProductFormPage({ mode: "create", productId: null });
+    } else if (page.startsWith("product-edit/")) {
+      await renderProductFormPage({ mode: "edit", productId: page.replace("product-edit/", "") });
+    } else if (page === "company") {
+      await renderCompanyPage();
+    } else if (page === "settings") {
+      await renderSettingsPage();
+    } else {
+      navigateToPage("dashboard", { force: true });
+      return;
+    }
+
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (elements.pageContent && elements.pageContent.textContent.trim() === "") {
+      throw new Error("Page rendered empty content");
+    }
+  } catch (error) {
+    console.error(error);
+    renderErrorStateWithRetry(error.message || "ไม่สามารถโหลดข้อมูลได้", "โหลดข้อมูลอีกครั้ง");
+  }
+}
+
+function renderErrorStateWithRetry(message, buttonText = "ลองใหม่") {
+  if (!elements.pageContent) return;
+  elements.pageContent.innerHTML = `
+    <div class="card error-state-card">
+      <div>
+        <h3>โหลดข้อมูลไม่สำเร็จ</h3>
+        <p>${escapeHTML(message)}</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="retryCurrentPageButton">${escapeHTML(buttonText)}</button>
+    </div>
+  `;
+
+  $("#retryCurrentPageButton")?.addEventListener("click", () => {
+    renderCurrentPage({ force: true, reason: "manual-retry" });
+  });
+}
+
+async function renderDashboardPage() {
+  setPageHeader("แดชบอร์ด");
+  renderLoading("กำลังโหลดแดชบอร์ด...");
+
+  const { data, error } = await supabaseClient
+    .from("v_quotations_list")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(1500);
+
+  if (error) throw error;
+
+  const rows = data || [];
+  const analytics = buildDashboardAnalytics(rows, { monthsBack: 6 });
+
+  elements.pageContent.innerHTML = `
+    <div class="dashboard-v14">
+      <section class="metric-grid metric-grid-v14">
+        ${renderDashboardMetricCard("ใบเสนอราคาทั้งหมด", rows.length, "count")}
+        ${renderDashboardMetricCard("ร่าง", analytics.statusCounts.draft, "count")}
+        ${renderDashboardMetricCard("ยืนยัน", analytics.statusCounts.confirmed, "count")}
+        ${renderDashboardMetricCard("ส่งแล้ว", analytics.statusCounts.sent, "count")}
+        ${renderDashboardMetricCard("ชำระเงิน", analytics.statusCounts.paid, "count")}
+        ${renderDashboardMetricCard("ยกเลิก", analytics.statusCounts.cancelled, "count")}
+        ${renderDashboardMetricCard("หมดอายุ", analytics.statusCounts.expired, "count")}
+        ${renderDashboardMetricCard("ยอดส่งเดือนนี้", analytics.currentMonthSentAmount, "amount")}
+        ${renderDashboardMetricCard("ยอดชำระเดือนนี้", analytics.currentMonthPaidAmount, "amount")}
+      </section>
+
+      <section class="dashboard-grid dashboard-grid-v14">
+        <div class="card chart-card chart-card-wide">
+          <div class="card-header chart-header">
+            <div>
+              <h3>ยอดส่งแล้วเทียบกับชำระเงิน 6 เดือน</h3>
+              <div class="chart-subtitle">ยอดเงินตามวันที่ส่งใบเสนอราคาและวันที่ชำระเงิน</div>
+            </div>
+          </div>
+          ${renderAmountComparisonChart(analytics.months)}
+        </div>
+
+        <div class="card chart-card chart-card-wide">
+          <div class="card-header chart-header">
+            <div>
+              <h3>จำนวนใบเสนอราคาส่งแล้ว แยกตามฝ่ายขายและเดือน</h3>
+              <div class="chart-subtitle">Heatmap แสดงจำนวนเอกสารสถานะส่งแล้วในแต่ละเดือน</div>
+            </div>
+          </div>
+          ${renderSentCountBySalesChart(analytics.salesSentCounts, analytics.months)}
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <div class="card">
+          <div class="card-header"><h3>เอกสารใกล้หมดอายุ</h3></div>
+          ${renderCompactQuotationList(analytics.expiringSoon, "ยังไม่มีเอกสารใกล้หมดอายุ")}
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>อัปเดตล่าสุด</h3></div>
+          ${renderCompactQuotationList(rows.slice(0, 8), "ยังไม่มีใบเสนอราคา")}
+        </div>
+      </section>
+    </div>
+  `;
+
+  bindCompactQuotationLinks();
+}
+
+function renderDashboardMetricCard(label, value, type) {
+  const display = type === "amount" ? formatAmount(value) : number(value);
+  const unit = type === "amount" ? "บาท" : "รายการ";
+  return `
+    <div class="metric-card metric-card-v14">
+      <span>${escapeHTML(label)}</span>
+      <strong>${display}</strong>
+      <small>${unit}</small>
+    </div>
+  `;
+}
+
+function buildDashboardAnalytics(rows, options = {}) {
+  const monthsBack = options.monthsBack || 6;
+  const today = startOfToday();
+  const currentKey = monthKey(today);
+  const monthStarts = [];
+
+  for (let index = monthsBack - 1; index >= 0; index -= 1) {
+    monthStarts.push(new Date(today.getFullYear(), today.getMonth() - index, 1));
+  }
+
+  const months = monthStarts.map((date) => ({
+    key: monthKey(date),
+    label: formatMonthLabel(date),
+    sentAmount: 0,
+    paidAmount: 0,
+    sentCount: 0,
+    paidCount: 0,
+  }));
+
+  const monthMap = new Map(months.map((item) => [item.key, item]));
+  const salesSentCounts = new Map();
+  const statusCounts = {
+    draft: 0,
+    confirmed: 0,
+    sent: 0,
+    paid: 0,
+    cancelled: 0,
+    expired: 0,
+  };
+
+  let currentMonthSentAmount = 0;
+  let currentMonthPaidAmount = 0;
+  let currentMonthSentCount = 0;
+  let currentMonthPaidCount = 0;
+  let openSentAmount = 0;
+
+  rows.forEach((row) => {
+    const status = getEffectiveStatusForAnalytics(row);
+    if (statusCounts[status] !== undefined) statusCounts[status] += 1;
+
+    const rawStatus = getRawStatus(row);
+    const amount = Number(row.grand_total_display || 0);
+
+    if (rawStatus === "sent") {
+      const sentDate = parseDateOnly(row.sent_at || row.quote_date || row.created_at);
+      const key = sentDate ? monthKey(sentDate) : "";
+      const month = monthMap.get(key);
+
+      if (month) {
+        month.sentAmount += amount;
+        month.sentCount += 1;
+      }
+
+      if (key === currentKey) {
+        currentMonthSentAmount += amount;
+        currentMonthSentCount += 1;
+      }
+
+      openSentAmount += amount;
+
+      const salesName = row.owner_name || "ไม่ระบุฝ่ายขาย";
+      if (!salesSentCounts.has(salesName)) {
+        salesSentCounts.set(salesName, Object.fromEntries(months.map((item) => [item.key, 0])));
+      }
+      if (key && salesSentCounts.get(salesName)[key] !== undefined) {
+        salesSentCounts.get(salesName)[key] += 1;
+      }
+    }
+
+    if (rawStatus === "paid") {
+      const paidDate = parseDateOnly(row.paid_at || row.sent_at || row.quote_date || row.created_at);
+      const key = paidDate ? monthKey(paidDate) : "";
+      const month = monthMap.get(key);
+
+      if (month) {
+        month.paidAmount += amount;
+        month.paidCount += 1;
+      }
+
+      if (key === currentKey) {
+        currentMonthPaidAmount += amount;
+        currentMonthPaidCount += 1;
+      }
+    }
+  });
+
+  const soon = addDays(today, 7);
+  const expiringSoon = rows
+    .filter((row) => ["confirmed", "sent"].includes(getRawStatus(row)))
+    .filter((row) => {
+      const validDate = parseDateOnly(row.valid_until);
+      return validDate && validDate >= today && validDate <= soon;
+    })
+    .slice(0, 8);
+
+  return {
+    months,
+    salesSentCounts,
+    statusCounts,
+    currentMonthSentAmount,
+    currentMonthPaidAmount,
+    currentMonthSentCount,
+    currentMonthPaidCount,
+    openSentAmount,
+    expiringSoon,
+  };
+}
+
+function getEffectiveStatusForAnalytics(row) {
+  if (row.effective_status) return row.effective_status;
+  if (row.status === "paid" || row.status === "cancelled" || row.status === "draft") return row.status;
+  if (["confirmed", "sent"].includes(row.status) && row.valid_until && new Date(row.valid_until) < startOfToday()) return "expired";
+  return row.status || "draft";
+}
+
+function renderAmountComparisonChart(months) {
+  const maxValue = Math.max(1, ...months.flatMap((month) => [month.sentAmount, month.paidAmount]));
+  const sentTotal = months.reduce((sum, month) => sum + month.sentAmount, 0);
+  const paidTotal = months.reduce((sum, month) => sum + month.paidAmount, 0);
+  const sentCount = months.reduce((sum, month) => sum + month.sentCount, 0);
+  const paidCount = months.reduce((sum, month) => sum + month.paidCount, 0);
+
+  if (!sentTotal && !paidTotal) {
+    return `<div class="empty-state compact">ยังไม่มีข้อมูลส่งแล้วหรือชำระเงินในช่วง 6 เดือน</div>`;
+  }
+
+  return `
+    <div class="chart-legend">
+      <span><i class="legend-dot sent"></i>ยอดส่งแล้ว</span>
+      <span><i class="legend-dot paid"></i>ยอดชำระเงิน</span>
+    </div>
+
+    <div class="paired-bar-chart">
+      ${months.map((month) => {
+        const sentPct = Math.max(3, (month.sentAmount / maxValue) * 100);
+        const paidPct = Math.max(3, (month.paidAmount / maxValue) * 100);
+        return `
+          <div class="paired-bar-row">
+            <div class="paired-bar-label">${escapeHTML(month.label)}</div>
+            <div class="paired-bar-stack">
+              <div class="paired-bar-line">
+                <span class="bar-caption">ส่ง</span>
+                <div class="bar-track"><div class="bar-fill sent" style="width:${sentPct}%"></div></div>
+                <strong>${formatAmountCompact(month.sentAmount)}</strong>
+              </div>
+              <div class="paired-bar-line">
+                <span class="bar-caption">ชำระ</span>
+                <div class="bar-track"><div class="bar-fill paid" style="width:${paidPct}%"></div></div>
+                <strong>${formatAmountCompact(month.paidAmount)}</strong>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
+    <div class="chart-summary-grid">
+      <div><span>ยอดส่งแล้วรวม</span><strong>${formatAmount(sentTotal)}</strong><small>บาท · ${number(sentCount)} รายการ</small></div>
+      <div><span>ยอดชำระเงินรวม</span><strong>${formatAmount(paidTotal)}</strong><small>บาท · ${number(paidCount)} รายการ</small></div>
+      <div><span>ส่วนต่าง</span><strong>${formatAmount(sentTotal - paidTotal)}</strong><small>บาท</small></div>
+    </div>
+
+    <div class="table-wrap chart-detail-table-wrap">
+      <table class="data-table chart-detail-table">
+        <thead>
+          <tr><th>เดือน</th><th>ส่งแล้ว (บาท)</th><th>จำนวนส่งแล้ว</th><th>ชำระเงิน (บาท)</th><th>จำนวนชำระ</th></tr>
+        </thead>
+        <tbody>
+          ${months.map((month) => `
+            <tr>
+              <td>${escapeHTML(month.label)}</td>
+              <td>${formatAmount(month.sentAmount)}</td>
+              <td>${number(month.sentCount)}</td>
+              <td>${formatAmount(month.paidAmount)}</td>
+              <td>${number(month.paidCount)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSentCountBySalesChart(salesSentCounts, months) {
+  const salesRows = Array.from(salesSentCounts.entries())
+    .map(([salesName, counts]) => ({ salesName, counts }))
+    .sort((a, b) => a.salesName.localeCompare(b.salesName, "th"));
+
+  if (!salesRows.length) {
+    return `<div class="empty-state compact">ยังไม่มีใบเสนอราคาสถานะส่งแล้วในช่วง 6 เดือน</div>`;
+  }
+
+  const maxCount = Math.max(1, ...salesRows.flatMap((row) => months.map((month) => row.counts[month.key] || 0)));
+  const monthTotals = months.map((month) => salesRows.reduce((sum, row) => sum + Number(row.counts[month.key] || 0), 0));
+
+  return `
+    <div class="heatmap-wrap">
+      <table class="heatmap-table">
+        <thead>
+          <tr>
+            <th>ฝ่ายขาย</th>
+            ${months.map((month) => `<th>${escapeHTML(month.label)}</th>`).join("")}
+            <th>รวม</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${salesRows.map((row) => {
+            const rowTotal = months.reduce((sum, month) => sum + Number(row.counts[month.key] || 0), 0);
+            return `
+              <tr>
+                <td class="heatmap-sales">${escapeHTML(row.salesName)}</td>
+                ${months.map((month) => {
+                  const count = Number(row.counts[month.key] || 0);
+                  const intensity = count ? Math.max(0.16, count / maxCount) : 0;
+                  return `<td><span class="heatmap-cell" style="--heat:${intensity}">${number(count)}</span></td>`;
+                }).join("")}
+                <td class="heatmap-total">${number(rowTotal)}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>รวมทั้งเดือน</td>
+            ${monthTotals.map((total) => `<td>${number(total)}</td>`).join("")}
+            <td>${number(monthTotals.reduce((sum, item) => sum + item, 0))}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function formatAmountCompact(value) {
+  const numberValue = Number(value || 0);
+  if (Math.abs(numberValue) >= 1000000) return `${(numberValue / 1000000).toFixed(1)}M`;
+  if (Math.abs(numberValue) >= 1000) return `${(numberValue / 1000).toFixed(0)}K`;
+  return formatAmount(numberValue);
+}
+
+function showStatusChangeDialog({ status, count, skipped = 0 }) {
+  const today = toDateInputValue(new Date());
+  const needsDate = ["sent", "paid"].includes(status);
+  const needsReason = status === "cancelled";
+  const title = needsReason
+    ? "ยกเลิกใบเสนอราคา"
+    : count > 1
+      ? `ปรับสถานะ ${number(count)} รายการ`
+      : `เปลี่ยนสถานะเป็น${statusLabel(status)}`;
+  const skippedText = skipped > 0 ? `<div class="alert alert-warning">ข้าม ${number(skipped)} รายการที่ไม่เข้าเงื่อนไขสถานะนี้</div>` : "";
+
+  return new Promise((resolve) => {
+    const dialog = document.createElement("div");
+    dialog.className = "modal-backdrop app-modal-backdrop";
+    dialog.innerHTML = `
+      <div class="app-modal-card status-dialog-v14" role="dialog" aria-modal="true">
+        <div class="app-modal-header">
+          <div>
+            <h3>${escapeHTML(title)}</h3>
+            <p>${needsReason ? `เลือกไว้ ${number(count)} รายการ เหตุผลไม่บังคับ` : `เลือกไว้ ${number(count)} รายการ`}</p>
+          </div>
+          <button type="button" class="icon-button modal-close-button" data-dialog-cancel aria-label="ปิด">×</button>
+        </div>
+        <div class="app-modal-body">
+          ${skippedText}
+          ${needsDate ? `
+            <div class="field">
+              <label>${status === "sent" ? "วันที่ส่งใบเสนอราคา" : "วันที่ชำระเงิน"}</label>
+              <input id="statusEffectiveDate" type="date" value="${today}" />
+            </div>
+          ` : ""}
+          ${needsReason ? `
+            <div class="field">
+              <label>เหตุผลการยกเลิก</label>
+              <textarea id="statusReason" rows="5" placeholder="เช่น ลูกค้าเลื่อนโครงการ / เสนอราคาใหม่ / ข้อมูลผิดพลาด"></textarea>
+              <small class="field-hint">ไม่บังคับ ถ้ายกเลิกหลายใบ ระบบจะใช้เหตุผลเดียวกันทุกใบ</small>
+            </div>
+          ` : ""}
+        </div>
+        <div class="app-modal-footer">
+          <button type="button" class="btn btn-ghost" data-dialog-cancel>ปิด</button>
+          <button type="button" class="btn ${needsReason ? "danger-soft" : "btn-primary"}" data-dialog-confirm>${needsReason ? "ยืนยันยกเลิก" : "บันทึกสถานะ"}</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const cleanup = (value) => {
+      dialog.remove();
+      resolve(value);
+    };
+
+    dialog.querySelectorAll("[data-dialog-cancel]").forEach((button) => {
+      button.addEventListener("click", () => cleanup(null));
+    });
+
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) cleanup(null);
+    });
+
+    dialog.querySelector("[data-dialog-confirm]").addEventListener("click", () => {
+      const effectiveDate = needsDate ? dialog.querySelector("#statusEffectiveDate")?.value : today;
+      const note = needsReason ? dialog.querySelector("#statusReason")?.value.trim() : "";
+      if (needsDate && !effectiveDate) {
+        showToast("กรุณาระบุวันที่", "warning");
+        return;
+      }
+      cleanup({ effectiveDate, note });
+    });
+
+    const firstInput = needsDate ? dialog.querySelector("#statusEffectiveDate") : dialog.querySelector("#statusReason");
+    window.setTimeout(() => firstInput?.focus?.(), 50);
+  });
+}
+
+async function renderSettingsPage() {
+  if (appState.profile.role !== "admin") {
+    renderError("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+    return;
+  }
+
+  setPageHeader("ตั้งค่า");
+  renderLoading("กำลังโหลดการตั้งค่า...");
+
+  const branding = await loadAppBranding();
+  appState.appBranding = branding;
+
+  elements.pageContent.innerHTML = `
+    <div class="settings-grid-v14">
+      <section class="card form-card">
+        <div class="card-header">
+          <h3>โลโก้ระบบ</h3>
+        </div>
+
+        <div class="branding-preview-grid">
+          ${renderBrandingPreviewCard("โลโก้หน้า Login", branding.login_logo_url, "login")}
+          ${renderBrandingPreviewCard("Icon บน Tab / Taskbar", branding.favicon_url, "favicon")}
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="loginLogoFile">อัปโหลดโลโก้หน้า Login</label>
+            <input id="loginLogoFile" type="file" accept="image/png,image/jpeg,image/webp" />
+            <small class="field-hint">รองรับ PNG, JPG, WEBP ไม่เกิน 5 MB</small>
+          </div>
+          <div class="field">
+            <label for="faviconFile">อัปโหลด Icon เว็บไซต์</label>
+            <input id="faviconFile" type="file" accept="image/png,image/jpeg,image/webp" />
+            <small class="field-hint">แนะนำภาพสี่เหลี่ยม เช่น 512×512 px</small>
+          </div>
+        </div>
+
+        <div class="form-actions normal-flow">
+          <button type="button" id="uploadLoginLogoButton" class="btn btn-primary">บันทึกโลโก้ Login</button>
+          <button type="button" id="uploadFaviconButton" class="btn btn-primary">บันทึก Icon เว็บไซต์</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h3>การใช้งานผู้ใช้</h3></div>
+        <div class="checklist-grid">
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Admin สร้างบัญชีผ่าน Supabase Dashboard</span></label>
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Role ใช้จากตาราง profiles</span></label>
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Sales เห็นข้อมูลของตัวเองตาม RLS</span></label>
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Manager/Admin ดูภาพรวมได้ตามสิทธิ์</span></label>
+        </div>
+      </section>
+    </div>
+  `;
+
+  bindAppBrandingSettingsActions();
+}
+
+function renderBrandingPreviewCard(title, url, type) {
+  const fallback = type === "favicon" ? "FI" : "FI";
+  return `
+    <div class="branding-preview-card">
+      <div class="branding-preview-image ${type}">
+        ${url ? `<img src="${escapeHTML(url)}" alt="${escapeHTML(title)}" />` : `<span>${fallback}</span>`}
+      </div>
+      <div>
+        <strong>${escapeHTML(title)}</strong>
+        <small>${url ? "อัปโหลดแล้ว" : "ยังไม่ได้อัปโหลด"}</small>
+      </div>
+    </div>
+  `;
+}
+
+function bindAppBrandingSettingsActions() {
+  $("#uploadLoginLogoButton")?.addEventListener("click", async () => {
+    await uploadAppBrandingFile("loginLogoFile", "login_logo_url", "login-logo", "โลโก้หน้า Login");
+  });
+
+  $("#uploadFaviconButton")?.addEventListener("click", async () => {
+    await uploadAppBrandingFile("faviconFile", "favicon_url", "favicon", "Icon เว็บไซต์");
+  });
+}
+
+async function uploadAppBrandingFile(inputId, settingKey, fileNamePrefix, label) {
+  const input = $(`#${inputId}`);
+  const file = input?.files?.[0];
+
+  if (!file) {
+    showToast(`กรุณาเลือกไฟล์${label}`, "warning");
+    return;
+  }
+
+  validateBrandingFile(file);
+
+  await withAction(`upload-${settingKey}`, async () => {
+    showPageBusy(`กำลังอัปโหลด${label}...`);
+
+    const ext = getFileExtension(file.name, file.type);
+    const path = `branding/${fileNamePrefix}.${ext}`;
+
+    const { error: uploadError } = await supabaseClient.storage
+      .from("app-assets")
+      .upload(path, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type,
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabaseClient.storage.from("app-assets").getPublicUrl(path);
+    const publicUrl = `${data.publicUrl}?v=${Date.now()}`;
+
+    await saveAppSetting(settingKey, publicUrl);
+    appState.appBranding = await loadAppBranding();
+    applyAppBranding(appState.appBranding);
+    hidePageBusy();
+    showToast(`บันทึก${label}สำเร็จ`, "success");
+    await renderSettingsPage();
+  });
+}
+
+function validateBrandingFile(file) {
+  const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+  const maxSize = 5 * 1024 * 1024;
+
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error("รองรับเฉพาะไฟล์ PNG, JPG หรือ WEBP เท่านั้น");
+  }
+
+  if (file.size > maxSize) {
+    throw new Error("ไฟล์ต้องมีขนาดไม่เกิน 5 MB");
+  }
+}
+
+function getFileExtension(fileName, mimeType) {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  if (["png", "jpg", "jpeg", "webp"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
+async function loadAndApplyAppBranding() {
+  try {
+    appState.appBranding = await loadAppBranding();
+    applyAppBranding(appState.appBranding);
+  } catch (error) {
+    console.warn("App branding is not ready", error);
+    applyAppBranding(appState.appBranding || {});
+  }
+}
+
+async function loadAppBranding() {
+  if (!supabaseClient) return { login_logo_url: "", favicon_url: "" };
+
+  const { data, error } = await supabaseClient
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["login_logo_url", "favicon_url"]);
+
+  if (error) {
+    console.warn("Cannot load app_settings. Run supabase/patch_v1_4.sql if this is first install.", error);
+    return { login_logo_url: "", favicon_url: "" };
+  }
+
+  const settings = { login_logo_url: "", favicon_url: "" };
+  (data || []).forEach((row) => {
+    settings[row.key] = row.value || "";
+  });
+  return settings;
+}
+
+async function saveAppSetting(key, value) {
+  const { error } = await supabaseClient
+    .from("app_settings")
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+
+  if (error) throw error;
+}
+
+function applyAppBranding(branding = {}) {
+  applyLoginLogo(branding.login_logo_url);
+  applyFavicon(branding.favicon_url);
+}
+
+function applyLoginLogo(url) {
+  const loginBrandMark = document.querySelector("#loginPage .brand-mark");
+  if (!loginBrandMark) return;
+
+  if (url) {
+    loginBrandMark.classList.add("brand-mark-image");
+    loginBrandMark.innerHTML = `<img src="${escapeHTML(url)}" alt="logo" />`;
+  } else {
+    loginBrandMark.classList.remove("brand-mark-image");
+    loginBrandMark.textContent = "FI";
+  }
+}
+
+function applyFavicon(url) {
+  if (!url) return;
+
+  let iconLink = document.querySelector("link[rel='icon']");
+  if (!iconLink) {
+    iconLink = document.createElement("link");
+    iconLink.rel = "icon";
+    document.head.appendChild(iconLink);
+  }
+  iconLink.href = url;
+
+  let appleLink = document.querySelector("link[rel='apple-touch-icon']");
+  if (!appleLink) {
+    appleLink = document.createElement("link");
+    appleLink.rel = "apple-touch-icon";
+    document.head.appendChild(appleLink);
+  }
+  appleLink.href = url;
+}
