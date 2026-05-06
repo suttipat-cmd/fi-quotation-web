@@ -236,6 +236,9 @@ async function renderCurrentPage() {
     } else if (page.startsWith("quotation-view/")) {
       const quotationId = page.replace("quotation-view/", "");
       await renderQuotationViewPage(quotationId);
+    } else if (page.startsWith("quotation-print/")) {
+      const quotationId = page.replace("quotation-print/", "");
+      await renderQuotationPrintPage(quotationId);
     } else if (page === "customers") {
       await renderCustomersPage();
     } else if (page === "products") {
@@ -1138,6 +1141,12 @@ function renderQuotationActionButtons(quotation, effectiveStatus) {
 
   if (quotation.status !== "draft") {
     buttons.push(`
+      <button id="printPreviewButton" class="btn btn-primary">
+        Preview / Print
+      </button>
+    `);
+
+    buttons.push(`
       <button id="duplicateQuotationButton" class="btn btn-ghost">
         สร้างสำเนา
       </button>
@@ -1151,6 +1160,7 @@ function bindQuotationViewActions(quotation) {
   const backButton = $("#backToListButton");
   const confirmButton = $("#confirmQuotationButton");
   const markSentButton = $("#markSentButton");
+  const printPreviewButton = $("#printPreviewButton");
   const duplicateButton = $("#duplicateQuotationButton");
 
   if (backButton) {
@@ -1168,6 +1178,12 @@ function bindQuotationViewActions(quotation) {
   if (markSentButton) {
     markSentButton.addEventListener("click", async () => {
       await markQuotationAsSent(quotation.id);
+    });
+  }
+
+  if (printPreviewButton) {
+    printPreviewButton.addEventListener("click", () => {
+      location.hash = `#quotation-print/${quotation.id}`;
     });
   }
 
@@ -1310,6 +1326,271 @@ function getEffectiveStatusFromQuotation(quotation) {
   }
 
   return quotation.status;
+}
+
+
+// =======================================================
+// Print-friendly Quotation Page
+// =======================================================
+
+async function renderQuotationPrintPage(quotationId) {
+  if (!quotationId) {
+    renderError("ไม่พบรหัสใบเสนอราคา");
+    return;
+  }
+
+  setPageHeader("Preview / Print", "ตรวจสอบเอกสารก่อนพิมพ์หรือบันทึกเป็น PDF");
+  renderLoading();
+
+  const [quotationResult, itemsResult, defaultCompanyResult] = await Promise.all([
+    supabaseClient
+      .from("quotations")
+      .select("*")
+      .eq("id", quotationId)
+      .single(),
+
+    supabaseClient
+      .from("quotation_items")
+      .select("*")
+      .eq("quotation_id", quotationId)
+      .order("section_type", { ascending: false })
+      .order("sort_order", { ascending: true }),
+
+    supabaseClient
+      .from("company_profile")
+      .select("*")
+      .eq("is_default", true)
+      .maybeSingle(),
+  ]);
+
+  if (quotationResult.error) throw quotationResult.error;
+  if (itemsResult.error) throw itemsResult.error;
+  if (defaultCompanyResult.error) throw defaultCompanyResult.error;
+
+  const quotation = quotationResult.data;
+  const items = itemsResult.data || [];
+  const defaultCompany = defaultCompanyResult.data || {};
+
+  if (quotation.status === "draft") {
+    elements.pageContent.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>ยังไม่สามารถ Preview / Print ได้</h3>
+            <p>ต้อง Confirm ใบเสนอราคาเพื่อสร้างเลขเอกสารก่อน</p>
+          </div>
+          <button class="btn btn-ghost" onclick="location.hash='quotation-view/${quotation.id}'">
+            กลับไปหน้ารายละเอียด
+          </button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const ownerResult = await supabaseClient
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", quotation.owner_id)
+    .maybeSingle();
+
+  const ownerName =
+    quotation.sales_name_snapshot ||
+    ownerResult.data?.full_name ||
+    ownerResult.data?.email ||
+    "-";
+
+  const company = getCompanySnapshot(quotation, defaultCompany);
+  const recurringItems = items.filter((item) => item.section_type === "recurring");
+  const oneTimeItems = items.filter((item) => item.section_type === "one_time");
+
+  elements.pageContent.innerHTML = `
+    <div class="print-toolbar">
+      <div>
+        <strong>${escapeHTML(quotation.quotation_no || "-")}</strong>
+        <div class="print-muted">${escapeHTML(quotation.customer_name || "-")}</div>
+      </div>
+
+      <div class="print-toolbar-actions">
+        <button id="backFromPrintButton" class="btn btn-ghost">กลับไปหน้ารายละเอียด</button>
+        <button id="printButton" class="btn btn-primary">พิมพ์ / บันทึกเป็น PDF</button>
+      </div>
+    </div>
+
+    <div class="print-page-wrap">
+      <article class="print-page">
+        <header class="print-header">
+          <div class="print-company">
+            ${company.logo_url ? `<img class="print-logo" src="${escapeHTML(company.logo_url)}" alt="logo" />` : `<div class="print-logo">FI</div>`}
+            <div>
+              <h1>${escapeHTML(company.company_name || "-")}</h1>
+              <p>${escapeHTML(company.address || "-")}</p>
+              <p>เลขประจำตัวผู้เสียภาษี: ${escapeHTML(company.tax_id || "-")} ${company.branch_name ? `(${escapeHTML(company.branch_name)})` : ""}</p>
+              <p>โทร: ${escapeHTML(company.phone || "-")} · อีเมล: ${escapeHTML(company.email || "-")}</p>
+            </div>
+          </div>
+
+          <div class="print-doc-title">
+            <h1>ใบเสนอราคา</h1>
+            <p>QUOTATION</p>
+          </div>
+        </header>
+
+        <section class="print-info-grid">
+          <div class="print-box">
+            <h3>ข้อมูลลูกค้า</h3>
+            <div class="print-row"><span>เรียน</span><strong>${escapeHTML(quotation.customer_name || "-")}</strong></div>
+            <div class="print-row"><span>ที่อยู่</span><strong>${escapeHTML(quotation.customer_address || "-")}</strong></div>
+          </div>
+
+          <div class="print-box">
+            <h3>ข้อมูลเอกสาร</h3>
+            <div class="print-row"><span>เลขที่</span><strong>${escapeHTML(quotation.quotation_no || "-")}</strong></div>
+            <div class="print-row"><span>วันที่</span><strong>${formatDate(quotation.quote_date)}</strong></div>
+            <div class="print-row"><span>วันหมดอายุ</span><strong>${formatDate(quotation.valid_until)}</strong></div>
+            <div class="print-row"><span>ผู้เสนอราคา</span><strong>${escapeHTML(ownerName)}</strong></div>
+          </div>
+        </section>
+
+        <section class="print-section">
+          <h2 class="print-section-title">${quotation.billing_type === "yearly" ? "ค่าบริการชำระรายปี" : "ค่าบริการชำระรายเดือน"}</h2>
+          ${renderPrintItemsTable(recurringItems, true)}
+        </section>
+
+        <section class="print-section">
+          <h2 class="print-section-title">ค่าบริการชำระครั้งเดียวจบ</h2>
+          ${renderPrintItemsTable(oneTimeItems, false)}
+        </section>
+
+        <section class="print-summary-grid">
+          <div>
+            <div class="print-note-box"><strong>หมายเหตุ</strong>\n${escapeHTML(quotation.note || "-")}</div>
+            <div class="print-note-box" style="margin-top:10px;"><strong>เงื่อนไขการชำระเงิน</strong>\n${escapeHTML(quotation.payment_terms || "-")}</div>
+          </div>
+
+          <div>
+            ${renderPrintSummary(quotation)}
+            <div class="print-amount-text">${escapeHTML(quotation.amount_text_th || "-")}</div>
+          </div>
+        </section>
+
+        <section class="print-bank-box">
+          <strong>ข้อมูลบัญชีสำหรับชำระเงิน</strong>
+          <div class="print-row"><span>ธนาคาร</span><strong>${escapeHTML(company.bank_name || "-")}</strong></div>
+          <div class="print-row"><span>ชื่อบัญชี</span><strong>${escapeHTML(company.bank_account_name || "-")}</strong></div>
+          <div class="print-row"><span>เลขบัญชี</span><strong>${escapeHTML(company.bank_account_no || "-")}</strong></div>
+          <div class="print-row"><span>หมายเหตุ</span><strong>${escapeHTML(company.payment_note || "-")}</strong></div>
+        </section>
+
+        <footer class="print-footer-grid">
+          <div class="print-signature-box">
+            <strong>ยืนยันรับราคา / ลูกค้า</strong>
+            <div class="print-signature-line"></div>
+            <div>วันที่ ______ / ______ / ______</div>
+          </div>
+
+          <div class="print-signature-box">
+            <strong>ผู้เสนอราคา</strong>
+            <div class="print-signature-line"></div>
+            <div>${escapeHTML(ownerName)}</div>
+          </div>
+        </footer>
+      </article>
+    </div>
+  `;
+
+  const printButton = $("#printButton");
+  const backButton = $("#backFromPrintButton");
+
+  if (printButton) {
+    printButton.addEventListener("click", () => window.print());
+  }
+
+  if (backButton) {
+    backButton.addEventListener("click", () => {
+      location.hash = `#quotation-view/${quotation.id}`;
+    });
+  }
+}
+
+function getCompanySnapshot(quotation, fallbackCompany) {
+  return {
+    company_name: quotation.company_name_snapshot || fallbackCompany.company_name,
+    tax_id: quotation.company_tax_id_snapshot || fallbackCompany.tax_id,
+    branch_name: quotation.company_branch_name_snapshot || fallbackCompany.branch_name,
+    address: quotation.company_address_snapshot || fallbackCompany.address,
+    phone: quotation.company_phone_snapshot || fallbackCompany.phone,
+    email: quotation.company_email_snapshot || fallbackCompany.email,
+    logo_url: quotation.company_logo_url_snapshot || fallbackCompany.logo_url,
+    bank_name: quotation.bank_name_snapshot || fallbackCompany.bank_name,
+    bank_account_name: quotation.bank_account_name_snapshot || fallbackCompany.bank_account_name,
+    bank_account_no: quotation.bank_account_no_snapshot || fallbackCompany.bank_account_no,
+    payment_note: quotation.payment_note_snapshot || fallbackCompany.payment_note,
+  };
+}
+
+function renderPrintItemsTable(items, isRecurring) {
+  if (!items.length) {
+    return `
+      <table class="print-table">
+        <tbody><tr><td>ไม่มีรายการ</td></tr></tbody>
+      </table>
+    `;
+  }
+
+  return `
+    <table class="print-table">
+      <thead>
+        <tr>
+          <th class="center" style="width:12mm;">ลำดับ</th>
+          <th>รายละเอียด</th>
+          <th class="num" style="width:22mm;">${isRecurring ? "จำนวนรถ" : "จำนวน"}</th>
+          <th class="center" style="width:18mm;">หน่วย</th>
+          <th class="num" style="width:30mm;">ราคา</th>
+          <th class="num" style="width:32mm;">มูลค่าก่อนภาษี</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item, index) => {
+          const lineSubtotal =
+            item.line_subtotal ??
+            (item.section_type === "recurring"
+              ? item.unit_price
+              : Number(item.quantity || 0) * Number(item.unit_price || 0));
+
+          return `
+            <tr>
+              <td class="center">${index + 1}</td>
+              <td>
+                <strong>${escapeHTML(item.product_name_snapshot || "-")}</strong>
+                ${item.description ? `<div class="print-muted">${escapeHTML(item.description)}</div>` : ""}
+              </td>
+              <td class="num">${number(item.quantity)}</td>
+              <td class="center">${escapeHTML(item.unit || "-")}</td>
+              <td class="num">${formatTHB(item.unit_price)}</td>
+              <td class="num">${formatTHB(lineSubtotal)}</td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderPrintSummary(quotation) {
+  return `
+    <table class="print-summary-table">
+      <tbody>
+        <tr><td>มูลค่าก่อนภาษี</td><td>${formatTHB(quotation.subtotal_amount)}</td></tr>
+        <tr><td>ส่วนลด</td><td>${formatTHB(quotation.discount_amount)}</td></tr>
+        <tr><td>ฐานคำนวณภาษี</td><td>${formatTHB(quotation.taxable_amount)}</td></tr>
+        <tr><td>VAT ${Number(quotation.vat_rate || 0)}%</td><td>${formatTHB(quotation.vat_amount)}</td></tr>
+        <tr><td>หัก ณ ที่จ่าย ${Number(quotation.wht_rate || 0)}%</td><td>-${formatTHB(quotation.wht_amount)}</td></tr>
+        <tr><td>ส่วนต่างปัดเศษ</td><td>${formatTHB(quotation.rounding_adjustment)}</td></tr>
+        <tr class="print-grand-total"><td>ยอดรวมสุทธิ</td><td>${formatTHB(quotation.grand_total_display)}</td></tr>
+      </tbody>
+    </table>
+  `;
 }
 
 // =======================================================
@@ -1721,7 +2002,7 @@ function formatTHB(value) {
 function formatDate(value) {
   if (!value) return "-";
 
-  return new Intl.DateTimeFormat("th-TH", {
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
     year: "numeric",
     month: "short",
     day: "2-digit",
