@@ -665,37 +665,37 @@ async function renderQuotationCreatePage() {
 
           <div class="summary-row">
             <span>มูลค่าก่อนภาษี</span>
-            <strong id="summarySubtotal">฿0.00</strong>
+            <strong id="summarySubtotal">0.00</strong>
           </div>
 
           <div class="summary-row">
             <span>ส่วนลด</span>
-            <strong id="summaryDiscount">฿0.00</strong>
+            <strong id="summaryDiscount">0.00</strong>
           </div>
 
           <div class="summary-row">
             <span>ฐานคำนวณภาษี</span>
-            <strong id="summaryTaxable">฿0.00</strong>
+            <strong id="summaryTaxable">0.00</strong>
           </div>
 
           <div class="summary-row">
             <span>VAT 7%</span>
-            <strong id="summaryVat">฿0.00</strong>
+            <strong id="summaryVat">0.00</strong>
           </div>
 
           <div class="summary-row">
             <span>หัก ณ ที่จ่าย 3%</span>
-            <strong id="summaryWht">-฿0.00</strong>
+            <strong id="summaryWht">-0.00</strong>
           </div>
 
           <div class="summary-row">
             <span>ส่วนต่างปัดเศษ</span>
-            <strong id="summaryRounding">฿0.00</strong>
+            <strong id="summaryRounding">0.00</strong>
           </div>
 
           <div class="summary-total">
             <span>ยอดรวมสุทธิ</span>
-            <strong id="summaryGrandTotal">฿0.00</strong>
+            <strong id="summaryGrandTotal">0.00</strong>
           </div>
 
           <p class="inline-note">
@@ -2408,16 +2408,16 @@ async function renderQuotationFormPage({ mode, quotationId }) {
         <div class="summary-card">
           <h3>สรุปยอด</h3>
 
-          <div class="summary-row"><span>มูลค่าก่อนภาษี</span><strong id="summarySubtotal">฿0.00</strong></div>
-          <div class="summary-row"><span>ส่วนลด</span><strong id="summaryDiscount">฿0.00</strong></div>
-          <div class="summary-row"><span>ฐานคำนวณภาษี</span><strong id="summaryTaxable">฿0.00</strong></div>
-          <div class="summary-row"><span>VAT 7%</span><strong id="summaryVat">฿0.00</strong></div>
-          <div class="summary-row"><span>หัก ณ ที่จ่าย 3%</span><strong id="summaryWht">-฿0.00</strong></div>
-          <div class="summary-row"><span>ส่วนต่างปัดเศษ</span><strong id="summaryRounding">฿0.00</strong></div>
+          <div class="summary-row"><span>มูลค่าก่อนภาษี</span><strong id="summarySubtotal">0.00</strong></div>
+          <div class="summary-row"><span>ส่วนลด</span><strong id="summaryDiscount">0.00</strong></div>
+          <div class="summary-row"><span>ฐานคำนวณภาษี</span><strong id="summaryTaxable">0.00</strong></div>
+          <div class="summary-row"><span>VAT 7%</span><strong id="summaryVat">0.00</strong></div>
+          <div class="summary-row"><span>หัก ณ ที่จ่าย 3%</span><strong id="summaryWht">-0.00</strong></div>
+          <div class="summary-row"><span>ส่วนต่างปัดเศษ</span><strong id="summaryRounding">0.00</strong></div>
 
           <div class="summary-total">
             <span>ยอดรวมสุทธิ</span>
-            <strong id="summaryGrandTotal">฿0.00</strong>
+            <strong id="summaryGrandTotal">0.00</strong>
           </div>
 
           <p class="inline-note">จำนวนเงินตัวอักษรจะสร้างจาก Database เมื่อบันทึก/ยืนยันเอกสาร</p>
@@ -5015,4 +5015,1329 @@ function exportQuotationsXlsx(rows) {
   const filename = `fi-quotation-export-${toDateInputValue(new Date())}.xlsx`;
   XLSX.writeFile(workbook, filename);
   showToast(`Export Excel สำเร็จ ${number(rows.length)} รายการ`, "success");
+}
+
+
+// =======================================================
+// v1.3 Status + Analytics + Bulk Update + Stability Patch
+// =======================================================
+
+Object.assign(appState, {
+  selectedQuotationIds: new Set(),
+  quotationListRows: [],
+  quotationFilteredRows: [],
+  quotationSort: { key: "created_at", direction: "desc" },
+  quotationFilters: {
+    keyword: "",
+    status: "",
+    billingType: "",
+    ownerId: "",
+    quoteFrom: "",
+    quoteTo: "",
+    validFrom: "",
+    validTo: "",
+  },
+  activeActions: new Set(),
+  lastResumeAt: 0,
+  renderToken: 0,
+});
+
+const V13_STATUS = {
+  draft: "ร่าง",
+  confirmed: "ยืนยัน",
+  sent: "ส่งแล้ว",
+  paid: "ชำระเงิน",
+  expired: "หมดอายุ",
+  cancelled: "ยกเลิก",
+};
+
+const V13_BULK_STATUS_OPTIONS = [
+  { value: "sent", label: "ส่งแล้ว" },
+  { value: "paid", label: "ชำระเงิน" },
+  { value: "cancelled", label: "ยกเลิก" },
+];
+
+async function initApp() {
+  showBootPage();
+
+  if (!isConfigured) {
+    hideBootPage();
+    showLoginPage();
+    showSetupWarningOnLogin();
+    return;
+  }
+
+  bindEvents();
+
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (data.session?.user) {
+      appState.user = data.session.user;
+      await loadProfile();
+      hideBootPage();
+      showAppShell();
+      await renderCurrentPage();
+    } else {
+      hideBootPage();
+      showLoginPage();
+    }
+  } catch (error) {
+    console.error(error);
+    hideBootPage();
+    showLoginPage();
+    showLoginError("ไม่สามารถตรวจสอบ session ได้ กรุณาเข้าสู่ระบบใหม่");
+  }
+
+  if (!window.__fiAuthListenerV13) {
+    window.__fiAuthListenerV13 = true;
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+      if (event === "TOKEN_REFRESHED" && session?.user) {
+        appState.user = session.user;
+        return;
+      }
+
+      if (session?.user) {
+        appState.user = session.user;
+        try {
+          await loadProfile();
+          hideBootPage();
+          showAppShell();
+          await renderCurrentPage();
+        } catch (error) {
+          console.error(error);
+          showToast("โหลดข้อมูลผู้ใช้ไม่สำเร็จ", "error");
+        }
+      } else if (event === "SIGNED_OUT") {
+        appState.user = null;
+        appState.profile = null;
+        appState.selectedQuotationIds.clear();
+        hideBootPage();
+        showLoginPage();
+      }
+    });
+  }
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v13Bound) {
+    elements.loginForm.dataset.v13Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v13Bound) {
+    elements.logoutButton.dataset.v13Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV13) {
+    window.__fiHashBoundV13 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      await renderCurrentPage();
+    });
+  }
+
+  if (!window.__fiDelegatedClickV13) {
+    window.__fiDelegatedClickV13 = true;
+    document.addEventListener("click", handleDelegatedClick, true);
+    document.addEventListener("change", handleDelegatedChange, true);
+  }
+
+  if (!window.__fiLifecycleBoundV13) {
+    window.__fiLifecycleBoundV13 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+
+  const mobileMenuButton = $("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v13Bound) {
+    mobileMenuButton.dataset.v13Bound = "true";
+    mobileMenuButton.addEventListener("click", () => {
+      elements.sidebarMenu?.classList.toggle("is-open");
+    });
+  }
+}
+
+function handleDelegatedClick(event) {
+  const menuButton = event.target.closest(".menu-item[data-page]");
+  if (menuButton) {
+    event.preventDefault();
+    location.hash = `#${menuButton.dataset.page}`;
+    elements.sidebarMenu?.classList.remove("is-open");
+    return;
+  }
+
+  const compactLink = event.target.closest("[data-quotation-link]");
+  if (compactLink) {
+    event.preventDefault();
+    location.hash = `#quotation-view/${compactLink.dataset.quotationLink}`;
+    return;
+  }
+
+  const tableViewButton = event.target.closest("[data-action='view'][data-id]");
+  if (tableViewButton) {
+    event.preventDefault();
+    location.hash = `#quotation-view/${tableViewButton.dataset.id}`;
+    return;
+  }
+
+  const sortButton = event.target.closest("[data-sort-key]");
+  if (sortButton) {
+    event.preventDefault();
+    updateQuotationSort(sortButton.dataset.sortKey);
+    renderQuotationTableFromState();
+    return;
+  }
+}
+
+function handleDelegatedChange(event) {
+  const rowCheckbox = event.target.closest("[data-select-quotation]");
+  if (rowCheckbox) {
+    const id = rowCheckbox.dataset.selectQuotation;
+    if (rowCheckbox.checked) {
+      appState.selectedQuotationIds.add(id);
+    } else {
+      appState.selectedQuotationIds.delete(id);
+    }
+    updateBulkActionState();
+    return;
+  }
+
+  if (event.target.id === "selectAllQuotations") {
+    const checked = event.target.checked;
+    appState.quotationFilteredRows.forEach((row) => {
+      if (checked) appState.selectedQuotationIds.add(row.id);
+      else appState.selectedQuotationIds.delete(row.id);
+    });
+    document.querySelectorAll("[data-select-quotation]").forEach((checkbox) => {
+      checkbox.checked = checked;
+    });
+    updateBulkActionState();
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient) return;
+
+  const now = Date.now();
+  if (now - (appState.lastResumeAt || 0) < 650) return;
+  appState.lastResumeAt = now;
+
+  if (!appState.user && !appState.profile) return;
+
+  try {
+    hidePageBusy();
+    appState.activeActions?.clear?.();
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (!data.session?.user) {
+      showLoginPage();
+      showToast("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = data.session.user;
+    await loadProfile();
+    showAppShell();
+
+    // Soft re-render fixes stale event handlers and frozen UI after tab resume.
+    await renderCurrentPage();
+  } catch (error) {
+    console.error("recoverAppAfterResume", reason, error);
+    showToast("กู้คืนหน้าจอไม่สำเร็จ กำลังโหลดข้อมูลใหม่", "warning", { duration: 3600 });
+    try {
+      await renderCurrentPage();
+    } catch (renderError) {
+      console.error(renderError);
+    }
+  }
+}
+
+function showBootPage() {
+  $("#bootPage")?.classList.remove("hidden");
+  elements.loginPage?.classList.add("hidden");
+  elements.appShell?.classList.add("hidden");
+}
+
+function hideBootPage() {
+  $("#bootPage")?.classList.add("hidden");
+}
+
+function showLoginPage() {
+  hideBootPage();
+  elements.loginPage?.classList.remove("hidden");
+  elements.appShell?.classList.add("hidden");
+}
+
+function showAppShell() {
+  hideBootPage();
+  elements.loginPage?.classList.add("hidden");
+  elements.appShell?.classList.remove("hidden");
+  updateHeaderUser();
+  renderMenu();
+
+  if (!location.hash) {
+    location.hash = "#dashboard";
+  } else {
+    appState.currentPage = getPageFromHash();
+  }
+}
+
+function updateHeaderUser() {
+  const fullName = appState.profile?.full_name || appState.profile?.email || "-";
+  const role = roleLabel(appState.profile?.role);
+  const headerUserChip = $("#headerUserChip");
+
+  if (headerUserChip) headerUserChip.textContent = `${fullName} · ${role}`;
+  if (elements.userName) elements.userName.textContent = "";
+  if (elements.userRole) elements.userRole.textContent = "";
+}
+
+function renderMenu() {
+  if (!appState.profile || !elements.sidebarMenu) return;
+
+  const role = appState.profile.role;
+  const allMenus = [
+    { key: "dashboard", label: "แดชบอร์ด", roles: ["admin", "manager", "sales"] },
+    { key: "quotations", label: "ใบเสนอราคา", roles: ["admin", "manager", "sales"] },
+    { key: "customers", label: "ลูกค้า", roles: ["admin", "manager", "sales"] },
+    { key: "products", label: "สินค้า/บริการ", roles: ["admin", "manager", "sales"] },
+    { key: "company", label: "ข้อมูลบริษัท", roles: ["admin"] },
+    { key: "settings", label: "ตั้งค่า", roles: ["admin"] },
+  ];
+
+  const menus = allMenus.filter((item) => item.roles.includes(role));
+
+  elements.sidebarMenu.innerHTML = menus.map((item) => {
+    const isActive = item.key === appState.currentPage ||
+      (item.key === "quotations" && appState.currentPage.startsWith("quotation-")) ||
+      (item.key === "products" && appState.currentPage.startsWith("product-"));
+
+    return `
+      <button class="menu-item ${isActive ? "active" : ""}" data-page="${item.key}" type="button">
+        <span>${menuIcon(item.key)}</span>
+        <span>${item.label}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+async function handleLogout() {
+  if (!supabaseClient) return;
+
+  const confirmed = await showConfirmDialog({
+    title: "ออกจากระบบ",
+    message: "ต้องการออกจากระบบใช่ไหม?",
+    confirmText: "ออกจากระบบ",
+    cancelText: "ยกเลิก",
+    danger: false,
+  });
+
+  if (!confirmed) return;
+
+  await withAction("logout", async () => {
+    await supabaseClient.auth.signOut();
+    showToast("ออกจากระบบแล้ว", "success");
+  });
+}
+
+async function renderCurrentPage() {
+  if (!appState.profile) return;
+
+  const renderToken = Date.now();
+  appState.renderToken = renderToken;
+  appState.currentPage = getPageFromHash();
+  renderMenu();
+  updateHeaderUser();
+  hidePageBusy();
+
+  const page = appState.currentPage;
+
+  try {
+    if (page === "dashboard") {
+      await renderDashboardPage();
+    } else if (page === "quotations") {
+      await renderQuotationsPage();
+    } else if (page === "quotation-new") {
+      await renderQuotationCreatePage();
+    } else if (page.startsWith("quotation-edit/")) {
+      await renderQuotationEditPage(page.replace("quotation-edit/", ""));
+    } else if (page.startsWith("quotation-view/")) {
+      await renderQuotationViewPage(page.replace("quotation-view/", ""));
+    } else if (page.startsWith("quotation-print/")) {
+      await renderQuotationPrintPage(page.replace("quotation-print/", ""));
+    } else if (page === "customers") {
+      await renderCustomersPage();
+    } else if (page === "products") {
+      await renderProductsPage();
+    } else if (page === "product-new") {
+      await renderProductFormPage({ mode: "create", productId: null });
+    } else if (page.startsWith("product-edit/")) {
+      await renderProductFormPage({ mode: "edit", productId: page.replace("product-edit/", "") });
+    } else if (page === "company") {
+      await renderCompanyPage();
+    } else if (page === "settings") {
+      await renderSettingsPage();
+    } else {
+      location.hash = "#dashboard";
+    }
+  } catch (error) {
+    console.error(error);
+    renderError(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  }
+}
+
+async function renderDashboardPage() {
+  setPageHeader("แดชบอร์ด");
+  renderLoading("กำลังโหลดแดชบอร์ด...");
+
+  const { data, error } = await supabaseClient
+    .from("v_quotations_list")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(1200);
+
+  if (error) throw error;
+
+  const rows = data || [];
+  const analytics = buildDashboardAnalytics(rows);
+
+  elements.pageContent.innerHTML = `
+    <div class="metric-grid metric-grid-v13">
+      <div class="metric-card"><span>ใบเสนอราคาทั้งหมด</span><strong>${number(rows.length)}</strong></div>
+      <div class="metric-card"><span>ส่งแล้วเดือนนี้</span><strong>${formatTHB(analytics.currentMonthSentAmount)}</strong></div>
+      <div class="metric-card"><span>ชำระเงินเดือนนี้</span><strong>${formatTHB(analytics.currentMonthPaidAmount)}</strong></div>
+      <div class="metric-card"><span>จำนวนส่งแล้วเดือนนี้</span><strong>${number(analytics.currentMonthSentCount)}</strong></div>
+      <div class="metric-card"><span>รอชำระเงิน</span><strong>${formatTHB(analytics.openSentAmount)}</strong></div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="card chart-card">
+        <div class="card-header"><h3>ยอดส่งแล้วเทียบกับชำระเงิน 12 เดือน</h3></div>
+        ${renderAmountComparisonChart(analytics.months)}
+      </div>
+
+      <div class="card chart-card">
+        <div class="card-header"><h3>จำนวนใบเสนอราคาส่งแล้ว แยกตามฝ่ายขายและเดือน</h3></div>
+        ${renderSentCountBySalesChart(analytics.salesSentCounts, analytics.monthLabels)}
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header"><h3>เอกสารใกล้หมดอายุ</h3></div>
+        ${renderCompactQuotationList(analytics.expiringSoon, "ยังไม่มีเอกสารใกล้หมดอายุ")}
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>อัปเดตล่าสุด</h3></div>
+        ${renderCompactQuotationList(rows.slice(0, 8), "ยังไม่มีใบเสนอราคา")}
+      </div>
+    </div>
+  `;
+
+  bindCompactQuotationLinks();
+}
+
+function buildDashboardAnalytics(rows) {
+  const today = startOfToday();
+  const currentKey = monthKey(today);
+  const monthStarts = [];
+  const monthLabels = [];
+
+  for (let index = 11; index >= 0; index -= 1) {
+    const date = new Date(today.getFullYear(), today.getMonth() - index, 1);
+    monthStarts.push(date);
+    monthLabels.push(formatMonthLabel(date));
+  }
+
+  const months = monthStarts.map((date) => ({
+    key: monthKey(date),
+    label: formatMonthLabel(date),
+    sentAmount: 0,
+    paidAmount: 0,
+    sentCount: 0,
+  }));
+
+  const monthMap = new Map(months.map((item) => [item.key, item]));
+  const salesSentCounts = new Map();
+  let currentMonthSentAmount = 0;
+  let currentMonthPaidAmount = 0;
+  let currentMonthSentCount = 0;
+  let openSentAmount = 0;
+
+  rows.forEach((row) => {
+    const status = getRawStatus(row);
+    const amount = Number(row.grand_total_display || 0);
+
+    if (status === "sent") {
+      const sentDate = parseDateOnly(row.sent_at || row.quote_date || row.created_at);
+      const key = sentDate ? monthKey(sentDate) : "";
+      const month = monthMap.get(key);
+      if (month) {
+        month.sentAmount += amount;
+        month.sentCount += 1;
+      }
+      if (key === currentKey) {
+        currentMonthSentAmount += amount;
+        currentMonthSentCount += 1;
+      }
+      openSentAmount += amount;
+
+      const salesName = row.owner_name || "ไม่ระบุฝ่ายขาย";
+      if (!salesSentCounts.has(salesName)) {
+        salesSentCounts.set(salesName, Object.fromEntries(months.map((item) => [item.key, 0])));
+      }
+      if (key && salesSentCounts.get(salesName)[key] !== undefined) {
+        salesSentCounts.get(salesName)[key] += 1;
+      }
+    }
+
+    if (status === "paid") {
+      const paidDate = parseDateOnly(row.paid_at || row.sent_at || row.quote_date || row.created_at);
+      const key = paidDate ? monthKey(paidDate) : "";
+      const month = monthMap.get(key);
+      if (month) month.paidAmount += amount;
+      if (key === currentKey) currentMonthPaidAmount += amount;
+    }
+  });
+
+  const soon = addDays(today, 7);
+  const expiringSoon = rows
+    .filter((row) => ["confirmed", "sent"].includes(getRawStatus(row)))
+    .filter((row) => {
+      const validDate = parseDateOnly(row.valid_until);
+      return validDate && validDate >= today && validDate <= soon;
+    })
+    .slice(0, 8);
+
+  return {
+    months,
+    monthLabels,
+    salesSentCounts,
+    currentMonthSentAmount,
+    currentMonthPaidAmount,
+    currentMonthSentCount,
+    openSentAmount,
+    expiringSoon,
+  };
+}
+
+function renderAmountComparisonChart(months) {
+  const maxValue = Math.max(1, ...months.flatMap((month) => [month.sentAmount, month.paidAmount]));
+
+  return `
+    <div class="amount-chart">
+      ${months.map((month) => {
+        const sentHeight = Math.max(2, Math.round((month.sentAmount / maxValue) * 160));
+        const paidHeight = Math.max(2, Math.round((month.paidAmount / maxValue) * 160));
+        return `
+          <div class="amount-chart-group">
+            <div class="amount-bars">
+              <div class="bar bar-sent" style="height:${sentHeight}px" title="ส่งแล้ว ${formatTHB(month.sentAmount)}"></div>
+              <div class="bar bar-paid" style="height:${paidHeight}px" title="ชำระเงิน ${formatTHB(month.paidAmount)}"></div>
+            </div>
+            <span>${month.label}</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div class="chart-legend">
+      <span><i class="legend-dot sent"></i> ส่งแล้ว</span>
+      <span><i class="legend-dot paid"></i> ชำระเงิน</span>
+    </div>
+  `;
+}
+
+function renderSentCountBySalesChart(salesSentCounts, monthLabels) {
+  const entries = Array.from(salesSentCounts.entries());
+  if (!entries.length) {
+    return `<div class="empty-state compact">ยังไม่มีข้อมูลส่งใบเสนอราคา</div>`;
+  }
+
+  const monthKeys = Array.from(salesSentCounts.values())[0]
+    ? Object.keys(Array.from(salesSentCounts.values())[0])
+    : [];
+  const maxCount = Math.max(1, ...entries.flatMap(([, counts]) => Object.values(counts)));
+
+  return `
+    <div class="sales-month-chart">
+      <div class="sales-month-header">
+        <span>ฝ่ายขาย</span>
+        ${monthLabels.map((label) => `<span>${label}</span>`).join("")}
+      </div>
+      ${entries.map(([salesName, counts]) => `
+        <div class="sales-month-row">
+          <strong>${escapeHTML(salesName)}</strong>
+          ${monthKeys.map((key) => {
+            const value = counts[key] || 0;
+            const width = Math.max(0, Math.round((value / maxCount) * 100));
+            return `
+              <span class="count-cell" title="${value} ใบ">
+                <i style="width:${width}%"></i>
+                <b>${value ? number(value) : ""}</b>
+              </span>
+            `;
+          }).join("")}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function renderQuotationsPage() {
+  setPageHeader(appState.profile.role === "sales" ? "ใบเสนอราคาของฉัน" : "ใบเสนอราคา");
+  renderLoading("กำลังโหลดใบเสนอราคา...");
+
+  const { data, error } = await supabaseClient
+    .from("v_quotations_list")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  renderQuotationList(data || []);
+}
+
+function renderQuotationList(rows) {
+  const canCreate = appState.profile.role !== "manager";
+  appState.quotationListRows = rows;
+  appState.quotationFilteredRows = rows;
+  pruneSelectionToRows(rows);
+
+  const salesOptions = buildSalesFilterOptions(rows);
+
+  elements.pageContent.innerHTML = `
+    <div class="card quotation-list-card">
+      <div class="card-header list-header-v13">
+        <div><h3>รายการใบเสนอราคา</h3></div>
+        <div class="table-actions">
+          <button id="exportQuotationsXlsxButton" class="btn btn-ghost btn-export-disabled" disabled>Export Excel</button>
+          ${canCreate ? `<button id="newQuotationButton" class="btn btn-primary">+ สร้างใบเสนอราคา</button>` : ``}
+        </div>
+      </div>
+
+      <div class="filter-grid-v13">
+        <div class="field"><label for="quotationSearch">ค้นหา</label><input id="quotationSearch" type="search" placeholder="ลูกค้า / เลขเอกสาร / ฝ่ายขาย" value="${escapeHTML(appState.quotationFilters.keyword)}" /></div>
+        <div class="field"><label for="quotationStatusFilter">สถานะ</label><select id="quotationStatusFilter">${renderStatusFilterOptions(appState.quotationFilters.status)}</select></div>
+        <div class="field"><label for="quotationBillingFilter">ประเภท</label><select id="quotationBillingFilter">${renderBillingFilterOptions(appState.quotationFilters.billingType)}</select></div>
+        <div class="field"><label for="quotationSalesFilter">ฝ่ายขาย</label><select id="quotationSalesFilter"><option value="">ทุกคน</option>${salesOptions.map((sales) => `<option value="${sales.id}" ${sales.id === appState.quotationFilters.ownerId ? "selected" : ""}>${escapeHTML(sales.name)}</option>`).join("")}</select></div>
+      </div>
+
+      <div class="date-range-row-v13">
+        ${renderDateRangeControl("quote", "ช่วงวันที่เสนอราคา", appState.quotationFilters.quoteFrom, appState.quotationFilters.quoteTo)}
+        ${renderDateRangeControl("valid", "ช่วงวันหมดอายุ", appState.quotationFilters.validFrom, appState.quotationFilters.validTo)}
+      </div>
+
+      <div id="filterHelp" class="filter-help"></div>
+
+      <div id="bulkActionBar" class="bulk-action-bar hidden">
+        <strong id="bulkSelectedText">เลือก 0 รายการ</strong>
+        <select id="bulkStatusSelect">
+          <option value="">เลือกสถานะที่จะปรับ</option>
+          ${V13_BULK_STATUS_OPTIONS.map((item) => `<option value="${item.value}">${item.label}</option>`).join("")}
+        </select>
+        <button id="applyBulkStatusButton" class="btn btn-primary" disabled>ปรับสถานะ</button>
+        <button id="clearSelectionButton" class="btn btn-ghost">ล้างการเลือก</button>
+      </div>
+
+      <div id="quotationTable"></div>
+    </div>
+  `;
+
+  bindQuotationListControls();
+  updateQuotationTableFromFilters();
+}
+
+function bindQuotationListControls() {
+  const newButton = $("#newQuotationButton");
+  if (newButton) newButton.addEventListener("click", () => (location.hash = "#quotation-new"));
+
+  const exportButton = $("#exportQuotationsXlsxButton");
+  if (exportButton) exportButton.addEventListener("click", () => exportQuotationsXlsx(appState.quotationFilteredRows));
+
+  ["quotationSearch", "quotationStatusFilter", "quotationBillingFilter", "quotationSalesFilter"].forEach((id) => {
+    const input = $(`#${id}`);
+    if (!input) return;
+    input.addEventListener(input.type === "search" ? "input" : "change", () => {
+      appState.quotationFilters.keyword = $("#quotationSearch")?.value.trim() || "";
+      appState.quotationFilters.status = $("#quotationStatusFilter")?.value || "";
+      appState.quotationFilters.billingType = $("#quotationBillingFilter")?.value || "";
+      appState.quotationFilters.ownerId = $("#quotationSalesFilter")?.value || "";
+      updateQuotationTableFromFilters();
+    });
+  });
+
+  bindDateRangeControls();
+
+  const bulkSelect = $("#bulkStatusSelect");
+  if (bulkSelect) bulkSelect.addEventListener("change", updateBulkActionState);
+
+  const bulkApply = $("#applyBulkStatusButton");
+  if (bulkApply) {
+    bulkApply.addEventListener("click", async () => {
+      const status = $("#bulkStatusSelect")?.value;
+      await applyBulkStatus(status);
+    });
+  }
+
+  const clearSelection = $("#clearSelectionButton");
+  if (clearSelection) {
+    clearSelection.addEventListener("click", () => {
+      appState.selectedQuotationIds.clear();
+      renderQuotationTableFromState();
+    });
+  }
+}
+
+function renderDateRangeControl(key, label, from, to) {
+  const prefix = key === "quote" ? "quote" : "valid";
+  return `
+    <div class="date-range-control" data-range-control="${prefix}">
+      <button type="button" class="date-range-display" data-date-range-toggle="${prefix}">
+        <span>${label}</span>
+        <strong id="${prefix}RangeLabel">${formatRangeLabel(from, to)}</strong>
+      </button>
+      <div id="${prefix}DatePopover" class="date-range-popover hidden">
+        <div class="date-popover-title">เลือกช่วงเวลา</div>
+        <div class="date-presets">
+          <button type="button" data-range-preset="${prefix}:this_month">เดือนนี้</button>
+          <button type="button" data-range-preset="${prefix}:last_month">เดือนที่แล้ว</button>
+          <button type="button" data-range-preset="${prefix}:this_year">ปีนี้</button>
+          <button type="button" data-range-preset="${prefix}:last_year">ปีที่แล้ว</button>
+        </div>
+        <div class="date-input-grid">
+          <div class="field"><label>จากวันที่</label><input id="${prefix}FromTemp" type="date" value="${escapeHTML(from || "")}" /></div>
+          <div class="field"><label>ถึงวันที่</label><input id="${prefix}ToTemp" type="date" value="${escapeHTML(to || "")}" /></div>
+        </div>
+        <div class="date-popover-actions">
+          <button type="button" class="link-button" data-range-clear="${prefix}">ล้างค่า</button>
+          <div>
+            <button type="button" class="btn btn-ghost" data-range-cancel="${prefix}">ยกเลิก</button>
+            <button type="button" class="btn btn-primary" data-range-apply="${prefix}">บันทึก</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindDateRangeControls() {
+  document.querySelectorAll("[data-date-range-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.dateRangeToggle;
+      document.querySelectorAll(".date-range-popover").forEach((popover) => {
+        if (popover.id !== `${key}DatePopover`) popover.classList.add("hidden");
+      });
+      $(`#${key}DatePopover`)?.classList.toggle("hidden");
+    });
+  });
+
+  document.querySelectorAll("[data-range-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [key, preset] = button.dataset.rangePreset.split(":");
+      const range = getPresetRange(preset);
+      $(`#${key}FromTemp`).value = range.from;
+      $(`#${key}ToTemp`).value = range.to;
+    });
+  });
+
+  document.querySelectorAll("[data-range-clear]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.rangeClear;
+      setRangeFilter(key, "", "");
+      $(`#${key}DatePopover`)?.classList.add("hidden");
+      updateQuotationTableFromFilters();
+    });
+  });
+
+  document.querySelectorAll("[data-range-cancel]").forEach((button) => {
+    button.addEventListener("click", () => $(`#${button.dataset.rangeCancel}DatePopover`)?.classList.add("hidden"));
+  });
+
+  document.querySelectorAll("[data-range-apply]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.rangeApply;
+      setRangeFilter(key, $(`#${key}FromTemp`)?.value || "", $(`#${key}ToTemp`)?.value || "");
+      $(`#${key}DatePopover`)?.classList.add("hidden");
+      updateQuotationTableFromFilters();
+    });
+  });
+}
+
+function setRangeFilter(key, from, to) {
+  if (key === "quote") {
+    appState.quotationFilters.quoteFrom = from;
+    appState.quotationFilters.quoteTo = to;
+  } else {
+    appState.quotationFilters.validFrom = from;
+    appState.quotationFilters.validTo = to;
+  }
+
+  const label = $(`#${key}RangeLabel`);
+  if (label) label.textContent = formatRangeLabel(from, to);
+}
+
+function updateQuotationTableFromFilters() {
+  const filter = appState.quotationFilters;
+  const quoteRange = getDateRangeState(filter.quoteFrom, filter.quoteTo, "วันที่เสนอราคา");
+  const validRange = getDateRangeState(filter.validFrom, filter.validTo, "วันหมดอายุ");
+  const invalidReason = quoteRange.invalidReason || validRange.invalidReason;
+
+  appState.quotationFilteredRows = appState.quotationListRows.filter((row) => {
+    const keyword = (filter.keyword || "").toLowerCase();
+    const text = `${row.quotation_no || ""} ${row.customer_name || ""} ${row.owner_name || ""}`.toLowerCase();
+
+    return (!keyword || text.includes(keyword)) &&
+      (!filter.status || row.effective_status === filter.status || row.status === filter.status) &&
+      (!filter.billingType || row.billing_type === filter.billingType) &&
+      (!filter.ownerId || row.owner_id === filter.ownerId) &&
+      (!quoteRange.active || !quoteRange.valid || isDateWithinRange(row.quote_date, quoteRange.from, quoteRange.to)) &&
+      (!validRange.active || !validRange.valid || isDateWithinRange(row.valid_until, validRange.from, validRange.to));
+  });
+
+  applyQuotationSort();
+  pruneSelectionToRows(appState.quotationFilteredRows);
+  renderQuotationTableFromState();
+  updateExportStateV13({ quoteRange, validRange, invalidReason });
+}
+
+function renderQuotationTableFromState() {
+  const tableTarget = $("#quotationTable");
+  if (!tableTarget) return;
+  tableTarget.innerHTML = renderQuotationTable(appState.quotationFilteredRows);
+  updateBulkActionState();
+}
+
+function renderQuotationTable(rows) {
+  if (!rows.length) {
+    return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
+  }
+
+  const showSales = appState.profile.role !== "sales";
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table quotation-table-v13">
+        <thead>
+          <tr>
+            <th class="select-col"><input id="selectAllQuotations" type="checkbox" ${areAllVisibleRowsSelected(rows) ? "checked" : ""} /></th>
+            ${sortableTh("row_no", "ลำดับ")}
+            ${sortableTh("quotation_no", "เลขที่")}
+            ${sortableTh("customer_name", "ลูกค้า")}
+            ${sortableTh("billing_type", "ประเภท")}
+            ${showSales ? sortableTh("owner_name", "ฝ่ายขาย") : ""}
+            ${sortableTh("quote_date", "วันที่เสนอราคา")}
+            ${sortableTh("valid_until", "วันหมดอายุ")}
+            ${sortableTh("grand_total_display", "ยอดรวม")}
+            ${sortableTh("effective_status", "สถานะ")}
+            ${sortableTh("created_at", "วันที่สร้าง")}
+            <th>การกระทำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td class="select-col"><input type="checkbox" data-select-quotation="${row.id}" ${appState.selectedQuotationIds.has(row.id) ? "checked" : ""} /></td>
+              <td>${index + 1}</td>
+              <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
+              <td>${escapeHTML(row.customer_name || "-")}</td>
+              <td>${billingTypeLabel(row.billing_type)}</td>
+              ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
+              <td>${formatDate(row.quote_date)}</td>
+              <td>${formatDate(row.valid_until)}</td>
+              <td class="num-cell">${formatTHB(row.grand_total_display)}</td>
+              <td>${statusBadge(row.effective_status)}</td>
+              <td>${formatDate(row.created_at)}</td>
+              <td><button class="btn btn-ghost" data-action="view" data-id="${row.id}">ดู</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function sortableTh(key, label) {
+  const current = appState.quotationSort.key === key;
+  const direction = current ? appState.quotationSort.direction : "";
+  const icon = current ? (direction === "asc" ? "▲" : "▼") : "↕";
+  return `<th><button type="button" class="sort-header" data-sort-key="${key}">${label} <span>${icon}</span></button></th>`;
+}
+
+function updateQuotationSort(key) {
+  if (appState.quotationSort.key === key) {
+    appState.quotationSort.direction = appState.quotationSort.direction === "asc" ? "desc" : "asc";
+  } else {
+    appState.quotationSort = { key, direction: "asc" };
+  }
+  applyQuotationSort();
+}
+
+function applyQuotationSort() {
+  const { key, direction } = appState.quotationSort;
+  const factor = direction === "asc" ? 1 : -1;
+
+  appState.quotationFilteredRows.sort((a, b) => {
+    if (key === "row_no") return 0;
+    const valueA = getSortValue(a, key);
+    const valueB = getSortValue(b, key);
+
+    if (valueA < valueB) return -1 * factor;
+    if (valueA > valueB) return 1 * factor;
+    return 0;
+  });
+}
+
+function getSortValue(row, key) {
+  if (["quote_date", "valid_until", "created_at"].includes(key)) {
+    return parseDateOnly(row[key])?.getTime?.() || 0;
+  }
+  if (key === "grand_total_display") return Number(row[key] || 0);
+  if (key === "billing_type") return billingTypeLabel(row.billing_type);
+  if (key === "effective_status") return statusLabel(row.effective_status);
+  return String(row[key] || "").toLowerCase();
+}
+
+function updateExportStateV13({ quoteRange, validRange, invalidReason }) {
+  const exportButton = $("#exportQuotationsXlsxButton");
+  const filterHelp = $("#filterHelp");
+  if (!exportButton || !filterHelp) return;
+
+  const canExport = (quoteRange.active && quoteRange.valid) || (validRange.active && validRange.valid);
+
+  if (invalidReason) {
+    exportButton.disabled = true;
+    exportButton.classList.add("btn-export-disabled");
+    filterHelp.className = "filter-warning";
+    filterHelp.textContent = invalidReason;
+    return;
+  }
+
+  if (!canExport) {
+    exportButton.disabled = true;
+    exportButton.classList.add("btn-export-disabled");
+    filterHelp.className = "filter-help";
+    filterHelp.textContent = "Export Excel ได้เมื่อเลือกช่วงวันที่เสนอราคาหรือช่วงวันหมดอายุอย่างน้อย 1 ช่วง และช่วงละไม่เกิน 3 เดือน";
+    return;
+  }
+
+  exportButton.disabled = false;
+  exportButton.classList.remove("btn-export-disabled");
+  filterHelp.className = "filter-help";
+  filterHelp.textContent = `พร้อม Export ${number(appState.quotationFilteredRows.length)} รายการเป็น Excel`;
+}
+
+function updateBulkActionState() {
+  const bar = $("#bulkActionBar");
+  const text = $("#bulkSelectedText");
+  const applyButton = $("#applyBulkStatusButton");
+  const selectedCount = appState.selectedQuotationIds.size;
+  const status = $("#bulkStatusSelect")?.value || "";
+
+  if (!bar) return;
+  bar.classList.toggle("hidden", selectedCount === 0);
+  if (text) text.textContent = `เลือก ${number(selectedCount)} รายการ`;
+  if (applyButton) applyButton.disabled = selectedCount === 0 || !status;
+}
+
+async function applyBulkStatus(status) {
+  if (!status) return;
+
+  const selectedRows = appState.quotationListRows.filter((row) => appState.selectedQuotationIds.has(row.id));
+  const eligibleRows = selectedRows.filter((row) => canTransitionToStatus(row, status));
+
+  if (!eligibleRows.length) {
+    showToast("รายการที่เลือกไม่สามารถเปลี่ยนเป็นสถานะนี้ได้", "warning");
+    return;
+  }
+
+  const payload = await showStatusChangeDialog({
+    status,
+    count: eligibleRows.length,
+    skipped: selectedRows.length - eligibleRows.length,
+  });
+
+  if (!payload) return;
+
+  await updateQuotationStatuses(eligibleRows.map((row) => row.id), status, payload);
+  appState.selectedQuotationIds.clear();
+  await renderQuotationsPage();
+}
+
+function canTransitionToStatus(row, status) {
+  const current = getRawStatus(row);
+  if (status === "sent") return current === "confirmed";
+  if (status === "paid") return current === "sent";
+  if (status === "cancelled") return !["paid", "cancelled"].includes(current);
+  return false;
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+  if (!canModify) return "";
+
+  const status = quotation.status;
+  const buttons = [];
+
+  if (status === "draft") {
+    buttons.push(`<button id="editDraftButton" class="btn btn-ghost">แก้ไข</button>`);
+    buttons.push(`<button id="confirmQuotationButton" class="btn btn-primary">ยืนยัน</button>`);
+    buttons.push(`<button id="cancelQuotationButton" class="btn btn-ghost danger-soft">ยกเลิก</button>`);
+  }
+
+  if (status === "confirmed") {
+    buttons.push(`<button id="markSentButton" class="btn btn-primary">ส่งแล้ว</button>`);
+    buttons.push(`<button id="cancelQuotationButton" class="btn btn-ghost danger-soft">ยกเลิก</button>`);
+  }
+
+  if (status === "sent") {
+    buttons.push(`<button id="markPaidButton" class="btn btn-primary">ชำระเงิน</button>`);
+    buttons.push(`<button id="cancelQuotationButton" class="btn btn-ghost danger-soft">ยกเลิก</button>`);
+  }
+
+  if (status !== "draft") {
+    buttons.push(`<button id="printPreviewButton" class="btn btn-primary">Preview / Print</button>`);
+    buttons.push(`<button id="duplicateQuotationButton" class="btn btn-ghost">สร้างสำเนา</button>`);
+  }
+
+  return buttons.join("");
+}
+
+function bindQuotationViewActions(quotation) {
+  const bindClick = (selector, handler) => {
+    const button = $(selector);
+    if (button) button.addEventListener("click", handler);
+  };
+
+  bindClick("#backToListButton", () => (location.hash = "#quotations"));
+  bindClick("#editDraftButton", () => (location.hash = `#quotation-edit/${quotation.id}`));
+  bindClick("#confirmQuotationButton", async () => confirmQuotation(quotation.id));
+  bindClick("#markSentButton", async () => markQuotationAsSent(quotation.id));
+  bindClick("#markPaidButton", async () => markQuotationAsPaid(quotation.id));
+  bindClick("#cancelQuotationButton", async () => cancelSingleQuotation(quotation.id));
+  bindClick("#printPreviewButton", () => (location.hash = `#quotation-print/${quotation.id}`));
+  bindClick("#duplicateQuotationButton", async () => duplicateQuotation(quotation.id));
+}
+
+async function markQuotationAsSent(quotationId) {
+  const payload = await showStatusChangeDialog({ status: "sent", count: 1 });
+  if (!payload) return;
+  await updateQuotationStatuses([quotationId], "sent", payload);
+  await renderQuotationViewPage(quotationId);
+}
+
+async function markQuotationAsPaid(quotationId) {
+  const payload = await showStatusChangeDialog({ status: "paid", count: 1 });
+  if (!payload) return;
+  await updateQuotationStatuses([quotationId], "paid", payload);
+  await renderQuotationViewPage(quotationId);
+}
+
+async function cancelSingleQuotation(quotationId) {
+  const payload = await showStatusChangeDialog({ status: "cancelled", count: 1 });
+  if (!payload) return;
+  await updateQuotationStatuses([quotationId], "cancelled", payload);
+  await renderQuotationViewPage(quotationId);
+}
+
+async function updateQuotationStatuses(ids, status, payload) {
+  await withAction(`change-status-${status}`, async () => {
+    showPageBusy("กำลังปรับสถานะ...");
+    const { error } = await supabaseClient.rpc("change_quotation_status_v13", {
+      p_quotation_ids: ids,
+      p_new_status: status,
+      p_effective_date: payload.effectiveDate || toDateInputValue(new Date()),
+      p_note: payload.note || null,
+    });
+    if (error) throw error;
+    hidePageBusy();
+    showToast(`ปรับสถานะเป็น${statusLabel(status)}สำเร็จ ${number(ids.length)} รายการ`, "success");
+  });
+}
+
+function showStatusChangeDialog({ status, count, skipped = 0 }) {
+  const today = toDateInputValue(new Date());
+  const needsDate = ["sent", "paid"].includes(status);
+  const needsReason = status === "cancelled";
+  const title = count > 1 ? `ปรับสถานะ ${number(count)} รายการ` : `เปลี่ยนสถานะเป็น${statusLabel(status)}`;
+  const skippedText = skipped > 0 ? `<div class="alert alert-warning">ข้าม ${number(skipped)} รายการที่ไม่เข้าเงื่อนไขสถานะนี้</div>` : "";
+
+  return new Promise((resolve) => {
+    const dialog = document.createElement("div");
+    dialog.className = "modal-backdrop";
+    dialog.innerHTML = `
+      <div class="confirm-dialog status-dialog">
+        <h3>${escapeHTML(title)}</h3>
+        ${skippedText}
+        ${needsDate ? `
+          <div class="field">
+            <label>${status === "sent" ? "วันที่ส่งใบเสนอราคา" : "วันที่ชำระเงิน"}</label>
+            <input id="statusEffectiveDate" type="date" value="${today}" />
+          </div>
+        ` : ""}
+        ${needsReason ? `
+          <div class="field">
+            <label>เหตุผลการยกเลิก (ไม่บังคับ)</label>
+            <textarea id="statusReason" rows="4" placeholder="ระบุเหตุผลการยกเลิก ถ้ามี"></textarea>
+          </div>
+        ` : ""}
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-ghost" data-dialog-cancel>ยกเลิก</button>
+          <button type="button" class="btn ${needsReason ? "danger-soft" : "btn-primary"}" data-dialog-confirm>บันทึก</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const cleanup = (value) => {
+      dialog.remove();
+      resolve(value);
+    };
+
+    dialog.querySelector("[data-dialog-cancel]").addEventListener("click", () => cleanup(null));
+    dialog.querySelector("[data-dialog-confirm]").addEventListener("click", () => {
+      const effectiveDate = needsDate ? dialog.querySelector("#statusEffectiveDate")?.value : today;
+      const note = needsReason ? dialog.querySelector("#statusReason")?.value.trim() : "";
+      if (needsDate && !effectiveDate) {
+        showToast("กรุณาระบุวันที่", "warning");
+        return;
+      }
+      cleanup({ effectiveDate, note });
+    });
+  });
+}
+
+function getEffectiveStatusFromQuotation(quotation) {
+  if (["paid", "cancelled", "draft"].includes(quotation.status)) return quotation.status;
+  if (["confirmed", "sent"].includes(quotation.status) && quotation.valid_until && new Date(quotation.valid_until) < startOfToday()) {
+    return "expired";
+  }
+  return quotation.status;
+}
+
+function statusLabel(status) {
+  return V13_STATUS[status] || status || "-";
+}
+
+function statusBadge(status) {
+  return `<span class="status-badge status-${status}">${statusLabel(status)}</span>`;
+}
+
+function roleLabel(role) {
+  const map = { admin: "ผู้ดูแลระบบ", manager: "ผู้จัดการ", sales: "ฝ่ายขาย" };
+  return map[role] || role || "-";
+}
+
+function formatTHB(value) {
+  return formatAmount(value);
+}
+
+function formatAmount(value) {
+  return new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function updateDraftSummary() {
+  const unitPrice = readNumber("#draftUnitPrice");
+  const oneTimeQty = readNumber("#draftOneTimeQty");
+  const oneTimePrice = readNumber("#draftOneTimePrice");
+  const discountPercent = readNumber("#draftDiscountPercent");
+
+  const vatEnabled = $("#draftVatEnabled")?.checked ?? true;
+  const whtEnabled = $("#draftWhtEnabled")?.checked ?? true;
+  const roundingEnabled = $("#draftRoundingEnabled")?.checked ?? false;
+
+  const recurringSubtotal = unitPrice;
+  const oneTimeSubtotal = oneTimeQty * oneTimePrice;
+  const subtotal = roundMoney(recurringSubtotal + oneTimeSubtotal);
+  const discount = roundMoney((subtotal * discountPercent) / 100);
+  const taxable = roundMoney(subtotal - discount);
+  const vat = vatEnabled ? roundMoney(taxable * 0.07) : 0;
+  const wht = whtEnabled ? roundMoney(taxable * 0.03) : 0;
+  const grandTotal = roundMoney(taxable + vat - wht);
+  const displayTotal = roundingEnabled ? Math.round(grandTotal) : grandTotal;
+  const rounding = roundMoney(displayTotal - grandTotal);
+
+  const setText = (selector, text) => {
+    const el = $(selector);
+    if (el) el.textContent = text;
+  };
+
+  setText("#summarySubtotal", formatTHB(subtotal));
+  setText("#summaryDiscount", formatTHB(discount));
+  setText("#summaryTaxable", formatTHB(taxable));
+  setText("#summaryVat", formatTHB(vat));
+  setText("#summaryWht", `-${formatTHB(wht)}`);
+  setText("#summaryRounding", formatTHB(rounding));
+  setText("#summaryGrandTotal", formatTHB(displayTotal));
+}
+
+function exportQuotationsXlsx(rows) {
+  if (!rows.length) {
+    showToast("ไม่มีข้อมูลสำหรับ Export", "warning");
+    return;
+  }
+
+  if (!window.XLSX) {
+    showToast("ไม่พบ Excel library กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่", "error", { duration: 5200 });
+    return;
+  }
+
+  const aoa = [[
+    "เลขที่ใบเสนอราคา",
+    "ลูกค้า",
+    "ประเภท",
+    "ฝ่ายขาย",
+    "วันที่เสนอราคา",
+    "วันหมดอายุ",
+    "วันที่ส่ง",
+    "วันที่ชำระเงิน",
+    "ยอดรวมสุทธิ",
+    "สถานะ",
+  ], ...rows.map((row) => [
+    row.quotation_no || "ยังไม่ออกเลข",
+    row.customer_name || "",
+    billingTypeLabel(row.billing_type),
+    row.owner_name || "",
+    row.quote_date ? formatDate(row.quote_date) : "",
+    row.valid_until ? formatDate(row.valid_until) : "",
+    row.sent_at ? formatDate(row.sent_at) : "",
+    row.paid_at ? formatDate(row.paid_at) : "",
+    Number(row.grand_total_display || 0),
+    statusLabel(row.effective_status),
+  ])];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+  worksheet["!cols"] = [
+    { wch: 20 }, { wch: 34 }, { wch: 14 }, { wch: 24 }, { wch: 18 },
+    { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "ใบเสนอราคา");
+  XLSX.writeFile(workbook, `fi-quotation-export-${toDateInputValue(new Date())}.xlsx`);
+  showToast(`Export Excel สำเร็จ ${number(rows.length)} รายการ`, "success");
+}
+
+function buildSalesFilterOptions(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    if (row.owner_id) map.set(row.owner_id, row.owner_name || row.sales_name_snapshot || "ไม่ระบุชื่อ");
+  });
+  return Array.from(map.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "th"));
+}
+
+function renderStatusFilterOptions(selected) {
+  const statuses = ["", "draft", "confirmed", "sent", "paid", "expired", "cancelled"];
+  return statuses.map((status) => `<option value="${status}" ${status === selected ? "selected" : ""}>${status ? statusLabel(status) : "ทุกสถานะ"}</option>`).join("");
+}
+
+function renderBillingFilterOptions(selected) {
+  return [
+    { value: "", label: "ทุกประเภท" },
+    { value: "monthly", label: "รายเดือน" },
+    { value: "yearly", label: "รายปี" },
+  ].map((item) => `<option value="${item.value}" ${item.value === selected ? "selected" : ""}>${item.label}</option>`).join("");
+}
+
+function pruneSelectionToRows(rows) {
+  const visibleIds = new Set(rows.map((row) => row.id));
+  Array.from(appState.selectedQuotationIds).forEach((id) => {
+    if (!visibleIds.has(id)) appState.selectedQuotationIds.delete(id);
+  });
+}
+
+function areAllVisibleRowsSelected(rows) {
+  return rows.length > 0 && rows.every((row) => appState.selectedQuotationIds.has(row.id));
+}
+
+function getRawStatus(row) {
+  return row.status || row.effective_status || "";
+}
+
+function getPresetRange(preset) {
+  const today = new Date();
+  let from;
+  let to;
+
+  if (preset === "this_month") {
+    from = new Date(today.getFullYear(), today.getMonth(), 1);
+    to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  } else if (preset === "last_month") {
+    from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    to = new Date(today.getFullYear(), today.getMonth(), 0);
+  } else if (preset === "this_year") {
+    from = new Date(today.getFullYear(), 0, 1);
+    to = new Date(today.getFullYear(), 11, 31);
+  } else {
+    from = new Date(today.getFullYear() - 1, 0, 1);
+    to = new Date(today.getFullYear() - 1, 11, 31);
+  }
+
+  return { from: toDateInputValue(from), to: toDateInputValue(to) };
+}
+
+function formatRangeLabel(from, to) {
+  return `${from ? formatDate(from) : "ไม่กำหนด"} - ${to ? formatDate(to) : "ไม่กำหนด"}`;
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonthLabel(date) {
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { month: "short", year: "2-digit" }).format(date);
+}
+
+function showToast(message, type = "info", options = {}) {
+  if (!elements.toast) return;
+  elements.toast.textContent = message;
+  elements.toast.className = `toast toast-${type}`;
+  elements.toast.classList.remove("hidden");
+
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => {
+    elements.toast.classList.add("hidden");
+  }, options.duration || (type === "error" ? 5200 : 2800));
+}
+
+function showPageBusy(label = "กำลังดำเนินการ") {
+  const overlay = $("#pageBusyOverlay");
+  if (!overlay) return;
+  overlay.querySelector("strong").textContent = label;
+  overlay.classList.remove("hidden");
+}
+
+function hidePageBusy() {
+  $("#pageBusyOverlay")?.classList.add("hidden");
+}
+
+async function withAction(key, action) {
+  appState.activeActions = appState.activeActions || new Set();
+  if (appState.activeActions.has(key)) return;
+  appState.activeActions.add(key);
+  try {
+    return await action();
+  } catch (error) {
+    console.error(error);
+    hidePageBusy();
+    showToast(error.message || "ทำรายการไม่สำเร็จ", "error", { duration: 5200 });
+    throw error;
+  } finally {
+    appState.activeActions.delete(key);
+    hidePageBusy();
+  }
 }
