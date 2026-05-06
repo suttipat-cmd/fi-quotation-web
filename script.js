@@ -5,8 +5,8 @@
 
 // 1) Replace these with values from Supabase Project Settings > API.
 //    Use anon public key only. Never use service_role key here.
-const SUPABASE_URL = "PASTE_SUPABASE_PROJECT_URL_HERE";
-const SUPABASE_ANON_KEY = "PASTE_SUPABASE_ANON_PUBLIC_KEY_HERE";
+const SUPABASE_URL = "https://fjncvrsegkmrowvryttu.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqbmN2cnNlZ2ttcm93dnJ5dHR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzkzMjYsImV4cCI6MjA5MzY1NTMyNn0.d8III1KlP5kJFes7ujFkfwZ9ombMYc-_4vNIazIg6zw";
 
 const isConfigured =
   SUPABASE_URL.startsWith("https://") &&
