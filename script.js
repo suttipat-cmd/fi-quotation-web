@@ -3802,3 +3802,648 @@ function renderSettingsPage() {
     </div>
   `;
 }
+
+
+// =======================================================
+// v1.1 UX Refresh + Stability Release Overrides
+// Top navigation, Thai-only labels, loading/toast manager,
+// safer rendering, company logo upload via Supabase Storage
+// =======================================================
+
+appState.navigationSeq = 0;
+appState.activeActions = new Set();
+
+function bindEvents() {
+  if (elements.loginForm) elements.loginForm.addEventListener("submit", handleLogin);
+  if (elements.logoutButton) elements.logoutButton.addEventListener("click", handleLogout);
+
+  const mobileMenuButton = document.querySelector("#mobileMenuButton");
+  if (mobileMenuButton) {
+    mobileMenuButton.addEventListener("click", () => {
+      document.body.classList.toggle("nav-open");
+    });
+  }
+
+  window.addEventListener("hashchange", async () => {
+    appState.currentPage = getPageFromHash();
+    await renderCurrentPage();
+  });
+}
+
+async function ensureActiveSession() {
+  if (!supabaseClient) return false;
+
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error || !data.session?.user) {
+    appState.user = null;
+    appState.profile = null;
+    showLoginPage();
+    showToast("กรุณาเข้าสู่ระบบใหม่", "warning");
+    return false;
+  }
+
+  appState.user = data.session.user;
+  if (!appState.profile) {
+    await loadProfile();
+  }
+  return true;
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  if (!supabaseClient) {
+    showLoginError("ยังไม่ได้ตั้งค่า Supabase ใน script.js");
+    return;
+  }
+
+  const email = elements.loginEmail.value.trim();
+  const password = elements.loginPassword.value;
+
+  await withButtonLoading(elements.loginButton, "กำลังเข้าสู่ระบบ...", async () => {
+    hideLoginError();
+
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) {
+      showLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+      showToast("เข้าสู่ระบบไม่สำเร็จ", "error");
+      return;
+    }
+
+    appState.user = data.user;
+    appState.profile = null;
+    await loadProfile();
+    showAppShell();
+    await renderCurrentPage();
+    showToast("เข้าสู่ระบบสำเร็จ", "success");
+  });
+}
+
+async function handleLogout() {
+  if (!supabaseClient) return;
+  await withAction("logout", async () => {
+    showToast("กำลังออกจากระบบ...", "info");
+    await supabaseClient.auth.signOut();
+    showToast("ออกจากระบบแล้ว", "success");
+  });
+}
+
+function renderMenu() {
+  if (!appState.profile || !elements.sidebarMenu) return;
+
+  const role = appState.profile.role;
+  const allMenus = [
+    { key: "dashboard", label: "แดชบอร์ด", roles: ["admin", "manager", "sales"] },
+    { key: "quotations", label: "ใบเสนอราคา", roles: ["admin", "manager", "sales"] },
+    { key: "customers", label: "ลูกค้า", roles: ["admin", "manager", "sales"] },
+    { key: "products", label: "สินค้า/บริการ", roles: ["admin", "manager", "sales"] },
+    { key: "company", label: "ข้อมูลบริษัท", roles: ["admin"] },
+    { key: "settings", label: "ตั้งค่า", roles: ["admin"] },
+  ];
+
+  elements.sidebarMenu.innerHTML = allMenus
+    .filter((item) => item.roles.includes(role))
+    .map((item) => {
+      const isActive =
+        item.key === appState.currentPage ||
+        (item.key === "quotations" && appState.currentPage.startsWith("quotation-")) ||
+        (item.key === "products" && appState.currentPage.startsWith("product-"));
+
+      return `
+        <button class="menu-item ${isActive ? "active" : ""}" data-page="${item.key}">
+          <span>${menuIcon(item.key)}</span>
+          <span>${item.label}</span>
+        </button>
+      `;
+    })
+    .join("");
+
+  elements.sidebarMenu.querySelectorAll(".menu-item").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.body.classList.remove("nav-open");
+      location.hash = `#${button.dataset.page}`;
+    });
+  });
+}
+
+async function renderCurrentPage() {
+  if (!appState.profile) return;
+
+  const seq = ++appState.navigationSeq;
+  const page = appState.currentPage;
+
+  try {
+    if (!(await ensureActiveSession())) return;
+    renderMenu();
+
+    if (page === "dashboard") {
+      await renderDashboardPage();
+    } else if (page === "quotations") {
+      await renderQuotationsPage();
+    } else if (page === "quotation-new") {
+      await renderQuotationCreatePage();
+    } else if (page.startsWith("quotation-edit/")) {
+      await renderQuotationEditPage(page.replace("quotation-edit/", ""));
+    } else if (page.startsWith("quotation-view/")) {
+      await renderQuotationViewPage(page.replace("quotation-view/", ""));
+    } else if (page.startsWith("quotation-print/")) {
+      await renderQuotationPrintPage(page.replace("quotation-print/", ""));
+    } else if (page === "customers") {
+      await renderCustomersPage();
+    } else if (page === "products") {
+      await renderProductsPage();
+    } else if (page === "product-new") {
+      await renderProductFormPage({ mode: "create", productId: null });
+    } else if (page.startsWith("product-edit/")) {
+      await renderProductFormPage({ mode: "edit", productId: page.replace("product-edit/", "") });
+    } else if (page === "company") {
+      await renderCompanyPage();
+    } else if (page === "settings") {
+      await renderSettingsPage();
+    } else {
+      appState.currentPage = "dashboard";
+      location.hash = "#dashboard";
+    }
+
+    if (seq !== appState.navigationSeq) return;
+  } catch (error) {
+    console.error(error);
+    renderError(error.message || "โหลดข้อมูลไม่สำเร็จ");
+    showToast(error.message || "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่", "error", { duration: 5200 });
+  }
+}
+
+function setPageHeader(title) {
+  const titleMap = {
+    Dashboard: "แดชบอร์ด",
+    "Company Profile": "ข้อมูลบริษัท",
+    Settings: "ตั้งค่า",
+    "Preview / Print": "ตัวอย่างเอกสาร / พิมพ์",
+    "สินค้า/บริการ": "สินค้า/บริการ",
+  };
+
+  elements.pageTitle.textContent = titleMap[title] || title || "";
+  elements.pageSubtitle.textContent = "";
+}
+
+function renderLoading(label = "กำลังโหลดข้อมูล...") {
+  elements.pageContent.innerHTML = `
+    <div class="loading-card skeleton-card" aria-busy="true">
+      <div class="skeleton-line short"></div>
+      <div class="skeleton-line long"></div>
+      <div class="skeleton-line medium"></div>
+      <span class="sr-only">${escapeHTML(label)}</span>
+    </div>
+  `;
+}
+
+function renderError(message) {
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="alert alert-error">${escapeHTML(message)}</div>
+      <div class="form-actions normal-flow">
+        <button type="button" class="btn btn-ghost" onclick="renderCurrentPage()">ลองใหม่</button>
+      </div>
+    </div>
+  `;
+}
+
+function showToast(message, type = "info", options = {}) {
+  const duration = options.duration ?? (type === "error" ? 5200 : 2800);
+  elements.toast.textContent = message;
+  elements.toast.className = `toast toast-${type}`;
+  elements.toast.classList.remove("hidden");
+
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    elements.toast.classList.add("hidden");
+  }, duration);
+}
+
+function showPageBusy(label = "กำลังดำเนินการ") {
+  const overlay = document.querySelector("#pageBusyOverlay");
+  if (!overlay) return;
+  overlay.querySelector("strong").textContent = label;
+  overlay.classList.remove("hidden");
+}
+
+function hidePageBusy() {
+  const overlay = document.querySelector("#pageBusyOverlay");
+  if (overlay) overlay.classList.add("hidden");
+}
+
+async function withAction(key, action) {
+  if (appState.activeActions.has(key)) return;
+  appState.activeActions.add(key);
+  try {
+    return await action();
+  } finally {
+    appState.activeActions.delete(key);
+  }
+}
+
+async function withButtonLoading(button, loadingText, action) {
+  if (!button) return action();
+  const oldText = button.textContent;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.textContent = loadingText;
+  try {
+    return await action();
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    button.textContent = oldText;
+  }
+}
+
+function roleLabel(role) {
+  const map = {
+    admin: "ผู้ดูแลระบบ",
+    manager: "ผู้จัดการ",
+    sales: "ฝ่ายขาย",
+  };
+  return map[role] || role || "-";
+}
+
+function statusLabel(status) {
+  const map = {
+    draft: "ร่าง",
+    confirmed: "ยืนยันแล้ว",
+    sent: "ส่งแล้ว",
+    expired: "หมดอายุ",
+    cancelled: "ยกเลิก",
+  };
+  return map[status] || status || "-";
+}
+
+function statusPill(label, style) {
+  const labelMap = {
+    Active: "ใช้งาน",
+    Inactive: "ปิดใช้งาน",
+  };
+  return `<span class="status-badge status-${style}">${labelMap[label] || label}</span>`;
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+  if (!canModify) return "";
+
+  const buttons = [];
+
+  if (quotation.status === "draft") {
+    buttons.push(`<button id="editDraftButton" class="btn btn-ghost">แก้ไขร่าง</button>`);
+    buttons.push(`<button id="confirmQuotationButton" class="btn btn-primary">ยืนยันและออกเลข</button>`);
+    buttons.push(`<button id="cancelQuotationButton" class="btn btn-ghost">ยกเลิกเอกสาร</button>`);
+  }
+
+  if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`<button id="markSentButton" class="btn btn-primary">เปลี่ยนเป็นส่งแล้ว</button>`);
+  }
+
+  if (quotation.status !== "draft") {
+    buttons.push(`<button id="printPreviewButton" class="btn btn-primary">ตัวอย่าง / พิมพ์</button>`);
+    buttons.push(`<button id="duplicateQuotationButton" class="btn btn-ghost">สร้างสำเนา</button>`);
+  }
+
+  return buttons.join("");
+}
+
+function bindQuotationViewActions(quotation) {
+  const backButton = $("#backToListButton");
+  const editDraftButton = $("#editDraftButton");
+  const confirmButton = $("#confirmQuotationButton");
+  const markSentButton = $("#markSentButton");
+  const printPreviewButton = $("#printPreviewButton");
+  const duplicateButton = $("#duplicateQuotationButton");
+  const cancelButton = $("#cancelQuotationButton");
+
+  if (backButton) backButton.addEventListener("click", () => (location.hash = "#quotations"));
+  if (editDraftButton) editDraftButton.addEventListener("click", () => (location.hash = `#quotation-edit/${quotation.id}`));
+  if (printPreviewButton) printPreviewButton.addEventListener("click", () => (location.hash = `#quotation-print/${quotation.id}`));
+
+  if (confirmButton) confirmButton.addEventListener("click", async () => withButtonLoading(confirmButton, "กำลังยืนยัน...", () => confirmQuotation(quotation.id)));
+  if (markSentButton) markSentButton.addEventListener("click", async () => withButtonLoading(markSentButton, "กำลังบันทึก...", () => markQuotationAsSent(quotation.id)));
+  if (duplicateButton) duplicateButton.addEventListener("click", async () => withButtonLoading(duplicateButton, "กำลังสร้างสำเนา...", () => duplicateQuotation(quotation.id)));
+  if (cancelButton) cancelButton.addEventListener("click", async () => withButtonLoading(cancelButton, "กำลังยกเลิก...", () => cancelQuotationDraft(quotation.id)));
+}
+
+async function confirmQuotation(quotationId) {
+  const ok = window.confirm("ยืนยันและออกเลขใบเสนอราคาใช่ไหม? หลังยืนยันแล้วจะแก้ไขเอกสารเดิมไม่ได้");
+  if (!ok) return;
+
+  await withAction(`confirm-${quotationId}`, async () => {
+    showToast("กำลังสร้างเลขใบเสนอราคา...", "info");
+    const { data, error } = await supabaseClient.rpc("confirm_quotation", { p_quotation_id: quotationId });
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    showToast(`ยืนยันสำเร็จ ${result?.quotation_no || ""}`, "success");
+    await renderQuotationViewPage(quotationId);
+  }).catch((error) => {
+    console.error(error);
+    showToast(error.message || "ยืนยันเอกสารไม่สำเร็จ", "error");
+  });
+}
+
+async function markQuotationAsSent(quotationId) {
+  const ok = window.confirm("เปลี่ยนสถานะเป็นส่งแล้วใช่ไหม?");
+  if (!ok) return;
+
+  await withAction(`sent-${quotationId}`, async () => {
+    showToast("กำลังเปลี่ยนสถานะ...", "info");
+    const { error } = await supabaseClient.rpc("change_quotation_status", {
+      p_quotation_id: quotationId,
+      p_new_status: "sent",
+    });
+    if (error) throw error;
+    showToast("เปลี่ยนสถานะสำเร็จ", "success");
+    await renderQuotationViewPage(quotationId);
+  }).catch((error) => {
+    console.error(error);
+    showToast(error.message || "เปลี่ยนสถานะไม่สำเร็จ", "error");
+  });
+}
+
+async function duplicateQuotation(quotationId) {
+  const ok = window.confirm("สร้างสำเนาเป็นเอกสารร่างใหม่ใช่ไหม?");
+  if (!ok) return;
+
+  await withAction(`duplicate-${quotationId}`, async () => {
+    showToast("กำลังสร้างสำเนา...", "info");
+    const { data, error } = await supabaseClient.rpc("duplicate_quotation", { p_quotation_id: quotationId });
+    if (error) throw error;
+    const newId = Array.isArray(data) ? data[0] : data;
+    showToast("สร้างสำเนาสำเร็จ", "success");
+    location.hash = `#quotation-view/${newId}`;
+  }).catch((error) => {
+    console.error(error);
+    showToast(error.message || "สร้างสำเนาไม่สำเร็จ", "error");
+  });
+}
+
+async function cancelQuotationDraft(quotationId) {
+  const ok = window.confirm("ยกเลิกเอกสารร่างนี้ใช่ไหม?");
+  if (!ok) return;
+
+  await withAction(`cancel-${quotationId}`, async () => {
+    showToast("กำลังยกเลิกเอกสาร...", "info");
+    const { error } = await supabaseClient.rpc("cancel_quotation", { p_quotation_id: quotationId });
+    if (error) throw error;
+    showToast("ยกเลิกเอกสารสำเร็จ", "success");
+    await renderQuotationViewPage(quotationId);
+  }).catch((error) => {
+    console.error(error);
+    showToast(error.message || "ยกเลิกเอกสารไม่สำเร็จ", "error");
+  });
+}
+
+async function renderCompanyPage() {
+  if (appState.profile.role !== "admin") {
+    renderError("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+    return;
+  }
+
+  setPageHeader("ข้อมูลบริษัท");
+  renderLoading();
+
+  const { data, error } = await supabaseClient
+    .from("company_profile")
+    .select("*")
+    .eq("is_default", true)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    renderError("ยังไม่มีข้อมูลบริษัทเริ่มต้น");
+    return;
+  }
+
+  elements.pageContent.innerHTML = `
+    <form id="companyProfileForm" class="card form-card">
+      <div class="card-header">
+        <div><h3>ข้อมูลบริษัท</h3></div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field full">
+          <label>โลโก้บริษัท</label>
+          <div class="logo-upload-card">
+            <div class="logo-preview-box" id="companyLogoPreview">
+              ${data.logo_url ? `<img src="${escapeHTML(data.logo_url)}" alt="โลโก้บริษัท" />` : `<div class="logo-preview-placeholder">FI</div>`}
+            </div>
+            <div>
+              <div class="file-input-row">
+                <input id="companyLogoFile" type="file" accept="image/png,image/jpeg" />
+                <label class="checkbox-row" style="min-height:auto;">
+                  <input id="removeCompanyLogo" type="checkbox" />
+                  <span>ลบโลโก้ปัจจุบัน</span>
+                </label>
+              </div>
+              <input id="companyLogoCurrentUrl" type="hidden" value="${escapeHTML(data.logo_url || "")}" />
+            </div>
+          </div>
+        </div>
+
+        <div class="field full"><label for="companyName">ชื่อบริษัท *</label><input id="companyName" type="text" value="${escapeHTML(data.company_name || "")}" required /></div>
+        <div class="field"><label for="companyTaxId">เลขประจำตัวผู้เสียภาษี</label><input id="companyTaxId" type="text" value="${escapeHTML(data.tax_id || "")}" /></div>
+        <div class="field"><label for="companyBranchName">สาขา</label><input id="companyBranchName" type="text" value="${escapeHTML(data.branch_name || "")}" /></div>
+        <div class="field full"><label for="companyAddress">ที่อยู่</label><textarea id="companyAddress" rows="3">${escapeHTML(data.address || "")}</textarea></div>
+        <div class="field"><label for="companyPhone">เบอร์โทร</label><input id="companyPhone" type="text" value="${escapeHTML(data.phone || "")}" /></div>
+        <div class="field"><label for="companyEmail">อีเมล</label><input id="companyEmail" type="email" value="${escapeHTML(data.email || "")}" /></div>
+        <div class="field"><label for="companyBankName">ธนาคาร</label><input id="companyBankName" type="text" value="${escapeHTML(data.bank_name || "")}" /></div>
+        <div class="field"><label for="companyBankAccountNo">เลขบัญชี</label><input id="companyBankAccountNo" type="text" value="${escapeHTML(data.bank_account_no || "")}" /></div>
+        <div class="field full"><label for="companyBankAccountName">ชื่อบัญชี</label><input id="companyBankAccountName" type="text" value="${escapeHTML(data.bank_account_name || "")}" /></div>
+        <div class="field full"><label for="companyPaymentNote">ข้อความแจ้งชำระเงิน</label><textarea id="companyPaymentNote" rows="2">${escapeHTML(data.payment_note || "")}</textarea></div>
+        <div class="field full"><label for="companyDefaultNote">หมายเหตุเริ่มต้น</label><textarea id="companyDefaultNote" rows="5">${escapeHTML(data.default_note || "")}</textarea></div>
+        <div class="field full"><label for="companyDefaultPaymentTerms">เงื่อนไขการชำระเงินเริ่มต้น</label><textarea id="companyDefaultPaymentTerms" rows="5">${escapeHTML(data.default_payment_terms || "")}</textarea></div>
+      </div>
+
+      <div class="form-actions normal-flow">
+        <button type="button" id="resetCompanyFormButton" class="btn btn-ghost">โหลดใหม่</button>
+        <button type="submit" id="saveCompanyButton" class="btn btn-primary">บันทึกข้อมูลบริษัท</button>
+      </div>
+    </form>
+  `;
+
+  const logoFile = $("#companyLogoFile");
+  if (logoFile) {
+    logoFile.addEventListener("change", () => previewCompanyLogoFile(logoFile.files?.[0]));
+  }
+
+  $("#resetCompanyFormButton").addEventListener("click", () => renderCompanyPage());
+  $("#companyProfileForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await saveCompanyProfile(data.id);
+  });
+}
+
+function previewCompanyLogoFile(file) {
+  if (!file) return;
+  const preview = $("#companyLogoPreview");
+  if (!preview) return;
+  const url = URL.createObjectURL(file);
+  preview.innerHTML = `<img src="${url}" alt="ตัวอย่างโลโก้" />`;
+}
+
+async function saveCompanyProfile(companyId) {
+  const saveButton = $("#saveCompanyButton");
+
+  await withButtonLoading(saveButton, "กำลังบันทึก...", async () => {
+    try {
+      const companyName = $("#companyName").value.trim();
+      if (!companyName) throw new Error("กรุณากรอกชื่อบริษัท");
+
+      let logoUrl = $("#companyLogoCurrentUrl").value.trim();
+      const removeLogo = $("#removeCompanyLogo")?.checked;
+      const logoFile = $("#companyLogoFile")?.files?.[0];
+
+      if (removeLogo) {
+        logoUrl = "";
+      } else if (logoFile) {
+        showToast("กำลังอัปโหลดโลโก้...", "info");
+        logoUrl = await uploadCompanyLogo(companyId, logoFile);
+      }
+
+      const payload = {
+        company_name: companyName,
+        tax_id: $("#companyTaxId").value.trim(),
+        branch_name: $("#companyBranchName").value.trim(),
+        address: $("#companyAddress").value.trim(),
+        phone: $("#companyPhone").value.trim(),
+        email: $("#companyEmail").value.trim(),
+        logo_url: logoUrl,
+        bank_name: $("#companyBankName").value.trim(),
+        bank_account_name: $("#companyBankAccountName").value.trim(),
+        bank_account_no: $("#companyBankAccountNo").value.trim(),
+        payment_note: $("#companyPaymentNote").value.trim(),
+        default_note: $("#companyDefaultNote").value.trim(),
+        default_payment_terms: $("#companyDefaultPaymentTerms").value.trim(),
+      };
+
+      const { error } = await supabaseClient.from("company_profile").update(payload).eq("id", companyId);
+      if (error) throw error;
+
+      showToast("บันทึกข้อมูลบริษัทสำเร็จ", "success");
+      await renderCompanyPage();
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "บันทึกข้อมูลบริษัทไม่สำเร็จ", "error");
+    }
+  });
+}
+
+async function uploadCompanyLogo(companyId, file) {
+  const allowedTypes = ["image/png", "image/jpeg"];
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error("รองรับเฉพาะไฟล์ JPG หรือ PNG");
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("ขนาดไฟล์โลโก้ต้องไม่เกิน 5 MB");
+  }
+
+  const ext = file.type === "image/png" ? "png" : "jpg";
+  const path = `company-logos/${companyId}/logo-${Date.now()}.${ext}`;
+
+  const { error } = await supabaseClient.storage
+    .from("company-assets")
+    .upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.type,
+    });
+
+  if (error) throw error;
+
+  const { data } = supabaseClient.storage.from("company-assets").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+function renderQuotationList(rows) {
+  const canCreate = appState.profile.role !== "manager";
+  setPageHeader(appState.profile.role === "sales" ? "ใบเสนอราคาของฉัน" : "รายการใบเสนอราคา");
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><h3>รายการใบเสนอราคา</h3></div>
+        <div class="table-actions">
+          <button id="exportQuotationsCsvButton" class="btn btn-ghost">ส่งออก Excel/CSV</button>
+          ${canCreate ? `<button id="newQuotationButton" class="btn btn-primary">+ สร้าง</button>` : ``}
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <input id="quotationSearch" type="search" placeholder="ค้นหาเลขเอกสาร / ลูกค้า / ฝ่ายขาย" />
+        <select id="quotationStatusFilter">
+          <option value="">ทุกสถานะ</option>
+          <option value="draft">ร่าง</option>
+          <option value="confirmed">ยืนยันแล้ว</option>
+          <option value="sent">ส่งแล้ว</option>
+          <option value="expired">หมดอายุ</option>
+          <option value="cancelled">ยกเลิก</option>
+        </select>
+        <select id="quotationBillingFilter">
+          <option value="">ทุกประเภท</option>
+          <option value="monthly">รายเดือน</option>
+          <option value="yearly">รายปี</option>
+        </select>
+      </div>
+
+      <div id="quotationTable"></div>
+    </div>
+  `;
+
+  const searchInput = $("#quotationSearch");
+  const statusFilter = $("#quotationStatusFilter");
+  const billingFilter = $("#quotationBillingFilter");
+  const tableTarget = $("#quotationTable");
+  const newButton = $("#newQuotationButton");
+  const exportButton = $("#exportQuotationsCsvButton");
+  let currentFilteredRows = rows;
+
+  if (newButton) newButton.addEventListener("click", () => (location.hash = "#quotation-new"));
+  if (exportButton) exportButton.addEventListener("click", () => exportQuotationsCsv(currentFilteredRows));
+
+  function updateTable() {
+    const keyword = searchInput.value.trim().toLowerCase();
+    const status = statusFilter.value;
+    const billingType = billingFilter.value;
+
+    currentFilteredRows = rows.filter((row) => {
+      const text = `${row.quotation_no || ""} ${row.customer_name || ""} ${row.owner_name || ""}`.toLowerCase();
+      return (!keyword || text.includes(keyword)) && (!status || row.effective_status === status) && (!billingType || row.billing_type === billingType);
+    });
+
+    tableTarget.innerHTML = renderQuotationTable(currentFilteredRows);
+    bindQuotationTableActions();
+  }
+
+  [searchInput, statusFilter, billingFilter].forEach((input) => input.addEventListener(input.tagName === "INPUT" ? "input" : "change", updateTable));
+  updateTable();
+}
+
+function renderProductsTableV10(rows, canEdit) {
+  if (!rows.length) return `<div class="empty-state">ยังไม่มีสินค้า/บริการ</div>`;
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>รหัส</th><th>ชื่อสินค้า/บริการ</th><th>รายละเอียด</th><th>หน่วย</th><th>สถานะ</th>${canEdit ? "<th>การกระทำ</th>" : ""}</tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHTML(row.code || "-")}</strong></td>
+              <td>${escapeHTML(row.name || "-")}</td>
+              <td>${escapeHTML(row.description || "-")}</td>
+              <td>${escapeHTML(row.default_unit || "-")}</td>
+              <td>${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}</td>
+              ${canEdit ? `<td><button class="btn btn-ghost" data-product-edit="${row.id}">แก้ไข</button></td>` : ""}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
