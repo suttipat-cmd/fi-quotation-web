@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FI Quotation</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="./style.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div id="app">
+    <section id="loginPage" class="auth-page">
+      <div class="auth-card">
+        <div class="brand">
+          <div class="brand-mark">FI</div>
+          <div>
+            <h1>ระบบจัดการใบเสนอราคา</h1>
+            <p>Forward Insight Quotation System</p>
+          </div>
+        </div>
+
+        <form id="loginForm" class="form-stack">
+          <div class="field">
+            <label for="loginEmail">อีเมล</label>
+            <input id="loginEmail" type="email" placeholder="name@company.com" autocomplete="email" required />
+          </div>
+
+          <div class="field">
+            <label for="loginPassword">รหัสผ่าน</label>
+            <input id="loginPassword" type="password" placeholder="กรอกรหัสผ่าน" autocomplete="current-password" required />
+          </div>
+
+          <button id="loginButton" type="submit" class="btn btn-primary btn-full">
+            เข้าสู่ระบบ
+          </button>
+
+          <p class="helper-text">
+            ใช้บัญชีที่ได้รับจากผู้ดูแลระบบเท่านั้น
+          </p>
+
+          <div id="loginError" class="alert alert-error hidden"></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="appShell" class="app-shell hidden">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-mark small">FI</div>
+          <div>
+            <strong>Quotation</strong>
+            <span>Web App</span>
+          </div>
+        </div>
+
+        <nav id="sidebarMenu" class="sidebar-menu"></nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h2 id="pageTitle">Dashboard</h2>
+            <p id="pageSubtitle">ภาพรวมระบบใบเสนอราคา</p>
+          </div>
+
+          <div class="user-panel">
+            <div class="user-meta">
+              <strong id="userName">-</strong>
+              <span id="userRole">-</span>
+            </div>
+            <button id="logoutButton" class="btn btn-ghost">ออกจากระบบ</button>
+          </div>
+        </header>
+
+        <section id="setupWarning" class="alert alert-warning hidden"></section>
+
+        <section id="pageContent" class="page-content">
+          <div class="loading-card">กำลังโหลดข้อมูล...</div>
+        </section>
+      </main>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="./script.js"></script>
+</body>
+</html>
