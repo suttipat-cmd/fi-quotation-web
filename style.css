@@ -1017,3 +1017,83 @@ textarea {
     break-inside: avoid;
   }
 }
+
+/* =======================================================
+   v0.5 Edit Draft + Price Lookup
+   ======================================================= */
+
+.lookup-panel {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.lookup-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.lookup-panel-header strong {
+  display: block;
+}
+
+.lookup-panel-header span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lookup-list {
+  display: grid;
+}
+
+.lookup-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+
+.lookup-item:last-child {
+  border-bottom: 0;
+}
+
+.lookup-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.lookup-price {
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.form-status-note {
+  border: 1px dashed #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+@media (max-width: 720px) {
+  .lookup-item {
+    grid-template-columns: 1fr;
+  }
+
+  .lookup-item .btn {
+    width: 100%;
+  }
+}
