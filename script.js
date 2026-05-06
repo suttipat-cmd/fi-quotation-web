@@ -7262,3 +7262,193 @@ function applyFavicon(url) {
   }
   appleLink.href = url;
 }
+
+
+// =======================================================
+// v1.4.1 Hotfix: prevent file picker from triggering resume re-render
+// =======================================================
+
+Object.assign(appState, {
+  filePickerActive: false,
+  suppressResumeUntil: 0,
+});
+
+function markFilePickerInteraction() {
+  appState.filePickerActive = true;
+  appState.suppressResumeUntil = Date.now() + 120000;
+}
+
+function releaseFilePickerInteraction(delay = 1400) {
+  appState.filePickerActive = false;
+  appState.suppressResumeUntil = Date.now() + delay;
+}
+
+function isFileInputElement(target) {
+  return !!target?.closest?.("input[type='file']");
+}
+
+function shouldSkipResumeRecoveryForFilePicker() {
+  const activeElement = document.activeElement;
+  const isFileFocused = activeElement?.matches?.("input[type='file']");
+  return Boolean(appState.filePickerActive || Date.now() < (appState.suppressResumeUntil || 0) || isFileFocused);
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v141Bound) {
+    elements.loginForm.dataset.v141Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v141Bound) {
+    elements.logoutButton.dataset.v141Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV141) {
+    window.__fiHashBoundV141 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      await renderCurrentPage({ force: true, reason: "hashchange" });
+    });
+  }
+
+  if (!window.__fiDelegatedClickV141) {
+    window.__fiDelegatedClickV141 = true;
+
+    document.addEventListener("pointerdown", (event) => {
+      if (isFileInputElement(event.target)) markFilePickerInteraction();
+    }, true);
+
+    document.addEventListener("click", (event) => {
+      if (isFileInputElement(event.target)) markFilePickerInteraction();
+      handleDelegatedClick(event);
+    }, true);
+
+    document.addEventListener("change", (event) => {
+      if (isFileInputElement(event.target)) {
+        releaseFilePickerInteraction(2200);
+        return;
+      }
+      handleDelegatedChange(event);
+    }, true);
+  }
+
+  if (!window.__fiLifecycleBoundV141) {
+    window.__fiLifecycleBoundV141 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+
+  const mobileMenuButton = $("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v141Bound) {
+    mobileMenuButton.dataset.v141Bound = "true";
+    mobileMenuButton.addEventListener("click", () => {
+      elements.sidebarMenu?.classList.toggle("is-open");
+    });
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient) return;
+
+  if (shouldSkipResumeRecoveryForFilePicker()) {
+    releaseFilePickerInteraction(1600);
+    return;
+  }
+
+  if (appState.resumeInProgress) return;
+  appState.resumeInProgress = true;
+
+  try {
+    hidePageBusy();
+    appState.activeActions?.clear?.();
+
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (!data.session?.user) {
+      appState.user = null;
+      appState.profile = null;
+      showLoginPage();
+      showToast("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = data.session.user;
+    await loadProfile();
+    showAppShell();
+    await loadAndApplyAppBranding();
+
+    await renderCurrentPage({ force: true, reason });
+
+    window.setTimeout(async () => {
+      try {
+        if (shouldSkipResumeRecoveryForFilePicker()) return;
+        if (!elements.pageContent || elements.pageContent.textContent.trim() === "") {
+          await renderCurrentPage({ force: true, reason: `${reason}-empty-retry` });
+        }
+      } catch (retryError) {
+        console.error("resume retry", retryError);
+      }
+    }, 450);
+  } catch (error) {
+    console.error("recoverAppAfterResume", reason, error);
+    showToast("โหลดข้อมูลใหม่ไม่สำเร็จ กรุณาลองกดเมนูอีกครั้ง", "warning", { duration: 4200 });
+    try {
+      await renderCurrentPage({ force: true, reason: `${reason}-fallback` });
+    } catch (renderError) {
+      console.error(renderError);
+      renderErrorStateWithRetry("ไม่สามารถโหลดข้อมูลได้", "ลองโหลดหน้านี้อีกครั้ง");
+    }
+  } finally {
+    appState.resumeInProgress = false;
+  }
+}
+
+async function uploadAppBrandingFile(inputId, settingKey, fileNamePrefix, label) {
+  const input = $(`#${inputId}`);
+  const file = input?.files?.[0];
+
+  if (!file) {
+    showToast(`กรุณาเลือกไฟล์${label}`, "warning");
+    return;
+  }
+
+  try {
+    validateBrandingFile(file);
+  } catch (error) {
+    showToast(error.message || "ไฟล์ไม่ถูกต้อง", "error", { duration: 5200 });
+    return;
+  }
+
+  await withAction(`upload-${settingKey}`, async () => {
+    showPageBusy(`กำลังอัปโหลด${label}...`);
+
+    const ext = getFileExtension(file.name, file.type);
+    const path = `branding/${fileNamePrefix}.${ext}`;
+
+    const { error: uploadError } = await supabaseClient.storage
+      .from("app-assets")
+      .upload(path, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type,
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabaseClient.storage.from("app-assets").getPublicUrl(path);
+    const publicUrl = `${data.publicUrl}?v=${Date.now()}`;
+
+    await saveAppSetting(settingKey, publicUrl);
+    appState.appBranding = await loadAppBranding();
+    applyAppBranding(appState.appBranding);
+    showToast(`บันทึก${label}สำเร็จ`, "success");
+    await renderSettingsPage();
+  });
+}
