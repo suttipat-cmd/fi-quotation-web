@@ -233,6 +233,9 @@ async function renderCurrentPage() {
       await renderQuotationsPage();
     } else if (page === "quotation-new") {
       await renderQuotationCreatePage();
+    } else if (page.startsWith("quotation-view/")) {
+      const quotationId = page.replace("quotation-view/", "");
+      await renderQuotationViewPage(quotationId);
     } else if (page === "customers") {
       await renderCustomersPage();
     } else if (page === "products") {
@@ -250,6 +253,10 @@ async function renderCurrentPage() {
     renderError(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
   }
 }
+
+// =======================================================
+// Dashboard
+// =======================================================
 
 async function renderDashboardPage() {
   setPageHeader("Dashboard", "ภาพรวมระบบใบเสนอราคา");
@@ -293,6 +300,10 @@ async function renderDashboardPage() {
     </div>
   `;
 }
+
+// =======================================================
+// Quotation List
+// =======================================================
 
 async function renderQuotationsPage() {
   const title =
@@ -370,6 +381,7 @@ function renderQuotationList(rows) {
     });
 
     tableTarget.innerHTML = renderQuotationTable(filtered);
+    bindQuotationTableActions();
   }
 
   searchInput.addEventListener("input", updateTable);
@@ -377,6 +389,66 @@ function renderQuotationList(rows) {
 
   updateTable();
 }
+
+function renderQuotationTable(rows) {
+  if (!rows.length) {
+    return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
+  }
+
+  const showSales = appState.profile.role !== "sales";
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>เลขที่</th>
+            <th>ลูกค้า</th>
+            <th>ประเภท</th>
+            ${showSales ? "<th>Sales</th>" : ""}
+            <th>วันที่</th>
+            <th>หมดอายุ</th>
+            <th>ยอดรวม</th>
+            <th>สถานะ</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
+              <td>${escapeHTML(row.customer_name || "-")}</td>
+              <td>${billingTypeLabel(row.billing_type)}</td>
+              ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
+              <td>${formatDate(row.quote_date)}</td>
+              <td>${formatDate(row.valid_until)}</td>
+              <td>${formatTHB(row.grand_total_display)}</td>
+              <td>${statusBadge(row.effective_status)}</td>
+              <td>
+                <button class="btn btn-ghost" data-action="view" data-id="${row.id}">
+                  ดูรายละเอียด
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function bindQuotationTableActions() {
+  document.querySelectorAll("[data-action='view']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.id;
+      location.hash = `#quotation-view/${id}`;
+    });
+  });
+}
+
+// =======================================================
+// Create Draft
+// =======================================================
 
 async function renderQuotationCreatePage() {
   if (appState.profile.role === "manager") {
@@ -818,7 +890,7 @@ async function handleSaveQuotationDraft(event, products) {
     await updateQuotationTotalsSnapshot(quotation.id);
 
     showToast("บันทึกร่างสำเร็จ");
-    location.hash = "#quotations";
+    location.hash = `#quotation-view/${quotation.id}`;
   } catch (error) {
     console.error(error);
     showToast(error.message || "ไม่สามารถบันทึกร่างได้");
@@ -856,6 +928,393 @@ async function updateQuotationTotalsSnapshot(quotationId) {
 
   if (updateError) throw updateError;
 }
+
+// =======================================================
+// Quotation View / Actions
+// =======================================================
+
+async function renderQuotationViewPage(quotationId) {
+  if (!quotationId) {
+    renderError("ไม่พบรหัสใบเสนอราคา");
+    return;
+  }
+
+  setPageHeader("รายละเอียดใบเสนอราคา", "ตรวจสอบข้อมูลก่อน Confirm หรือส่งออกเอกสาร");
+  renderLoading();
+
+  const [quotationResult, itemsResult] = await Promise.all([
+    supabaseClient
+      .from("quotations")
+      .select("*")
+      .eq("id", quotationId)
+      .single(),
+
+    supabaseClient
+      .from("quotation_items")
+      .select("*")
+      .eq("quotation_id", quotationId)
+      .order("section_type", { ascending: false })
+      .order("sort_order", { ascending: true }),
+  ]);
+
+  if (quotationResult.error) throw quotationResult.error;
+  if (itemsResult.error) throw itemsResult.error;
+
+  const quotation = quotationResult.data;
+  const items = itemsResult.data || [];
+
+  const ownerResult = await supabaseClient
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", quotation.owner_id)
+    .maybeSingle();
+
+  const ownerName =
+    quotation.sales_name_snapshot ||
+    ownerResult.data?.full_name ||
+    ownerResult.data?.email ||
+    "-";
+
+  const recurringItems = items.filter((item) => item.section_type === "recurring");
+  const oneTimeItems = items.filter((item) => item.section_type === "one_time");
+  const effectiveStatus = getEffectiveStatusFromQuotation(quotation);
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>${escapeHTML(quotation.quotation_no || "ยังไม่ออกเลขเอกสาร")}</h3>
+          <p>${escapeHTML(quotation.customer_name || "-")} · ${billingTypeLabel(quotation.billing_type)}</p>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+          <button id="backToListButton" class="btn btn-ghost">กลับไปหน้ารายการ</button>
+          ${renderQuotationActionButtons(quotation, effectiveStatus)}
+        </div>
+      </div>
+
+      <div class="alert alert-warning ${quotation.status === "draft" ? "" : "hidden"}">
+        เอกสารนี้ยังเป็น Draft และยังไม่มีเลขใบเสนอราคา กด Confirm เพื่อสร้างเลขและล็อกเอกสาร
+      </div>
+
+      <div class="kv-list">
+        <div class="kv-row">
+          <span>สถานะ</span>
+          <strong>${statusBadge(effectiveStatus)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ลูกค้า</span>
+          <strong>${escapeHTML(quotation.customer_name || "-")}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ที่อยู่ลูกค้า</span>
+          <strong>${escapeHTML(quotation.customer_address || "-")}</strong>
+        </div>
+        <div class="kv-row">
+          <span>วันที่ออกเอกสาร</span>
+          <strong>${formatDate(quotation.quote_date)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>วันหมดอายุ</span>
+          <strong>${formatDate(quotation.valid_until)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ผู้ขาย</span>
+          <strong>${escapeHTML(ownerName)}</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>${quotation.billing_type === "yearly" ? "ค่าบริการชำระรายปี" : "ค่าบริการชำระรายเดือน"}</h3>
+          <p>จำนวนรถใช้เป็นเงื่อนไขราคา ไม่ได้นำไปคูณกับราคา</p>
+        </div>
+      </div>
+      ${renderQuotationItemsTable(recurringItems)}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>ค่าบริการชำระครั้งเดียวจบ</h3>
+          <p>ค่าแรกเข้า / Setup / Training</p>
+        </div>
+      </div>
+      ${renderQuotationItemsTable(oneTimeItems)}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>สรุปยอด</h3>
+          <p>${escapeHTML(quotation.amount_text_th || "-")}</p>
+        </div>
+      </div>
+
+      <div class="kv-list">
+        <div class="kv-row">
+          <span>มูลค่าก่อนภาษี</span>
+          <strong>${formatTHB(quotation.subtotal_amount)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ส่วนลด</span>
+          <strong>${formatTHB(quotation.discount_amount)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ฐานคำนวณภาษี</span>
+          <strong>${formatTHB(quotation.taxable_amount)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>VAT ${Number(quotation.vat_rate || 0)}%</span>
+          <strong>${formatTHB(quotation.vat_amount)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>หัก ณ ที่จ่าย ${Number(quotation.wht_rate || 0)}%</span>
+          <strong>-${formatTHB(quotation.wht_amount)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ส่วนต่างปัดเศษ</span>
+          <strong>${formatTHB(quotation.rounding_adjustment)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ยอดรวมสุทธิ</span>
+          <strong style="font-size:22px;">${formatTHB(quotation.grand_total_display)}</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>หมายเหตุและเงื่อนไข</h3>
+          <p>ข้อความที่จะแสดงในเอกสาร</p>
+        </div>
+      </div>
+
+      <div class="kv-list">
+        <div class="kv-row">
+          <span>หมายเหตุ</span>
+          <strong style="white-space:pre-wrap;">${escapeHTML(quotation.note || "-")}</strong>
+        </div>
+        <div class="kv-row">
+          <span>เงื่อนไขการชำระเงิน</span>
+          <strong style="white-space:pre-wrap;">${escapeHTML(quotation.payment_terms || "-")}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bindQuotationViewActions(quotation);
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+
+  if (!canModify) {
+    return "";
+  }
+
+  const buttons = [];
+
+  if (quotation.status === "draft") {
+    buttons.push(`
+      <button id="confirmQuotationButton" class="btn btn-primary">
+        Confirm และสร้างเลข
+      </button>
+    `);
+  }
+
+  if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`
+      <button id="markSentButton" class="btn btn-primary">
+        เปลี่ยนเป็นส่งแล้ว
+      </button>
+    `);
+  }
+
+  if (quotation.status !== "draft") {
+    buttons.push(`
+      <button id="duplicateQuotationButton" class="btn btn-ghost">
+        สร้างสำเนา
+      </button>
+    `);
+  }
+
+  return buttons.join("");
+}
+
+function bindQuotationViewActions(quotation) {
+  const backButton = $("#backToListButton");
+  const confirmButton = $("#confirmQuotationButton");
+  const markSentButton = $("#markSentButton");
+  const duplicateButton = $("#duplicateQuotationButton");
+
+  if (backButton) {
+    backButton.addEventListener("click", () => {
+      location.hash = "#quotations";
+    });
+  }
+
+  if (confirmButton) {
+    confirmButton.addEventListener("click", async () => {
+      await confirmQuotation(quotation.id);
+    });
+  }
+
+  if (markSentButton) {
+    markSentButton.addEventListener("click", async () => {
+      await markQuotationAsSent(quotation.id);
+    });
+  }
+
+  if (duplicateButton) {
+    duplicateButton.addEventListener("click", async () => {
+      await duplicateQuotation(quotation.id);
+    });
+  }
+}
+
+async function confirmQuotation(quotationId) {
+  const ok = window.confirm(
+    "ยืนยันใบเสนอราคา?\n\nระบบจะสร้างเลขใบเสนอราคาและล็อกเอกสารนี้ หลังจาก Confirm แล้วจะแก้ไขไม่ได้ หากต้องการแก้ไขต้องสร้างสำเนาเป็นใบใหม่"
+  );
+
+  if (!ok) return;
+
+  try {
+    showToast("กำลัง Confirm ใบเสนอราคา...");
+
+    const { data, error } = await supabaseClient.rpc("confirm_quotation", {
+      p_quotation_id: quotationId,
+    });
+
+    if (error) throw error;
+
+    const result = Array.isArray(data) ? data[0] : data;
+    const quotationNo = result?.quotation_no || "สร้างเลขสำเร็จ";
+
+    showToast(`Confirm สำเร็จ: ${quotationNo}`);
+    await renderQuotationViewPage(quotationId);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถ Confirm ใบเสนอราคาได้");
+  }
+}
+
+async function markQuotationAsSent(quotationId) {
+  const ok = window.confirm("เปลี่ยนสถานะใบเสนอราคานี้เป็น “ส่งแล้ว” ใช่ไหม?");
+  if (!ok) return;
+
+  try {
+    showToast("กำลังเปลี่ยนสถานะ...");
+
+    const { error } = await supabaseClient.rpc("change_quotation_status", {
+      p_quotation_id: quotationId,
+      p_new_status: "sent",
+    });
+
+    if (error) throw error;
+
+    showToast("เปลี่ยนสถานะเป็นส่งแล้ว");
+    await renderQuotationViewPage(quotationId);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถเปลี่ยนสถานะได้");
+  }
+}
+
+async function duplicateQuotation(quotationId) {
+  const ok = window.confirm("สร้างสำเนาใบเสนอราคานี้เป็น Draft ใหม่ใช่ไหม?");
+  if (!ok) return;
+
+  try {
+    showToast("กำลังสร้างสำเนา...");
+
+    const { data, error } = await supabaseClient.rpc("duplicate_quotation", {
+      p_quotation_id: quotationId,
+    });
+
+    if (error) throw error;
+
+    const newId = Array.isArray(data) ? data[0] : data;
+
+    showToast("สร้างสำเนาสำเร็จ");
+    location.hash = `#quotation-view/${newId}`;
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถสร้างสำเนาได้");
+  }
+}
+
+function renderQuotationItemsTable(items) {
+  if (!items.length) {
+    return `<div class="empty-state">ไม่มีรายการในส่วนนี้</div>`;
+  }
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ลำดับ</th>
+            <th>รายละเอียด</th>
+            <th>จำนวน</th>
+            <th>หน่วย</th>
+            <th>ราคา</th>
+            <th>มูลค่าก่อนภาษี</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item, index) => {
+            const lineSubtotal =
+              item.line_subtotal ??
+              (item.section_type === "recurring"
+                ? item.unit_price
+                : Number(item.quantity || 0) * Number(item.unit_price || 0));
+
+            return `
+              <tr>
+                <td>${index + 1}</td>
+                <td>
+                  <strong>${escapeHTML(item.product_name_snapshot || "-")}</strong>
+                  ${
+                    item.description
+                      ? `<div class="inline-note">${escapeHTML(item.description)}</div>`
+                      : ""
+                  }
+                </td>
+                <td>${number(item.quantity)}</td>
+                <td>${escapeHTML(item.unit || "-")}</td>
+                <td>${formatTHB(item.unit_price)}</td>
+                <td>${formatTHB(lineSubtotal)}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function getEffectiveStatusFromQuotation(quotation) {
+  if (
+    ["confirmed", "sent"].includes(quotation.status) &&
+    quotation.valid_until &&
+    new Date(quotation.valid_until) < startOfToday()
+  ) {
+    return "expired";
+  }
+
+  return quotation.status;
+}
+
+// =======================================================
+// Customers / Products / Company / Settings
+// =======================================================
 
 async function renderCustomersPage() {
   setPageHeader("ลูกค้า", "รายชื่อลูกค้าจากประวัติใบเสนอราคา");
@@ -965,6 +1424,10 @@ async function renderSettingsPage() {
   `;
 }
 
+// =======================================================
+// Render Helpers
+// =======================================================
+
 function renderDashboardMetrics(metrics) {
   return `
     <div class="metric-grid">
@@ -1021,47 +1484,6 @@ function renderSalesSummaryTable(rows) {
               <td>${number(row.sent_count)}</td>
               <td>${number(row.expired_count)}</td>
               <td>${formatTHB(row.total_amount_this_month)}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderQuotationTable(rows) {
-  if (!rows.length) {
-    return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
-  }
-
-  const showSales = appState.profile.role !== "sales";
-
-  return `
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>เลขที่</th>
-            <th>ลูกค้า</th>
-            <th>ประเภท</th>
-            ${showSales ? "<th>Sales</th>" : ""}
-            <th>วันที่</th>
-            <th>หมดอายุ</th>
-            <th>ยอดรวม</th>
-            <th>สถานะ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((row) => `
-            <tr>
-              <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
-              <td>${escapeHTML(row.customer_name || "-")}</td>
-              <td>${billingTypeLabel(row.billing_type)}</td>
-              ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
-              <td>${formatDate(row.quote_date)}</td>
-              <td>${formatDate(row.valid_until)}</td>
-              <td>${formatTHB(row.grand_total_display)}</td>
-              <td>${statusBadge(row.effective_status)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -1190,6 +1612,10 @@ function summarizeManagerDashboard(rows) {
     return acc;
   }, emptyDashboardMetrics());
 }
+
+// =======================================================
+// UI Utilities
+// =======================================================
 
 function setPageHeader(title, subtitle) {
   elements.pageTitle.textContent = title;
@@ -1333,4 +1759,10 @@ function addDays(date, days) {
 function toDateInputValue(date) {
   const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return localDate.toISOString().slice(0, 10);
+}
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
 }
