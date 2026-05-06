@@ -11,10 +11,18 @@
 
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div id="app">
-    <section id="loginPage" class="auth-page">
+    <section id="bootPage" class="boot-page">
+      <div class="boot-card">
+        <div class="spinner"></div>
+        <strong>กำลังเปิดระบบ</strong>
+      </div>
+    </section>
+
+    <section id="loginPage" class="auth-page hidden">
       <div class="auth-card">
         <div class="brand">
           <div class="brand-mark">FI</div>
@@ -62,7 +70,7 @@
 
         <div class="header-spacer"></div>
 
-        <div class="company-chip">บริษัท A</div>
+        <div id="headerUserChip" class="company-chip">-</div>
 
         <div class="user-panel app-user-panel">
           <div class="user-meta">

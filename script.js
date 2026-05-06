@@ -4447,3 +4447,572 @@ function renderProductsTableV10(rows, canEdit) {
     </div>
   `;
 }
+
+
+// =======================================================
+// v1.2 Reliability + Date Range Filter + XLSX Export
+// Session recovery, login flash guard, logout confirm
+// =======================================================
+
+appState.lastResumeAt = 0;
+appState.isBootstrapping = false;
+
+async function initApp() {
+  if (!isConfigured) {
+    showLoginPage();
+    showSetupWarningOnLogin();
+    return;
+  }
+
+  appState.isBootstrapping = true;
+  showBootPage();
+  bindEvents();
+
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (data.session?.user) {
+      appState.user = data.session.user;
+      appState.profile = null;
+      await loadProfile();
+      showAppShell();
+      await renderCurrentPage();
+    } else {
+      showLoginPage();
+    }
+  } catch (error) {
+    console.error(error);
+    showLoginPage();
+    showLoginError("ไม่สามารถตรวจสอบ session ได้ กรุณาเข้าสู่ระบบใหม่");
+  } finally {
+    appState.isBootstrapping = false;
+  }
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") return;
+
+    if (session?.user) {
+      appState.user = session.user;
+      if (!appState.profile || appState.profile.id !== session.user.id) {
+        await loadProfile();
+      }
+      showAppShell();
+
+      if (!appState.isBootstrapping) {
+        await renderCurrentPage();
+      }
+    } else {
+      appState.user = null;
+      appState.profile = null;
+      showLoginPage();
+    }
+  });
+}
+
+function bindEvents() {
+  if (elements.loginForm) elements.loginForm.addEventListener("submit", handleLogin);
+  if (elements.logoutButton) elements.logoutButton.addEventListener("click", handleLogout);
+
+  const mobileMenuButton = document.querySelector("#mobileMenuButton");
+  if (mobileMenuButton) {
+    mobileMenuButton.addEventListener("click", () => {
+      document.body.classList.toggle("nav-open");
+    });
+  }
+
+  window.addEventListener("hashchange", async () => {
+    appState.currentPage = getPageFromHash();
+    await renderCurrentPage();
+  });
+
+  window.addEventListener("focus", () => {
+    recoverAppAfterResume("focus");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      recoverAppAfterResume("visible");
+    }
+  });
+
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      recoverAppAfterResume("pageshow");
+    }
+  });
+}
+
+function showBootPage() {
+  const bootPage = document.querySelector("#bootPage");
+  if (bootPage) bootPage.classList.remove("hidden");
+  if (elements.loginPage) elements.loginPage.classList.add("hidden");
+  if (elements.appShell) elements.appShell.classList.add("hidden");
+}
+
+function hideBootPage() {
+  const bootPage = document.querySelector("#bootPage");
+  if (bootPage) bootPage.classList.add("hidden");
+}
+
+function showLoginPage() {
+  hideBootPage();
+  if (elements.loginPage) elements.loginPage.classList.remove("hidden");
+  if (elements.appShell) elements.appShell.classList.add("hidden");
+  document.body.classList.remove("nav-open");
+  hidePageBusy();
+}
+
+function showAppShell() {
+  hideBootPage();
+  if (elements.loginPage) elements.loginPage.classList.add("hidden");
+  if (elements.appShell) elements.appShell.classList.remove("hidden");
+
+  updateHeaderUser();
+  renderMenu();
+
+  if (!location.hash) {
+    location.hash = "#dashboard";
+  } else {
+    appState.currentPage = getPageFromHash();
+  }
+
+  hidePageBusy();
+}
+
+function updateHeaderUser() {
+  if (!appState.profile) return;
+
+  const fullName = appState.profile.full_name || appState.profile.email || "-";
+  const roleText = roleLabel(appState.profile.role);
+
+  if (elements.userName) elements.userName.textContent = fullName;
+  if (elements.userRole) elements.userRole.textContent = roleText;
+
+  const userChip = document.querySelector("#headerUserChip");
+  if (userChip) {
+    userChip.textContent = `${fullName} · ${roleText}`;
+    userChip.title = `${fullName} · ${roleText}`;
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!supabaseClient || document.visibilityState === "hidden") return;
+
+  const now = Date.now();
+  if (now - (appState.lastResumeAt || 0) < 900) return;
+  appState.lastResumeAt = now;
+
+  try {
+    hidePageBusy();
+    document.body.classList.remove("nav-open");
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+
+    if (!data.session?.user) {
+      appState.user = null;
+      appState.profile = null;
+      showLoginPage();
+      return;
+    }
+
+    appState.user = data.session.user;
+
+    if (!appState.profile || appState.profile.id !== data.session.user.id) {
+      await loadProfile();
+    }
+
+    updateHeaderUser();
+
+    const page = getPageFromHash();
+    const isEditingPage =
+      page === "quotation-new" ||
+      page.startsWith("quotation-edit/") ||
+      page === "product-new" ||
+      page.startsWith("product-edit/") ||
+      page === "company";
+
+    if (!elements.appShell.classList.contains("hidden") && !isEditingPage) {
+      appState.currentPage = page;
+      await renderCurrentPage();
+    }
+  } catch (error) {
+    console.error(error);
+    showToast("เชื่อมต่อ session ไม่สำเร็จ กรุณารีเฟรชหรือเข้าสู่ระบบใหม่", "warning", { duration: 5200 });
+  }
+}
+
+async function handleLogout() {
+  if (!supabaseClient) return;
+
+  const confirmed = await showConfirmDialog({
+    title: "ออกจากระบบ?",
+    message: "คุณต้องการออกจากระบบใช่ไหม",
+    confirmText: "ออกจากระบบ",
+    cancelText: "ยกเลิก",
+    danger: true,
+  });
+
+  if (!confirmed) return;
+
+  await withAction("logout", async () => {
+    try {
+      showPageBusy("กำลังออกจากระบบ");
+      await supabaseClient.auth.signOut();
+      hidePageBusy();
+      showToast("ออกจากระบบแล้ว", "success");
+    } catch (error) {
+      hidePageBusy();
+      console.error(error);
+      showToast(error.message || "ออกจากระบบไม่สำเร็จ", "error");
+    }
+  });
+}
+
+function showConfirmDialog({ title, message, confirmText = "ยืนยัน", cancelText = "ยกเลิก", danger = false }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <div class="modal-body">
+          <h3>${escapeHTML(title)}</h3>
+          <p>${escapeHTML(message)}</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-confirm-cancel>${escapeHTML(cancelText)}</button>
+          <button type="button" class="btn ${danger ? "btn-ghost danger-soft" : "btn-primary"}" data-confirm-ok>${escapeHTML(confirmText)}</button>
+        </div>
+      </div>
+    `;
+
+    function cleanup(value) {
+      document.removeEventListener("keydown", onKeyDown);
+      backdrop.remove();
+      resolve(value);
+    }
+
+    function onKeyDown(event) {
+      if (event.key === "Escape") cleanup(false);
+    }
+
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) cleanup(false);
+    });
+
+    backdrop.querySelector("[data-confirm-cancel]").addEventListener("click", () => cleanup(false));
+    backdrop.querySelector("[data-confirm-ok]").addEventListener("click", () => cleanup(true));
+
+    document.addEventListener("keydown", onKeyDown);
+    document.body.appendChild(backdrop);
+    backdrop.querySelector("[data-confirm-ok]").focus();
+  });
+}
+
+function renderQuotationList(rows) {
+  const canCreate = appState.profile.role !== "manager";
+  setPageHeader(appState.profile.role === "sales" ? "ใบเสนอราคาของฉัน" : "รายการใบเสนอราคา");
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><h3>รายการใบเสนอราคา</h3></div>
+        <div class="table-actions">
+          <button id="exportQuotationsXlsxButton" class="btn btn-ghost btn-export-disabled" disabled>
+            Export Excel
+          </button>
+          ${canCreate ? `<button id="newQuotationButton" class="btn btn-primary">+ สร้าง</button>` : ``}
+        </div>
+      </div>
+
+      <div class="filter-card">
+        <div class="filter-grid">
+          <div class="filter-field">
+            <label for="quotationSearch">ค้นหา</label>
+            <input id="quotationSearch" type="search" placeholder="เลขเอกสาร / ลูกค้า / ฝ่ายขาย" />
+          </div>
+
+          <div class="filter-field">
+            <label for="quotationStatusFilter">สถานะ</label>
+            <select id="quotationStatusFilter">
+              <option value="">ทุกสถานะ</option>
+              <option value="draft">ร่าง</option>
+              <option value="confirmed">ยืนยันแล้ว</option>
+              <option value="sent">ส่งแล้ว</option>
+              <option value="expired">หมดอายุ</option>
+              <option value="cancelled">ยกเลิก</option>
+            </select>
+          </div>
+
+          <div class="filter-field">
+            <label for="quotationBillingFilter">ประเภท</label>
+            <select id="quotationBillingFilter">
+              <option value="">ทุกประเภท</option>
+              <option value="monthly">รายเดือน</option>
+              <option value="yearly">รายปี</option>
+            </select>
+          </div>
+
+          <div class="filter-field">
+            <label for="quoteDateFromFilter">วันที่เสนอราคา จาก</label>
+            <input id="quoteDateFromFilter" type="date" />
+          </div>
+
+          <div class="filter-field">
+            <label for="quoteDateToFilter">วันที่เสนอราคา ถึง</label>
+            <input id="quoteDateToFilter" type="date" />
+          </div>
+
+          <div class="filter-field">
+            <label for="validUntilFromFilter">วันหมดอายุ จาก</label>
+            <input id="validUntilFromFilter" type="date" />
+          </div>
+
+          <div class="filter-field">
+            <label for="validUntilToFilter">วันหมดอายุ ถึง</label>
+            <input id="validUntilToFilter" type="date" />
+          </div>
+        </div>
+
+        <div id="quotationFilterHelp" class="filter-help">
+          Export Excel ได้เมื่อกรองช่วงวันที่เสนอราคาหรือช่วงวันหมดอายุอย่างน้อย 1 ช่วง และแต่ละช่วงต้องไม่เกิน 3 เดือน
+        </div>
+      </div>
+
+      <div id="quotationTable"></div>
+    </div>
+  `;
+
+  const searchInput = $("#quotationSearch");
+  const statusFilter = $("#quotationStatusFilter");
+  const billingFilter = $("#quotationBillingFilter");
+  const quoteFrom = $("#quoteDateFromFilter");
+  const quoteTo = $("#quoteDateToFilter");
+  const validFrom = $("#validUntilFromFilter");
+  const validTo = $("#validUntilToFilter");
+  const tableTarget = $("#quotationTable");
+  const newButton = $("#newQuotationButton");
+  const exportButton = $("#exportQuotationsXlsxButton");
+  const filterHelp = $("#quotationFilterHelp");
+
+  let currentFilteredRows = rows;
+
+  if (newButton) newButton.addEventListener("click", () => (location.hash = "#quotation-new"));
+  if (exportButton) {
+    exportButton.addEventListener("click", () => exportQuotationsXlsx(currentFilteredRows));
+  }
+
+  function getFilterState() {
+    const quoteRange = getDateRangeState(quoteFrom.value, quoteTo.value, "วันที่เสนอราคา");
+    const validRange = getDateRangeState(validFrom.value, validTo.value, "วันหมดอายุ");
+
+    const hasValidExportDateRange =
+      (quoteRange.active && quoteRange.valid) ||
+      (validRange.active && validRange.valid);
+
+    const hasInvalidRange =
+      quoteRange.invalidReason ||
+      validRange.invalidReason;
+
+    return { quoteRange, validRange, hasValidExportDateRange, hasInvalidRange };
+  }
+
+  function updateExportState() {
+    const state = getFilterState();
+
+    if (state.hasInvalidRange) {
+      exportButton.disabled = true;
+      exportButton.classList.add("btn-export-disabled");
+      exportButton.title = state.hasInvalidRange;
+      filterHelp.className = "filter-warning";
+      filterHelp.textContent = state.hasInvalidRange;
+      return;
+    }
+
+    if (!state.hasValidExportDateRange) {
+      exportButton.disabled = true;
+      exportButton.classList.add("btn-export-disabled");
+      exportButton.title = "ต้องเลือกช่วงวันที่เสนอราคาหรือช่วงวันหมดอายุก่อน";
+      filterHelp.className = "filter-help";
+      filterHelp.textContent = "Export Excel ได้เมื่อกรองช่วงวันที่เสนอราคาหรือช่วงวันหมดอายุอย่างน้อย 1 ช่วง และแต่ละช่วงต้องไม่เกิน 3 เดือน";
+      return;
+    }
+
+    exportButton.disabled = false;
+    exportButton.classList.remove("btn-export-disabled");
+    exportButton.title = "";
+    filterHelp.className = "filter-help";
+    filterHelp.textContent = `พร้อม Export ${number(currentFilteredRows.length)} รายการเป็น Excel`;
+  }
+
+  function updateTable() {
+    const keyword = searchInput.value.trim().toLowerCase();
+    const status = statusFilter.value;
+    const billingType = billingFilter.value;
+    const state = getFilterState();
+
+    currentFilteredRows = rows.filter((row) => {
+      const text = `${row.quotation_no || ""} ${row.customer_name || ""} ${row.owner_name || ""}`.toLowerCase();
+
+      const matchText = !keyword || text.includes(keyword);
+      const matchStatus = !status || row.effective_status === status;
+      const matchBilling = !billingType || row.billing_type === billingType;
+      const matchQuoteRange = !state.quoteRange.active || !state.quoteRange.valid || isDateWithinRange(row.quote_date, state.quoteRange.from, state.quoteRange.to);
+      const matchValidRange = !state.validRange.active || !state.validRange.valid || isDateWithinRange(row.valid_until, state.validRange.from, state.validRange.to);
+
+      return matchText && matchStatus && matchBilling && matchQuoteRange && matchValidRange;
+    });
+
+    tableTarget.innerHTML = renderQuotationTable(currentFilteredRows);
+    bindQuotationTableActions();
+    updateExportState();
+  }
+
+  [searchInput, statusFilter, billingFilter, quoteFrom, quoteTo, validFrom, validTo].forEach((input) => {
+    input.addEventListener(input.type === "search" ? "input" : "change", updateTable);
+  });
+
+  updateTable();
+}
+
+function getDateRangeState(fromValue, toValue, label) {
+  const hasFrom = Boolean(fromValue);
+  const hasTo = Boolean(toValue);
+
+  if (!hasFrom && !hasTo) {
+    return { active: false, valid: false, from: null, to: null, invalidReason: "" };
+  }
+
+  if (!hasFrom || !hasTo) {
+    return {
+      active: true,
+      valid: false,
+      from: null,
+      to: null,
+      invalidReason: `กรุณาเลือกช่วง${label}ให้ครบทั้งวันที่เริ่มต้นและวันที่สิ้นสุด`,
+    };
+  }
+
+  const from = parseDateOnly(fromValue);
+  const to = parseDateOnly(toValue);
+
+  if (!from || !to) {
+    return {
+      active: true,
+      valid: false,
+      from: null,
+      to: null,
+      invalidReason: `ช่วง${label}ไม่ถูกต้อง`,
+    };
+  }
+
+  if (to < from) {
+    return {
+      active: true,
+      valid: false,
+      from,
+      to,
+      invalidReason: `ช่วง${label}: วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น`,
+    };
+  }
+
+  const maxTo = addMonths(from, 3);
+  if (to > maxTo) {
+    return {
+      active: true,
+      valid: false,
+      from,
+      to,
+      invalidReason: `ช่วง${label}ต้องไม่เกิน 3 เดือน`,
+    };
+  }
+
+  return { active: true, valid: true, from, to, invalidReason: "" };
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    const result = new Date(value);
+    result.setHours(0, 0, 0, 0);
+    return result;
+  }
+
+  const text = String(value);
+  const dateOnly = text.includes("T") ? text.slice(0, 10) : text.slice(0, 10);
+  const parts = dateOnly.split("-").map(Number);
+
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return null;
+
+  const result = new Date(parts[0], parts[1] - 1, parts[2]);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
+
+function isDateWithinRange(value, from, to) {
+  const date = parseDateOnly(value);
+  if (!date) return false;
+  return date >= from && date <= to;
+}
+
+function addMonths(date, months) {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
+function exportQuotationsXlsx(rows) {
+  if (!rows.length) {
+    showToast("ไม่มีข้อมูลสำหรับ Export", "warning");
+    return;
+  }
+
+  if (!window.XLSX) {
+    showToast("ไม่พบ Excel library กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่", "error", { duration: 5200 });
+    return;
+  }
+
+  const aoa = [
+    [
+      "เลขที่ใบเสนอราคา",
+      "ลูกค้า",
+      "ประเภท",
+      "ฝ่ายขาย",
+      "วันที่เสนอราคา",
+      "วันหมดอายุ",
+      "ยอดรวมสุทธิ",
+      "สถานะ",
+    ],
+    ...rows.map((row) => [
+      row.quotation_no || "ยังไม่ออกเลข",
+      row.customer_name || "",
+      billingTypeLabel(row.billing_type),
+      row.owner_name || "",
+      row.quote_date ? formatDate(row.quote_date) : "",
+      row.valid_until ? formatDate(row.valid_until) : "",
+      Number(row.grand_total_display || 0),
+      statusLabel(row.effective_status),
+    ]),
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+  worksheet["!cols"] = [
+    { wch: 20 },
+    { wch: 34 },
+    { wch: 14 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 14 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "ใบเสนอราคา");
+
+  const filename = `fi-quotation-export-${toDateInputValue(new Date())}.xlsx`;
+  XLSX.writeFile(workbook, filename);
+  showToast(`Export Excel สำเร็จ ${number(rows.length)} รายการ`, "success");
+}
