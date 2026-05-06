@@ -7064,13 +7064,13 @@ async function renderSettingsPage() {
         </div>
 
         <div class="branding-preview-grid">
-          ${renderBrandingPreviewCard("โลโก้หน้า Login", branding.login_logo_url, "login")}
+          ${renderBrandingPreviewCard("โลโก้หน้า Login / แถบเมนู", branding.login_logo_url, "login")}
           ${renderBrandingPreviewCard("Icon บน Tab / Taskbar", branding.favicon_url, "favicon")}
         </div>
 
         <div class="form-grid">
           <div class="field">
-            <label for="loginLogoFile">อัปโหลดโลโก้หน้า Login</label>
+            <label for="loginLogoFile">อัปโหลดโลโก้ระบบ / แถบเมนู</label>
             <input id="loginLogoFile" type="file" accept="image/png,image/jpeg,image/webp" />
             <small class="field-hint">รองรับ PNG, JPG, WEBP ไม่เกิน 5 MB</small>
           </div>
@@ -7082,7 +7082,7 @@ async function renderSettingsPage() {
         </div>
 
         <div class="form-actions normal-flow">
-          <button type="button" id="uploadLoginLogoButton" class="btn btn-primary">บันทึกโลโก้ Login</button>
+          <button type="button" id="uploadLoginLogoButton" class="btn btn-primary">บันทึกโลโก้ระบบ</button>
           <button type="button" id="uploadFaviconButton" class="btn btn-primary">บันทึก Icon เว็บไซต์</button>
         </div>
       </section>
@@ -7119,7 +7119,7 @@ function renderBrandingPreviewCard(title, url, type) {
 
 function bindAppBrandingSettingsActions() {
   $("#uploadLoginLogoButton")?.addEventListener("click", async () => {
-    await uploadAppBrandingFile("loginLogoFile", "login_logo_url", "login-logo", "โลโก้หน้า Login");
+    await uploadAppBrandingFile("loginLogoFile", "login_logo_url", "login-logo", "โลโก้ระบบ");
   });
 
   $("#uploadFaviconButton")?.addEventListener("click", async () => {
@@ -7227,6 +7227,7 @@ async function saveAppSetting(key, value) {
 
 function applyAppBranding(branding = {}) {
   applyLoginLogo(branding.login_logo_url);
+  applyHeaderLogo(branding.login_logo_url);
   applyFavicon(branding.favicon_url);
 }
 
@@ -7240,6 +7241,19 @@ function applyLoginLogo(url) {
   } else {
     loginBrandMark.classList.remove("brand-mark-image");
     loginBrandMark.textContent = "FI";
+  }
+}
+
+function applyHeaderLogo(url) {
+  const headerBrandMark = document.querySelector(".app-brand .brand-mark.small");
+  if (!headerBrandMark) return;
+
+  if (url) {
+    headerBrandMark.classList.add("brand-mark-image");
+    headerBrandMark.innerHTML = `<img src="${escapeHTML(url)}" alt="logo" />`;
+  } else {
+    headerBrandMark.classList.remove("brand-mark-image");
+    headerBrandMark.textContent = "FI";
   }
 }
 

@@ -2796,3 +2796,17 @@ body {
     flex-direction: column;
   }
 }
+
+
+/* =======================================================
+   v1.4.2 Header logo follows Login logo
+   ======================================================= */
+
+.app-brand .brand-mark.brand-mark-image {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.app-brand .brand-mark.brand-mark-image img {
+  padding: 3px;
+}
