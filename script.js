@@ -1,10 +1,3 @@
-// =======================================================
-// FI Quotation Web App
-// Frontend v0.1: Auth + App Shell + Read-only Dashboard
-// =======================================================
-
-// 1) Replace these with values from Supabase Project Settings > API.
-//    Use anon public key only. Never use service_role key here.
 const SUPABASE_URL = "https://fjncvrsegkmrowvryttu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqbmN2cnNlZ2ttcm93dnJ5dHR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzkzMjYsImV4cCI6MjA5MzY1NTMyNn0.d8III1KlP5kJFes7ujFkfwZ9ombMYc-_4vNIazIg6zw";
 
@@ -92,8 +85,7 @@ function bindEvents() {
   elements.logoutButton.addEventListener("click", handleLogout);
 
   window.addEventListener("hashchange", async () => {
-    const page = getPageFromHash();
-    appState.currentPage = page;
+    appState.currentPage = getPageFromHash();
     await renderCurrentPage();
   });
 }
@@ -139,7 +131,6 @@ async function handleLogin(event) {
 
 async function handleLogout() {
   if (!supabaseClient) return;
-
   await supabaseClient.auth.signOut();
   showToast("ออกจากระบบแล้ว");
 }
@@ -202,7 +193,12 @@ function renderMenu() {
 
   elements.sidebarMenu.innerHTML = menus
     .map((item) => {
-      const activeClass = item.key === appState.currentPage ? "active" : "";
+      const isActive =
+        item.key === appState.currentPage ||
+        (item.key === "quotations" && appState.currentPage.startsWith("quotation-"));
+
+      const activeClass = isActive ? "active" : "";
+
       return `
         <button class="menu-item ${activeClass}" data-page="${item.key}">
           <span>${menuIcon(item.key)}</span>
@@ -235,6 +231,8 @@ async function renderCurrentPage() {
       await renderDashboardPage();
     } else if (page === "quotations") {
       await renderQuotationsPage();
+    } else if (page === "quotation-new") {
+      await renderQuotationCreatePage();
     } else if (page === "customers") {
       await renderCustomersPage();
     } else if (page === "products") {
@@ -249,7 +247,7 @@ async function renderCurrentPage() {
     }
   } catch (error) {
     console.error(error);
-    renderError("ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+    renderError(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
   }
 }
 
@@ -316,6 +314,8 @@ async function renderQuotationsPage() {
 }
 
 function renderQuotationList(rows) {
+  const canCreate = appState.profile.role !== "manager";
+
   elements.pageContent.innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -323,9 +323,12 @@ function renderQuotationList(rows) {
           <h3>รายการใบเสนอราคา</h3>
           <p>Draft จะยังไม่มีเลขเอกสาร เลขจะถูกสร้างเมื่อ Confirm</p>
         </div>
-        <button class="btn btn-primary" disabled title="จะทำใน Step ถัดไป">
-          + สร้างใบเสนอราคา
-        </button>
+
+        ${
+          canCreate
+            ? `<button id="newQuotationButton" class="btn btn-primary">+ สร้างใบเสนอราคา</button>`
+            : ``
+        }
       </div>
 
       <div class="filter-bar">
@@ -347,6 +350,13 @@ function renderQuotationList(rows) {
   const searchInput = $("#quotationSearch");
   const statusFilter = $("#quotationStatusFilter");
   const tableTarget = $("#quotationTable");
+  const newButton = $("#newQuotationButton");
+
+  if (newButton) {
+    newButton.addEventListener("click", () => {
+      location.hash = "#quotation-new";
+    });
+  }
 
   function updateTable() {
     const keyword = searchInput.value.trim().toLowerCase();
@@ -366,6 +376,485 @@ function renderQuotationList(rows) {
   statusFilter.addEventListener("change", updateTable);
 
   updateTable();
+}
+
+async function renderQuotationCreatePage() {
+  if (appState.profile.role === "manager") {
+    renderError("Manager สามารถดูและ Export/Print ได้ แต่ไม่สามารถสร้างใบเสนอราคาใน MVP นี้");
+    return;
+  }
+
+  setPageHeader("สร้างใบเสนอราคา", "บันทึกเป็น Draft ก่อน ระบบจะสร้างเลขเอกสารเมื่อ Confirm");
+  renderLoading();
+
+  const [productsResult, companyResult] = await Promise.all([
+    supabaseClient
+      .from("products")
+      .select("id, code, name, description, default_unit, is_active")
+      .eq("is_active", true)
+      .order("created_at", { ascending: true }),
+
+    supabaseClient
+      .from("company_profile")
+      .select("*")
+      .eq("is_default", true)
+      .maybeSingle(),
+  ]);
+
+  if (productsResult.error) throw productsResult.error;
+  if (companyResult.error) throw companyResult.error;
+
+  const products = productsResult.data || [];
+  const company = companyResult.data;
+
+  if (!products.length) {
+    renderError("ยังไม่มีสินค้า/บริการ กรุณาเพิ่ม Product Master ก่อน");
+    return;
+  }
+
+  const today = toDateInputValue(new Date());
+  const validUntil = toDateInputValue(addDays(new Date(), 30));
+
+  elements.pageContent.innerHTML = `
+    <form id="quotationDraftForm" class="form-layout">
+      <div class="form-main">
+        <section class="form-section">
+          <h3>1. ข้อมูลลูกค้า</h3>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="draftCustomerName">ชื่อลูกค้า *</label>
+              <input id="draftCustomerName" type="text" placeholder="เช่น บริษัท ตัวอย่าง จำกัด" required />
+            </div>
+
+            <div class="field full">
+              <label for="draftCustomerAddress">ที่อยู่ลูกค้า</label>
+              <textarea id="draftCustomerAddress" rows="3" placeholder="ที่อยู่สำหรับแสดงบนใบเสนอราคา"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3>2. ข้อมูลเอกสาร</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label>เลขที่เอกสาร</label>
+              <input type="text" value="จะสร้างเมื่อ Confirm" disabled />
+              <div class="inline-note">Draft จะยังไม่มีเลขใบเสนอราคา</div>
+            </div>
+
+            <div class="field">
+              <label for="draftQuoteDate">วันที่ออกเอกสาร</label>
+              <input id="draftQuoteDate" type="date" value="${today}" />
+            </div>
+
+            <div class="field">
+              <label for="draftValidUntil">วันหมดอายุ</label>
+              <input id="draftValidUntil" type="date" value="${validUntil}" />
+            </div>
+
+            <div class="field">
+              <label>ผู้ขาย</label>
+              <input type="text" value="${escapeHTML(appState.profile.full_name || appState.profile.email)}" disabled />
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3>3. ประเภทการชำระเงิน</h3>
+          <div class="field">
+            <label for="draftBillingType">เลือกประเภท</label>
+            <select id="draftBillingType">
+              <option value="monthly">รายเดือน</option>
+              <option value="yearly">รายปี</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3 id="draftRecurringTitle">4. ค่าบริการชำระรายเดือน</h3>
+
+          <div class="line-box">
+            <div class="form-grid">
+              <div class="field">
+                <label for="draftProductId">สินค้า/บริการ *</label>
+                <select id="draftProductId" required>
+                  ${products.map((product) => `
+                    <option value="${product.id}">
+                      ${escapeHTML(product.code || "")} ${escapeHTML(product.name)}
+                    </option>
+                  `).join("")}
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="draftQuantity">จำนวนรถ</label>
+                <input id="draftQuantity" type="number" min="0" step="1" value="20" />
+                <div class="inline-note">ใช้เป็นเงื่อนไขราคา ไม่ได้นำไปคูณกับราคา</div>
+              </div>
+
+              <div class="field">
+                <label for="draftUnitPrice">ราคา</label>
+                <input id="draftUnitPrice" type="number" min="0" step="0.01" value="4500" />
+                <div class="inline-note">ราคาสำหรับจำนวนรถและประเภทที่เลือก</div>
+              </div>
+
+              <div class="field">
+                <label>หน่วย</label>
+                <input id="draftUnit" type="text" value="${escapeHTML(products[0].default_unit || "คัน")}" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3>5. ค่าบริการชำระครั้งเดียวจบ</h3>
+
+          <div class="line-box">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="draftOneTimeName">รายการ</label>
+                <input id="draftOneTimeName" type="text" value="ค่าบริการเซ็ตอัพทะเบียนรถ" />
+              </div>
+
+              <div class="field">
+                <label for="draftOneTimeQty">จำนวนครั้ง</label>
+                <input id="draftOneTimeQty" type="number" min="0" step="1" value="1" />
+              </div>
+
+              <div class="field">
+                <label for="draftOneTimePrice">ราคา/หน่วย</label>
+                <input id="draftOneTimePrice" type="number" min="0" step="0.01" value="4500" />
+              </div>
+
+              <div class="field full">
+                <label for="draftOneTimeDescription">รายละเอียดเพิ่มเติม</label>
+                <textarea id="draftOneTimeDescription" rows="2">ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน / ค่าบริการฝึกอบรมซอฟต์แวร์ระบบ</textarea>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3>6. ส่วนลด ภาษี และการปัดเศษ</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="draftDiscountPercent">ส่วนลดท้ายบิล (%)</label>
+              <input id="draftDiscountPercent" type="number" min="0" max="100" step="0.01" value="0" />
+            </div>
+
+            <label class="checkbox-row">
+              <input id="draftVatEnabled" type="checkbox" checked />
+              <span>คิด VAT 7%</span>
+            </label>
+
+            <label class="checkbox-row">
+              <input id="draftWhtEnabled" type="checkbox" checked />
+              <span>หัก ณ ที่จ่าย 3%</span>
+            </label>
+
+            <label class="checkbox-row">
+              <input id="draftRoundingEnabled" type="checkbox" />
+              <span>ปัดยอดรวมเป็นจำนวนเต็ม</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h3>7. หมายเหตุและเงื่อนไข</h3>
+          <div class="form-grid">
+            <div class="field full">
+              <label for="draftNote">หมายเหตุ</label>
+              <textarea id="draftNote" rows="6">${escapeHTML(company?.default_note || "")}</textarea>
+            </div>
+
+            <div class="field full">
+              <label for="draftPaymentTerms">เงื่อนไขการชำระเงิน</label>
+              <textarea id="draftPaymentTerms" rows="4">${escapeHTML(company?.default_payment_terms || "")}</textarea>
+            </div>
+          </div>
+        </section>
+
+        <div class="form-actions">
+          <button type="button" id="cancelDraftButton" class="btn btn-ghost">
+            ยกเลิก
+          </button>
+          <button type="submit" id="saveDraftButton" class="btn btn-primary">
+            บันทึกร่าง
+          </button>
+        </div>
+      </div>
+
+      <aside class="summary-panel">
+        <div class="summary-card">
+          <h3>สรุปยอด</h3>
+
+          <div class="summary-row">
+            <span>มูลค่าก่อนภาษี</span>
+            <strong id="summarySubtotal">฿0.00</strong>
+          </div>
+
+          <div class="summary-row">
+            <span>ส่วนลด</span>
+            <strong id="summaryDiscount">฿0.00</strong>
+          </div>
+
+          <div class="summary-row">
+            <span>ฐานคำนวณภาษี</span>
+            <strong id="summaryTaxable">฿0.00</strong>
+          </div>
+
+          <div class="summary-row">
+            <span>VAT 7%</span>
+            <strong id="summaryVat">฿0.00</strong>
+          </div>
+
+          <div class="summary-row">
+            <span>หัก ณ ที่จ่าย 3%</span>
+            <strong id="summaryWht">-฿0.00</strong>
+          </div>
+
+          <div class="summary-row">
+            <span>ส่วนต่างปัดเศษ</span>
+            <strong id="summaryRounding">฿0.00</strong>
+          </div>
+
+          <div class="summary-total">
+            <span>ยอดรวมสุทธิ</span>
+            <strong id="summaryGrandTotal">฿0.00</strong>
+          </div>
+
+          <p class="inline-note">
+            จำนวนเงินตัวอักษรจะสร้างจาก Database เมื่อบันทึก/ยืนยันเอกสาร
+          </p>
+        </div>
+
+        <div class="alert alert-warning">
+          หลังจาก Confirm แล้ว ระบบจะล็อกเอกสาร หากต้องแก้ไขให้ Duplicate เป็นใบใหม่
+        </div>
+      </aside>
+    </form>
+  `;
+
+  bindQuotationDraftForm(products);
+  updateDraftSummary();
+}
+
+function bindQuotationDraftForm(products) {
+  const form = $("#quotationDraftForm");
+  const cancelButton = $("#cancelDraftButton");
+  const billingType = $("#draftBillingType");
+  const productSelect = $("#draftProductId");
+
+  const calculationInputs = [
+    "#draftBillingType",
+    "#draftQuantity",
+    "#draftUnitPrice",
+    "#draftOneTimeQty",
+    "#draftOneTimePrice",
+    "#draftDiscountPercent",
+    "#draftVatEnabled",
+    "#draftWhtEnabled",
+    "#draftRoundingEnabled",
+  ];
+
+  calculationInputs.forEach((selector) => {
+    const input = $(selector);
+    if (!input) return;
+
+    input.addEventListener("input", updateDraftSummary);
+    input.addEventListener("change", updateDraftSummary);
+  });
+
+  billingType.addEventListener("change", () => {
+    applyBillingDefaults();
+    updateDraftSummary();
+  });
+
+  productSelect.addEventListener("change", () => {
+    const product = products.find((item) => item.id === productSelect.value);
+    if (product) {
+      $("#draftUnit").value = product.default_unit || "คัน";
+    }
+  });
+
+  cancelButton.addEventListener("click", () => {
+    location.hash = "#quotations";
+  });
+
+  form.addEventListener("submit", async (event) => {
+    await handleSaveQuotationDraft(event, products);
+  });
+}
+
+function applyBillingDefaults() {
+  const billingType = $("#draftBillingType").value;
+  const recurringTitle = $("#draftRecurringTitle");
+  const unitPrice = $("#draftUnitPrice");
+  const oneTimePrice = $("#draftOneTimePrice");
+
+  if (billingType === "yearly") {
+    recurringTitle.textContent = "4. ค่าบริการชำระรายปี";
+    unitPrice.value = "54000";
+    oneTimePrice.value = "0";
+  } else {
+    recurringTitle.textContent = "4. ค่าบริการชำระรายเดือน";
+    unitPrice.value = "4500";
+    oneTimePrice.value = "4500";
+  }
+}
+
+function updateDraftSummary() {
+  const unitPrice = readNumber("#draftUnitPrice");
+  const oneTimeQty = readNumber("#draftOneTimeQty");
+  const oneTimePrice = readNumber("#draftOneTimePrice");
+  const discountPercent = readNumber("#draftDiscountPercent");
+
+  const vatEnabled = $("#draftVatEnabled")?.checked ?? true;
+  const whtEnabled = $("#draftWhtEnabled")?.checked ?? true;
+  const roundingEnabled = $("#draftRoundingEnabled")?.checked ?? false;
+
+  const recurringSubtotal = unitPrice;
+  const oneTimeSubtotal = oneTimeQty * oneTimePrice;
+  const subtotal = roundMoney(recurringSubtotal + oneTimeSubtotal);
+
+  const discount = roundMoney(subtotal * discountPercent / 100);
+  const taxable = roundMoney(subtotal - discount);
+  const vat = vatEnabled ? roundMoney(taxable * 0.07) : 0;
+  const wht = whtEnabled ? roundMoney(taxable * 0.03) : 0;
+  const grandTotal = roundMoney(taxable + vat - wht);
+
+  const displayTotal = roundingEnabled ? Math.round(grandTotal) : grandTotal;
+  const rounding = roundMoney(displayTotal - grandTotal);
+
+  $("#summarySubtotal").textContent = formatTHB(subtotal);
+  $("#summaryDiscount").textContent = formatTHB(discount);
+  $("#summaryTaxable").textContent = formatTHB(taxable);
+  $("#summaryVat").textContent = formatTHB(vat);
+  $("#summaryWht").textContent = `-${formatTHB(wht)}`;
+  $("#summaryRounding").textContent = formatTHB(rounding);
+  $("#summaryGrandTotal").textContent = formatTHB(displayTotal);
+}
+
+async function handleSaveQuotationDraft(event, products) {
+  event.preventDefault();
+
+  const saveButton = $("#saveDraftButton");
+  saveButton.disabled = true;
+  saveButton.textContent = "กำลังบันทึก...";
+
+  try {
+    const product = products.find((item) => item.id === $("#draftProductId").value);
+
+    if (!product) {
+      throw new Error("กรุณาเลือกสินค้า/บริการ");
+    }
+
+    const customerName = $("#draftCustomerName").value.trim();
+
+    if (!customerName) {
+      throw new Error("กรุณากรอกชื่อลูกค้า");
+    }
+
+    const quotePayload = {
+      owner_id: appState.user.id,
+      billing_type: $("#draftBillingType").value,
+      customer_name: customerName,
+      customer_address: $("#draftCustomerAddress").value.trim(),
+      quote_date: $("#draftQuoteDate").value,
+      valid_until: $("#draftValidUntil").value,
+
+      vat_enabled: $("#draftVatEnabled").checked,
+      vat_rate: 7,
+      wht_enabled: $("#draftWhtEnabled").checked,
+      wht_rate: 3,
+      discount_percent: readNumber("#draftDiscountPercent"),
+      rounding_enabled: $("#draftRoundingEnabled").checked,
+
+      note: $("#draftNote").value.trim(),
+      payment_terms: $("#draftPaymentTerms").value.trim(),
+    };
+
+    const { data: quotation, error: quotationError } = await supabaseClient
+      .from("quotations")
+      .insert(quotePayload)
+      .select("id")
+      .single();
+
+    if (quotationError) throw quotationError;
+
+    const quotationItems = [
+      {
+        quotation_id: quotation.id,
+        section_type: "recurring",
+        product_id: product.id,
+        product_name_snapshot: product.name,
+        description: `- ${product.name}`,
+        quantity_label: "จำนวนรถ",
+        quantity: readNumber("#draftQuantity"),
+        unit: $("#draftUnit").value.trim() || product.default_unit || "คัน",
+        unit_price: readNumber("#draftUnitPrice"),
+        sort_order: 1,
+      },
+      {
+        quotation_id: quotation.id,
+        section_type: "one_time",
+        product_id: null,
+        product_name_snapshot: $("#draftOneTimeName").value.trim() || "ค่าบริการชำระครั้งเดียว",
+        description: $("#draftOneTimeDescription").value.trim(),
+        quantity_label: "จำนวนครั้ง",
+        quantity: readNumber("#draftOneTimeQty"),
+        unit: "ครั้ง",
+        unit_price: readNumber("#draftOneTimePrice"),
+        sort_order: 1,
+      },
+    ];
+
+    const { error: itemError } = await supabaseClient
+      .from("quotation_items")
+      .insert(quotationItems);
+
+    if (itemError) throw itemError;
+
+    await updateQuotationTotalsSnapshot(quotation.id);
+
+    showToast("บันทึกร่างสำเร็จ");
+    location.hash = "#quotations";
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถบันทึกร่างได้");
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "บันทึกร่าง";
+  }
+}
+
+async function updateQuotationTotalsSnapshot(quotationId) {
+  const { data, error } = await supabaseClient.rpc("calculate_quotation_totals", {
+    p_quotation_id: quotationId,
+  });
+
+  if (error) throw error;
+
+  const totals = Array.isArray(data) ? data[0] : data;
+
+  if (!totals) return;
+
+  const { error: updateError } = await supabaseClient
+    .from("quotations")
+    .update({
+      subtotal_amount: totals.subtotal_amount,
+      discount_amount: totals.discount_amount,
+      taxable_amount: totals.taxable_amount,
+      vat_amount: totals.vat_amount,
+      wht_amount: totals.wht_amount,
+      grand_total: totals.grand_total,
+      rounding_adjustment: totals.rounding_adjustment,
+      grand_total_display: totals.grand_total_display,
+      amount_text_th: totals.amount_text_th,
+    })
+    .eq("id", quotationId);
+
+  if (updateError) throw updateError;
 }
 
 async function renderCustomersPage() {
@@ -824,4 +1313,24 @@ function escapeHTML(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function readNumber(selector) {
+  const value = Number($(selector)?.value || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function addDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function toDateInputValue(date) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
 }
