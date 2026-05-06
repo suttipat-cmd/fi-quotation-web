@@ -2810,3 +2810,995 @@ function bindQuotationViewActions(quotation) {
     });
   }
 }
+
+
+// =======================================================
+// v1.0 Consolidated Release
+// Print polish + Product Management + Company Profile
+// Dashboard improvements + Cancel Draft + CSV Export
+// Validation hardening
+// =======================================================
+
+async function renderCurrentPage() {
+  if (!appState.profile) return;
+
+  renderMenu();
+
+  const page = appState.currentPage;
+
+  try {
+    if (page === "dashboard") {
+      await renderDashboardPage();
+    } else if (page === "quotations") {
+      await renderQuotationsPage();
+    } else if (page === "quotation-new") {
+      await renderQuotationCreatePage();
+    } else if (page.startsWith("quotation-edit/")) {
+      const quotationId = page.replace("quotation-edit/", "");
+      await renderQuotationEditPage(quotationId);
+    } else if (page.startsWith("quotation-view/")) {
+      const quotationId = page.replace("quotation-view/", "");
+      await renderQuotationViewPage(quotationId);
+    } else if (page.startsWith("quotation-print/")) {
+      const quotationId = page.replace("quotation-print/", "");
+      await renderQuotationPrintPage(quotationId);
+    } else if (page === "customers") {
+      await renderCustomersPage();
+    } else if (page === "products") {
+      await renderProductsPage();
+    } else if (page === "product-new") {
+      await renderProductFormPage({ mode: "create", productId: null });
+    } else if (page.startsWith("product-edit/")) {
+      const productId = page.replace("product-edit/", "");
+      await renderProductFormPage({ mode: "edit", productId });
+    } else if (page === "company") {
+      await renderCompanyPage();
+    } else if (page === "settings") {
+      await renderSettingsPage();
+    } else {
+      appState.currentPage = "dashboard";
+      location.hash = "#dashboard";
+    }
+  } catch (error) {
+    console.error(error);
+    renderError(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  }
+}
+
+async function renderDashboardPage() {
+  setPageHeader("Dashboard", "ภาพรวมระบบใบเสนอราคาและรายการที่ต้องติดตาม");
+  renderLoading();
+
+  const role = appState.profile.role;
+  const isSales = role === "sales";
+
+  const [dashboardResult, quotationsResult] = await Promise.all([
+    isSales
+      ? supabaseClient
+          .from("v_dashboard_sales")
+          .select("*")
+          .eq("owner_id", appState.user.id)
+          .maybeSingle()
+      : supabaseClient
+          .from("v_dashboard_manager")
+          .select("*")
+          .order("owner_name", { ascending: true }),
+
+    supabaseClient
+      .from("v_quotations_list")
+      .select("*")
+      .order("updated_at", { ascending: false })
+      .limit(120),
+  ]);
+
+  if (dashboardResult.error) throw dashboardResult.error;
+  if (quotationsResult.error) throw quotationsResult.error;
+
+  const quotations = quotationsResult.data || [];
+  const metrics = isSales
+    ? dashboardResult.data || emptyDashboardMetrics()
+    : summarizeManagerDashboard(dashboardResult.data || []);
+
+  const now = startOfToday();
+  const soon = addDays(now, 7);
+  const expiringSoon = quotations
+    .filter((row) => ["confirmed", "sent"].includes(row.effective_status))
+    .filter((row) => row.valid_until && new Date(row.valid_until) >= now && new Date(row.valid_until) <= soon)
+    .slice(0, 8);
+
+  const recentDrafts = quotations
+    .filter((row) => row.effective_status === "draft")
+    .slice(0, 8);
+
+  const recentDocs = quotations.slice(0, 8);
+
+  elements.pageContent.innerHTML = `
+    ${renderDashboardMetrics(metrics)}
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>เอกสารใกล้หมดอายุ</h3>
+            <p>Confirmed / Sent ที่จะหมดอายุภายใน 7 วัน</p>
+          </div>
+        </div>
+        ${renderCompactQuotationList(expiringSoon, "ยังไม่มีเอกสารใกล้หมดอายุ")}
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Draft ล่าสุด</h3>
+            <p>เอกสารที่ยังไม่ได้ Confirm</p>
+          </div>
+        </div>
+        ${renderCompactQuotationList(recentDrafts, "ยังไม่มี Draft")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>อัปเดตล่าสุด</h3>
+          <p>เอกสารล่าสุดที่มีการแก้ไขหรือสร้างใหม่</p>
+        </div>
+      </div>
+      ${renderCompactQuotationList(recentDocs, "ยังไม่มีใบเสนอราคา")}
+    </div>
+
+    ${!isSales ? `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>ยอดรวมตาม Sales</h3>
+            <p>มุมมองสำหรับ Manager / Admin</p>
+          </div>
+        </div>
+        ${renderSalesSummaryTable(dashboardResult.data || [])}
+      </div>
+    ` : ""}
+  `;
+
+  bindCompactQuotationLinks();
+}
+
+function renderCompactQuotationList(rows, emptyText) {
+  if (!rows.length) {
+    return `<div class="empty-state compact">${escapeHTML(emptyText)}</div>`;
+  }
+
+  return `
+    <div class="compact-list">
+      ${rows.map((row) => `
+        <button type="button" class="compact-item" data-quotation-link="${row.id}">
+          <div>
+            <strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong>
+            <span>${escapeHTML(row.customer_name || "-")}</span>
+          </div>
+          <div class="compact-item-right">
+            ${statusBadge(row.effective_status)}
+            <span>${formatTHB(row.grand_total_display)}</span>
+          </div>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function bindCompactQuotationLinks() {
+  document.querySelectorAll("[data-quotation-link]").forEach((button) => {
+    button.addEventListener("click", () => {
+      location.hash = `#quotation-view/${button.dataset.quotationLink}`;
+    });
+  });
+}
+
+function renderQuotationList(rows) {
+  const canCreate = appState.profile.role !== "manager";
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>รายการใบเสนอราคา</h3>
+          <p>ค้นหา กรอง ส่งออก CSV และเปิดดูรายละเอียด</p>
+        </div>
+
+        <div class="table-actions">
+          <button id="exportQuotationsCsvButton" class="btn btn-ghost">Export Excel/CSV</button>
+          ${canCreate ? `<button id="newQuotationButton" class="btn btn-primary">+ สร้างใบเสนอราคา</button>` : ``}
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <input id="quotationSearch" type="search" placeholder="ค้นหาลูกค้า / เลขเอกสาร / Sales" />
+        <select id="quotationStatusFilter">
+          <option value="">ทุกสถานะ</option>
+          <option value="draft">ร่าง</option>
+          <option value="confirmed">ยืนยันแล้ว</option>
+          <option value="sent">ส่งแล้ว</option>
+          <option value="expired">หมดอายุ</option>
+          <option value="cancelled">ยกเลิก</option>
+        </select>
+        <select id="quotationBillingFilter">
+          <option value="">ทุกประเภท</option>
+          <option value="monthly">รายเดือน</option>
+          <option value="yearly">รายปี</option>
+        </select>
+      </div>
+
+      <div id="quotationTable"></div>
+    </div>
+  `;
+
+  const searchInput = $("#quotationSearch");
+  const statusFilter = $("#quotationStatusFilter");
+  const billingFilter = $("#quotationBillingFilter");
+  const tableTarget = $("#quotationTable");
+  const newButton = $("#newQuotationButton");
+  const exportButton = $("#exportQuotationsCsvButton");
+
+  let currentFilteredRows = rows;
+
+  if (newButton) {
+    newButton.addEventListener("click", () => {
+      location.hash = "#quotation-new";
+    });
+  }
+
+  if (exportButton) {
+    exportButton.addEventListener("click", () => exportQuotationsCsv(currentFilteredRows));
+  }
+
+  function updateTable() {
+    const keyword = searchInput.value.trim().toLowerCase();
+    const status = statusFilter.value;
+    const billingType = billingFilter.value;
+
+    currentFilteredRows = rows.filter((row) => {
+      const text = `${row.quotation_no || ""} ${row.customer_name || ""} ${row.owner_name || ""}`.toLowerCase();
+      const matchText = !keyword || text.includes(keyword);
+      const matchStatus = !status || row.effective_status === status;
+      const matchBilling = !billingType || row.billing_type === billingType;
+      return matchText && matchStatus && matchBilling;
+    });
+
+    tableTarget.innerHTML = renderQuotationTable(currentFilteredRows);
+    bindQuotationTableActions();
+  }
+
+  searchInput.addEventListener("input", updateTable);
+  statusFilter.addEventListener("change", updateTable);
+  billingFilter.addEventListener("change", updateTable);
+
+  updateTable();
+}
+
+function exportQuotationsCsv(rows) {
+  if (!rows.length) {
+    showToast("ไม่มีข้อมูลสำหรับ Export");
+    return;
+  }
+
+  const headers = [
+    "เลขที่",
+    "ลูกค้า",
+    "ประเภท",
+    "Sales",
+    "วันที่ออกเอกสาร",
+    "วันหมดอายุ",
+    "ยอดรวม",
+    "สถานะ",
+  ];
+
+  const csvRows = rows.map((row) => [
+    row.quotation_no || "ยังไม่ออกเลข",
+    row.customer_name || "",
+    billingTypeLabel(row.billing_type),
+    row.owner_name || "",
+    row.quote_date || "",
+    row.valid_until || "",
+    Number(row.grand_total_display || 0),
+    statusLabel(row.effective_status),
+  ]);
+
+  downloadCsv("fi-quotations-export.csv", [headers, ...csvRows]);
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows
+    .map((row) => row.map((value) => csvEscape(value)).join(","))
+    .join("\n");
+
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+}
+
+async function renderProductsPage() {
+  setPageHeader("สินค้า/บริการ", "จัดการ Master Data สำหรับใบเสนอราคา");
+  renderLoading();
+
+  const { data, error } = await supabaseClient
+    .from("products")
+    .select("id, code, name, description, default_unit, is_active, created_at, updated_at")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  const canEdit = appState.profile.role === "admin";
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>สินค้า/บริการ</h3>
+          <p>${canEdit ? "Admin สามารถเพิ่ม แก้ไข และเปิด/ปิดสินค้าได้" : "หน้านี้เป็น read-only สำหรับ role ของคุณ"}</p>
+        </div>
+        ${canEdit ? `<button id="addProductButton" class="btn btn-primary">+ เพิ่มสินค้า</button>` : ""}
+      </div>
+      ${renderProductsTableV10(data || [], canEdit)}
+    </div>
+  `;
+
+  if (canEdit) {
+    const addButton = $("#addProductButton");
+    if (addButton) {
+      addButton.addEventListener("click", () => {
+        location.hash = "#product-new";
+      });
+    }
+
+    document.querySelectorAll("[data-product-edit]").forEach((button) => {
+      button.addEventListener("click", () => {
+        location.hash = `#product-edit/${button.dataset.productEdit}`;
+      });
+    });
+  }
+}
+
+function renderProductsTableV10(rows, canEdit) {
+  if (!rows.length) {
+    return `<div class="empty-state">ยังไม่มีสินค้า/บริการ</div>`;
+  }
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>ชื่อสินค้า/บริการ</th>
+            <th>รายละเอียด</th>
+            <th>หน่วย</th>
+            <th>สถานะ</th>
+            ${canEdit ? "<th>Action</th>" : ""}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHTML(row.code || "-")}</strong></td>
+              <td>${escapeHTML(row.name || "-")}</td>
+              <td>${escapeHTML(row.description || "-")}</td>
+              <td>${escapeHTML(row.default_unit || "-")}</td>
+              <td>${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}</td>
+              ${canEdit ? `<td><button class="btn btn-ghost" data-product-edit="${row.id}">แก้ไข</button></td>` : ""}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function renderProductFormPage({ mode, productId }) {
+  if (appState.profile.role !== "admin") {
+    renderError("เฉพาะ Admin เท่านั้นที่จัดการสินค้า/บริการได้");
+    return;
+  }
+
+  const isEdit = mode === "edit";
+  setPageHeader(isEdit ? "แก้ไขสินค้า/บริการ" : "เพิ่มสินค้า/บริการ", "ข้อมูลนี้จะใช้เป็น Master Data ในใบเสนอราคา");
+  renderLoading();
+
+  let product = {
+    code: "",
+    name: "",
+    description: "",
+    default_unit: "คัน",
+    is_active: true,
+  };
+
+  if (isEdit) {
+    const { data, error } = await supabaseClient
+      .from("products")
+      .select("*")
+      .eq("id", productId)
+      .single();
+
+    if (error) throw error;
+    product = data;
+  }
+
+  elements.pageContent.innerHTML = `
+    <form id="productForm" class="card form-card">
+      <div class="card-header">
+        <div>
+          <h3>${isEdit ? "แก้ไขสินค้า/บริการ" : "เพิ่มสินค้า/บริการ"}</h3>
+          <p>Code ควรสั้น จำง่าย และไม่ซ้ำ เช่น ERP-TRUCK</p>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="productCode">Code *</label>
+          <input id="productCode" type="text" value="${escapeHTML(product.code || "")}" placeholder="เช่น ERP-TRUCK" required />
+        </div>
+
+        <div class="field">
+          <label for="productUnit">หน่วย *</label>
+          <input id="productUnit" type="text" value="${escapeHTML(product.default_unit || "คัน")}" required />
+        </div>
+
+        <div class="field full">
+          <label for="productName">ชื่อสินค้า/บริการ *</label>
+          <input id="productName" type="text" value="${escapeHTML(product.name || "")}" required />
+        </div>
+
+        <div class="field full">
+          <label for="productDescription">รายละเอียด</label>
+          <textarea id="productDescription" rows="4">${escapeHTML(product.description || "")}</textarea>
+        </div>
+
+        <label class="checkbox-row full">
+          <input id="productIsActive" type="checkbox" ${product.is_active ? "checked" : ""} />
+          <span>เปิดใช้งานสินค้า/บริการนี้</span>
+        </label>
+      </div>
+
+      <div class="form-actions normal-flow">
+        <button type="button" id="cancelProductButton" class="btn btn-ghost">ยกเลิก</button>
+        <button type="submit" id="saveProductButton" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  `;
+
+  $("#cancelProductButton").addEventListener("click", () => {
+    location.hash = "#products";
+  });
+
+  $("#productForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await saveProduct({ mode, productId });
+  });
+}
+
+async function saveProduct({ mode, productId }) {
+  const saveButton = $("#saveProductButton");
+  saveButton.disabled = true;
+  saveButton.textContent = "กำลังบันทึก...";
+
+  try {
+    const payload = {
+      code: $("#productCode").value.trim(),
+      name: $("#productName").value.trim(),
+      description: $("#productDescription").value.trim(),
+      default_unit: $("#productUnit").value.trim() || "คัน",
+      is_active: $("#productIsActive").checked,
+    };
+
+    if (!payload.code || !payload.name) {
+      throw new Error("กรุณากรอก Code และชื่อสินค้า/บริการ");
+    }
+
+    if (mode === "edit") {
+      const { error } = await supabaseClient
+        .from("products")
+        .update(payload)
+        .eq("id", productId);
+
+      if (error) throw error;
+    } else {
+      const { error } = await supabaseClient
+        .from("products")
+        .insert(payload);
+
+      if (error) throw error;
+    }
+
+    showToast("บันทึกสินค้า/บริการสำเร็จ");
+    location.hash = "#products";
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถบันทึกสินค้า/บริการได้");
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "บันทึก";
+  }
+}
+
+async function renderCompanyPage() {
+  if (appState.profile.role !== "admin") {
+    renderError("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+    return;
+  }
+
+  setPageHeader("Company Profile", "แก้ไขข้อมูลบริษัท บัญชีธนาคาร และข้อความเริ่มต้นบนใบเสนอราคา");
+  renderLoading();
+
+  const { data, error } = await supabaseClient
+    .from("company_profile")
+    .select("*")
+    .eq("is_default", true)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    renderError("ยังไม่มี Company Profile default กรุณารัน SQL seed ก่อน");
+    return;
+  }
+
+  elements.pageContent.innerHTML = `
+    <form id="companyProfileForm" class="card form-card">
+      <div class="card-header">
+        <div>
+          <h3>ข้อมูลบริษัท</h3>
+          <p>ข้อมูลนี้จะถูก snapshot ลงใบเสนอราคาเมื่อ Confirm</p>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field full">
+          <label for="companyName">ชื่อบริษัท *</label>
+          <input id="companyName" type="text" value="${escapeHTML(data.company_name || "")}" required />
+        </div>
+
+        <div class="field">
+          <label for="companyTaxId">เลขประจำตัวผู้เสียภาษี</label>
+          <input id="companyTaxId" type="text" value="${escapeHTML(data.tax_id || "")}" />
+        </div>
+
+        <div class="field">
+          <label for="companyBranchName">สาขา</label>
+          <input id="companyBranchName" type="text" value="${escapeHTML(data.branch_name || "")}" />
+        </div>
+
+        <div class="field full">
+          <label for="companyAddress">ที่อยู่</label>
+          <textarea id="companyAddress" rows="3">${escapeHTML(data.address || "")}</textarea>
+        </div>
+
+        <div class="field">
+          <label for="companyPhone">เบอร์โทร</label>
+          <input id="companyPhone" type="text" value="${escapeHTML(data.phone || "")}" />
+        </div>
+
+        <div class="field">
+          <label for="companyEmail">อีเมล</label>
+          <input id="companyEmail" type="email" value="${escapeHTML(data.email || "")}" />
+        </div>
+
+        <div class="field full">
+          <label for="companyLogoUrl">Logo URL</label>
+          <input id="companyLogoUrl" type="url" value="${escapeHTML(data.logo_url || "")}" placeholder="https://..." />
+          <div class="inline-note">ใช้ URL รูปภาพที่เข้าถึงได้จาก browser</div>
+        </div>
+
+        <div class="field">
+          <label for="companyBankName">ธนาคาร</label>
+          <input id="companyBankName" type="text" value="${escapeHTML(data.bank_name || "")}" />
+        </div>
+
+        <div class="field">
+          <label for="companyBankAccountNo">เลขบัญชี</label>
+          <input id="companyBankAccountNo" type="text" value="${escapeHTML(data.bank_account_no || "")}" />
+        </div>
+
+        <div class="field full">
+          <label for="companyBankAccountName">ชื่อบัญชี</label>
+          <input id="companyBankAccountName" type="text" value="${escapeHTML(data.bank_account_name || "")}" />
+        </div>
+
+        <div class="field full">
+          <label for="companyPaymentNote">ข้อความแจ้งชำระเงิน</label>
+          <textarea id="companyPaymentNote" rows="2">${escapeHTML(data.payment_note || "")}</textarea>
+        </div>
+
+        <div class="field full">
+          <label for="companyDefaultNote">หมายเหตุเริ่มต้น</label>
+          <textarea id="companyDefaultNote" rows="6">${escapeHTML(data.default_note || "")}</textarea>
+        </div>
+
+        <div class="field full">
+          <label for="companyDefaultPaymentTerms">เงื่อนไขการชำระเงินเริ่มต้น</label>
+          <textarea id="companyDefaultPaymentTerms" rows="5">${escapeHTML(data.default_payment_terms || "")}</textarea>
+        </div>
+      </div>
+
+      <div class="form-actions normal-flow">
+        <button type="button" id="resetCompanyFormButton" class="btn btn-ghost">โหลดข้อมูลใหม่</button>
+        <button type="submit" id="saveCompanyButton" class="btn btn-primary">บันทึก Company Profile</button>
+      </div>
+    </form>
+  `;
+
+  $("#resetCompanyFormButton").addEventListener("click", () => {
+    renderCompanyPage();
+  });
+
+  $("#companyProfileForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await saveCompanyProfile(data.id);
+  });
+}
+
+async function saveCompanyProfile(companyId) {
+  const saveButton = $("#saveCompanyButton");
+  saveButton.disabled = true;
+  saveButton.textContent = "กำลังบันทึก...";
+
+  try {
+    const payload = {
+      company_name: $("#companyName").value.trim(),
+      tax_id: $("#companyTaxId").value.trim(),
+      branch_name: $("#companyBranchName").value.trim(),
+      address: $("#companyAddress").value.trim(),
+      phone: $("#companyPhone").value.trim(),
+      email: $("#companyEmail").value.trim(),
+      logo_url: $("#companyLogoUrl").value.trim(),
+      bank_name: $("#companyBankName").value.trim(),
+      bank_account_name: $("#companyBankAccountName").value.trim(),
+      bank_account_no: $("#companyBankAccountNo").value.trim(),
+      payment_note: $("#companyPaymentNote").value.trim(),
+      default_note: $("#companyDefaultNote").value.trim(),
+      default_payment_terms: $("#companyDefaultPaymentTerms").value.trim(),
+    };
+
+    if (!payload.company_name) {
+      throw new Error("กรุณากรอกชื่อบริษัท");
+    }
+
+    const { error } = await supabaseClient
+      .from("company_profile")
+      .update(payload)
+      .eq("id", companyId);
+
+    if (error) throw error;
+
+    showToast("บันทึก Company Profile สำเร็จ");
+    await renderCompanyPage();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถบันทึก Company Profile ได้");
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "บันทึก Company Profile";
+  }
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+
+  if (!canModify) {
+    return "";
+  }
+
+  const buttons = [];
+
+  if (quotation.status === "draft") {
+    buttons.push(`<button id="editDraftButton" class="btn btn-ghost">แก้ไข Draft</button>`);
+    buttons.push(`<button id="cancelDraftButton" class="btn btn-ghost danger-soft">ยกเลิก Draft</button>`);
+    buttons.push(`<button id="confirmQuotationButton" class="btn btn-primary">Confirm และสร้างเลข</button>`);
+  }
+
+  if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`<button id="markSentButton" class="btn btn-primary">เปลี่ยนเป็นส่งแล้ว</button>`);
+  }
+
+  if (quotation.status !== "draft") {
+    buttons.push(`<button id="printPreviewButton" class="btn btn-primary">Preview / Print</button>`);
+    buttons.push(`<button id="duplicateQuotationButton" class="btn btn-ghost">สร้างสำเนา</button>`);
+  }
+
+  return buttons.join("");
+}
+
+function bindQuotationViewActions(quotation) {
+  const backButton = $("#backToListButton");
+  const editDraftButton = $("#editDraftButton");
+  const cancelDraftButton = $("#cancelDraftButton");
+  const confirmButton = $("#confirmQuotationButton");
+  const markSentButton = $("#markSentButton");
+  const printPreviewButton = $("#printPreviewButton");
+  const duplicateButton = $("#duplicateQuotationButton");
+
+  if (backButton) {
+    backButton.addEventListener("click", () => {
+      location.hash = "#quotations";
+    });
+  }
+
+  if (editDraftButton) {
+    editDraftButton.addEventListener("click", () => {
+      location.hash = `#quotation-edit/${quotation.id}`;
+    });
+  }
+
+  if (cancelDraftButton) {
+    cancelDraftButton.addEventListener("click", async () => {
+      await cancelDraftQuotation(quotation.id);
+    });
+  }
+
+  if (confirmButton) {
+    confirmButton.addEventListener("click", async () => {
+      await confirmQuotation(quotation.id);
+    });
+  }
+
+  if (markSentButton) {
+    markSentButton.addEventListener("click", async () => {
+      await markQuotationAsSent(quotation.id);
+    });
+  }
+
+  if (printPreviewButton) {
+    printPreviewButton.addEventListener("click", () => {
+      location.hash = `#quotation-print/${quotation.id}`;
+    });
+  }
+
+  if (duplicateButton) {
+    duplicateButton.addEventListener("click", async () => {
+      await duplicateQuotation(quotation.id);
+    });
+  }
+}
+
+async function cancelDraftQuotation(quotationId) {
+  const reason = window.prompt("ระบุเหตุผลในการยกเลิก Draft", "ยกเลิกโดยผู้ใช้งาน");
+  if (reason === null) return;
+
+  try {
+    showToast("กำลังยกเลิก Draft...");
+
+    const { error } = await supabaseClient.rpc("cancel_quotation", {
+      p_quotation_id: quotationId,
+      p_reason: reason.trim() || "Cancelled by user",
+    });
+
+    if (error) throw error;
+
+    showToast("ยกเลิก Draft สำเร็จ");
+    await renderQuotationViewPage(quotationId);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถยกเลิก Draft ได้");
+  }
+}
+
+async function handleSaveQuotationDraft(event, products, options = {}) {
+  event.preventDefault();
+
+  const isEdit = options.mode === "edit";
+  const quotationId = options.quotationId;
+
+  const saveButton = $("#saveDraftButton");
+  saveButton.disabled = true;
+  saveButton.textContent = isEdit ? "กำลังบันทึกการแก้ไข..." : "กำลังบันทึก...";
+
+  try {
+    const formData = collectQuotationFormData(products);
+    validateQuotationFormData(formData);
+
+    let savedQuotationId = quotationId;
+
+    if (isEdit) {
+      const { data: updatedQuotation, error: updateError } = await supabaseClient
+        .from("quotations")
+        .update(formData.quotePayload)
+        .eq("id", quotationId)
+        .eq("status", "draft")
+        .select("id")
+        .single();
+
+      if (updateError) throw updateError;
+
+      savedQuotationId = updatedQuotation.id;
+
+      const { error: deleteError } = await supabaseClient
+        .from("quotation_items")
+        .delete()
+        .eq("quotation_id", savedQuotationId);
+
+      if (deleteError) throw deleteError;
+    } else {
+      const { data: quotation, error: quotationError } = await supabaseClient
+        .from("quotations")
+        .insert(formData.quotePayload)
+        .select("id")
+        .single();
+
+      if (quotationError) throw quotationError;
+      savedQuotationId = quotation.id;
+    }
+
+    const quotationItems = buildQuotationItemsPayload(savedQuotationId, formData.product);
+
+    const { error: itemError } = await supabaseClient
+      .from("quotation_items")
+      .insert(quotationItems);
+
+    if (itemError) throw itemError;
+
+    await updateQuotationTotalsSnapshot(savedQuotationId);
+
+    showToast(isEdit ? "บันทึกการแก้ไขสำเร็จ" : "บันทึกร่างสำเร็จ");
+    location.hash = `#quotation-view/${savedQuotationId}`;
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || (isEdit ? "ไม่สามารถบันทึกการแก้ไขได้" : "ไม่สามารถบันทึกร่างได้"));
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = isEdit ? "บันทึกการแก้ไข" : "บันทึกร่าง";
+  }
+}
+
+function collectQuotationFormData(products) {
+  const product = products.find((item) => item.id === $("#draftProductId").value);
+
+  if (!product) {
+    throw new Error("กรุณาเลือกสินค้า/บริการ");
+  }
+
+  const quotePayload = {
+    owner_id: appState.user.id,
+    billing_type: $("#draftBillingType").value,
+    customer_name: $("#draftCustomerName").value.trim(),
+    customer_address: $("#draftCustomerAddress").value.trim(),
+    quote_date: $("#draftQuoteDate").value,
+    valid_until: $("#draftValidUntil").value,
+    vat_enabled: $("#draftVatEnabled").checked,
+    vat_rate: 7,
+    wht_enabled: $("#draftWhtEnabled").checked,
+    wht_rate: 3,
+    discount_percent: readNumber("#draftDiscountPercent"),
+    rounding_enabled: $("#draftRoundingEnabled").checked,
+    note: $("#draftNote").value.trim(),
+    payment_terms: $("#draftPaymentTerms").value.trim(),
+  };
+
+  return { product, quotePayload };
+}
+
+function validateQuotationFormData({ quotePayload }) {
+  if (!quotePayload.customer_name) {
+    throw new Error("กรุณากรอกชื่อลูกค้า");
+  }
+
+  if (!quotePayload.quote_date || !quotePayload.valid_until) {
+    throw new Error("กรุณาระบุวันที่ออกเอกสารและวันหมดอายุ");
+  }
+
+  if (new Date(quotePayload.valid_until) < new Date(quotePayload.quote_date)) {
+    throw new Error("วันหมดอายุต้องไม่น้อยกว่าวันที่ออกเอกสาร");
+  }
+
+  const discount = Number(quotePayload.discount_percent || 0);
+  if (discount < 0 || discount > 100) {
+    throw new Error("ส่วนลดท้ายบิลต้องอยู่ระหว่าง 0-100%");
+  }
+
+  const recurringPrice = readNumber("#draftUnitPrice");
+  const oneTimePrice = readNumber("#draftOneTimePrice");
+  const quantity = readNumber("#draftQuantity");
+  const oneTimeQty = readNumber("#draftOneTimeQty");
+
+  if (quantity <= 0) {
+    throw new Error("จำนวนรถต้องมากกว่า 0");
+  }
+
+  if (recurringPrice < 0 || oneTimePrice < 0 || oneTimeQty < 0) {
+    throw new Error("จำนวนและราคาต้องไม่ติดลบ");
+  }
+}
+
+function buildQuotationItemsPayload(quotationId, product) {
+  return [
+    {
+      quotation_id: quotationId,
+      section_type: "recurring",
+      product_id: product.id,
+      product_name_snapshot: product.name,
+      description: `- ${product.name}`,
+      quantity_label: "จำนวนรถ",
+      quantity: readNumber("#draftQuantity"),
+      unit: $("#draftUnit").value.trim() || product.default_unit || "คัน",
+      unit_price: readNumber("#draftUnitPrice"),
+      sort_order: 1,
+    },
+    {
+      quotation_id: quotationId,
+      section_type: "one_time",
+      product_id: null,
+      product_name_snapshot: $("#draftOneTimeName").value.trim() || "ค่าบริการชำระครั้งเดียว",
+      description: $("#draftOneTimeDescription").value.trim(),
+      quantity_label: "จำนวนครั้ง",
+      quantity: readNumber("#draftOneTimeQty"),
+      unit: "ครั้ง",
+      unit_price: readNumber("#draftOneTimePrice"),
+      sort_order: 1,
+    },
+  ];
+}
+
+function renderSettingsPage() {
+  if (appState.profile.role !== "admin") {
+    renderError("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+    return;
+  }
+
+  setPageHeader("Settings", "แนวทางดูแลระบบและ QA Checklist");
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>System Health Checklist</h3>
+          <p>ใช้ตรวจระบบหลัง deploy หรือก่อนเริ่มใช้งานจริง</p>
+        </div>
+      </div>
+
+      <div class="checklist-grid">
+        ${[
+          "Admin เห็นทุกเมนูและจัดการ Company / Product ได้",
+          "Manager ดู Dashboard และ Export/Print ได้ แต่สร้าง/แก้ไขไม่ได้",
+          "Sales เห็นเฉพาะใบเสนอราคาของตัวเอง",
+          "Draft แก้ไขได้ และ Confirm แล้วแก้ไม่ได้",
+          "เลข QTN รันถูกต้องตามเดือนและไม่ซ้ำ",
+          "Preview / Print แสดงข้อมูล snapshot หลัง Confirm",
+          "Price Lookup ดึงเฉพาะเอกสาร Confirmed หรือ Sent",
+          "ไม่มี service_role key ใน Frontend",
+        ].map((item) => `
+          <label class="checklist-item">
+            <input type="checkbox" />
+            <span>${escapeHTML(item)}</span>
+          </label>
+        `).join("")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>ข้อควรระวัง</h3>
+          <p>สำหรับ GitHub Pages + Supabase</p>
+        </div>
+      </div>
+      <div class="kv-list">
+        <div class="kv-row"><span>Frontend Key</span><strong>ใช้ได้เฉพาะ anon public key เท่านั้น ห้ามใช้ service_role</strong></div>
+        <div class="kv-row"><span>Permission</span><strong>สิทธิ์จริงต้องคุมด้วย RLS และ RPC ใน Database</strong></div>
+        <div class="kv-row"><span>PDF</span><strong>เวอร์ชันนี้ใช้ Browser Print / Save as PDF</strong></div>
+        <div class="kv-row"><span>User</span><strong>Admin สร้าง User ผ่าน Supabase Dashboard ตาม Requirement ปัจจุบัน</strong></div>
+      </div>
+    </div>
+  `;
+}

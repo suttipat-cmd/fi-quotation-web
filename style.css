@@ -1097,3 +1097,155 @@ textarea {
     width: 100%;
   }
 }
+
+
+/* =======================================================
+   v1.0 Consolidated Release
+   ======================================================= */
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.compact-list {
+  display: grid;
+  gap: 8px;
+}
+
+.compact-item {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+}
+
+.compact-item:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+}
+
+.compact-item strong,
+.compact-item span {
+  display: block;
+}
+
+.compact-item span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.compact-item-right {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.empty-state.compact {
+  padding: 20px 12px;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.form-card {
+  display: grid;
+  gap: 18px;
+}
+
+.form-actions.normal-flow {
+  position: static;
+  background: transparent;
+  backdrop-filter: none;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.checkbox-row.full {
+  grid-column: 1 / -1;
+}
+
+.danger-soft {
+  color: var(--error-text);
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.danger-soft:hover {
+  background: var(--error-bg);
+}
+
+.checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.checklist-item input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.print-page {
+  max-width: 100%;
+}
+
+.print-company img.print-logo {
+  object-fit: contain;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid,
+  .checklist-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-item {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-item-right {
+    justify-items: start;
+  }
+}
+
+@media print {
+  .print-page {
+    max-width: none;
+  }
+
+  .print-table th,
+  .print-table td {
+    padding: 5px 6px;
+  }
+
+  .print-page {
+    font-size: 11px;
+  }
+}
