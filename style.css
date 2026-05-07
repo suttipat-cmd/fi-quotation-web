@@ -3249,3 +3249,29 @@ body {
     page-break-inside: avoid;
   }
 }
+
+/* =======================================================
+   v1.5.1 Print hotfix
+   - Keep yearly print layout identical to monthly layout
+   - Remove document grand total from render
+   - Tighten customer and bank label spacing
+   ======================================================= */
+
+.print-v2-customer-row {
+  grid-template-columns: 12mm 1fr;
+  gap: 4px;
+}
+
+.print-v2-customer-row.print-v2-customer-address {
+  grid-template-columns: 12mm 1fr;
+}
+
+.print-v2-bank-box dl div {
+  grid-template-columns: 16mm 1fr;
+  gap: 4px;
+}
+
+.print-v2-bank-box dt,
+.print-v2-customer-row span {
+  white-space: nowrap;
+}

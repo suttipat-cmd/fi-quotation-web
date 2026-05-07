@@ -7565,29 +7565,40 @@ async function renderQuotationPrintPage(quotationId) {
 
 function buildQuotationPrintModelV15({ quotation, items, company, ownerName, sectionTotals }) {
   const totalsBySection = new Map((sectionTotals || []).map((item) => [item.section_type, item]));
+  const localTotalsBySection = new Map(calculateSectionTotalsLocal(quotation, items).map((item) => [item.section_type, item]));
   const recurringItems = items.filter((item) => item.section_type === "recurring");
   const oneTimeItems = items.filter((item) => item.section_type === "one_time");
   const sections = [];
 
-  if (recurringItems.length && Number(totalsBySection.get("recurring")?.subtotal_amount || 0) > 0) {
+  const recurringTotals =
+    totalsBySection.get("recurring") ||
+    localTotalsBySection.get("recurring") ||
+    createEmptyPrintSectionTotalsV15(quotation, "recurring");
+
+  const oneTimeTotals =
+    totalsBySection.get("one_time") ||
+    localTotalsBySection.get("one_time") ||
+    createEmptyPrintSectionTotalsV15(quotation, "one_time");
+
+  if (recurringItems.length) {
     sections.push({
       type: "recurring",
-      title: totalsBySection.get("recurring")?.section_title || (quotation.billing_type === "yearly" ? "ค่าบริการใช้งานรายปี" : "ค่าบริการใช้งานรายเดือน"),
-      subtitle: totalsBySection.get("recurring")?.section_subtitle || (quotation.billing_type === "yearly" ? "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายปี" : "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายเดือน"),
+      title: recurringTotals.section_title || (quotation.billing_type === "yearly" ? "ค่าบริการใช้งานรายปี" : "ค่าบริการใช้งานรายเดือน"),
+      subtitle: recurringTotals.section_subtitle || (quotation.billing_type === "yearly" ? "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายปี" : "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายเดือน"),
       quantityHeader: "จำนวนรถ",
       items: recurringItems,
-      totals: totalsBySection.get("recurring") || {},
+      totals: recurringTotals,
     });
   }
 
-  if (oneTimeItems.length && Number(totalsBySection.get("one_time")?.subtotal_amount || 0) > 0) {
+  if (oneTimeItems.length) {
     sections.push({
       type: "one_time",
-      title: totalsBySection.get("one_time")?.section_title || "ค่าบริการครั้งเดียว (ค่าแรกเข้า)",
-      subtitle: totalsBySection.get("one_time")?.section_subtitle || "ส่วนนี้เป็นค่าบริการที่เรียกเก็บครั้งเดียว ณ วันเริ่มใช้งาน",
+      title: oneTimeTotals.section_title || "ค่าบริการครั้งเดียว (ค่าแรกเข้า)",
+      subtitle: oneTimeTotals.section_subtitle || "ส่วนนี้เป็นค่าบริการที่เรียกเก็บครั้งเดียว ณ วันเริ่มใช้งาน",
       quantityHeader: "จำนวน",
       items: oneTimeItems,
-      totals: totalsBySection.get("one_time") || {},
+      totals: oneTimeTotals,
     });
   }
 
@@ -7623,7 +7634,6 @@ function renderPrintV15(model) {
         ${renderPrintV15Header(model)}
         ${renderPrintV15Customer(model)}
         ${model.sections.map((section) => renderPrintV15ServiceSection(section, model)).join("")}
-        ${renderPrintV15GrandTotal(model)}
         ${renderPrintV15BottomInfo(model)}
         ${renderPrintV15Signatures(model)}
       </article>
@@ -7857,29 +7867,63 @@ function calculateSectionTotalsLocal(quotation, items) {
     },
   ];
 
-  return groups.map((group) => {
-    const sectionItems = items.filter((item) => item.section_type === group.section_type);
-    const subtotal = roundMoney(sectionItems.reduce((sum, item) => sum + getItemLineSubtotalV15(item), 0));
-    const discount = roundMoney(subtotal * Number(quotation.discount_percent || 0) / 100);
-    const taxable = roundMoney(subtotal - discount);
-    const vat = quotation.vat_enabled ? roundMoney(taxable * Number(quotation.vat_rate || 0) / 100) : 0;
-    const wht = quotation.wht_enabled ? roundMoney(taxable * Number(quotation.wht_rate || 0) / 100) : 0;
-    const netTotal = roundMoney(taxable + vat - wht);
-    const displayTotal = quotation.rounding_enabled ? Math.round(netTotal) : netTotal;
-    const rounding = roundMoney(displayTotal - netTotal);
-    return {
-      ...group,
-      subtotal_amount: subtotal,
-      discount_amount: discount,
-      taxable_amount: taxable,
-      vat_amount: vat,
-      wht_amount: wht,
-      rounding_adjustment: rounding,
-      net_total: netTotal,
-      net_total_display: displayTotal,
-      amount_text_th: amountToThaiTextV15(displayTotal),
-    };
-  }).filter((group) => Number(group.subtotal_amount || 0) > 0);
+  return groups
+    .filter((group) => items.some((item) => item.section_type === group.section_type))
+    .map((group) => {
+      const sectionItems = items.filter((item) => item.section_type === group.section_type);
+      return calculatePrintSectionTotalsFromItemsV15(quotation, group, sectionItems);
+    });
+}
+
+function calculatePrintSectionTotalsFromItemsV15(quotation, group, sectionItems) {
+  const subtotal = roundMoney(sectionItems.reduce((sum, item) => sum + getItemLineSubtotalV15(item), 0));
+  const discount = roundMoney(subtotal * Number(quotation.discount_percent || 0) / 100);
+  const taxable = roundMoney(subtotal - discount);
+  const vat = quotation.vat_enabled ? roundMoney(taxable * Number(quotation.vat_rate || 0) / 100) : 0;
+  const wht = quotation.wht_enabled ? roundMoney(taxable * Number(quotation.wht_rate || 0) / 100) : 0;
+  const netTotal = roundMoney(taxable + vat - wht);
+  const displayTotal = quotation.rounding_enabled ? Math.round(netTotal) : netTotal;
+  const rounding = roundMoney(displayTotal - netTotal);
+
+  return {
+    ...group,
+    subtotal_amount: subtotal,
+    discount_amount: discount,
+    taxable_amount: taxable,
+    vat_amount: vat,
+    wht_amount: wht,
+    rounding_adjustment: rounding,
+    net_total: netTotal,
+    net_total_display: displayTotal,
+    amount_text_th: amountToThaiTextV15(displayTotal),
+  };
+}
+
+function createEmptyPrintSectionTotalsV15(quotation, sectionType) {
+  const group = sectionType === "recurring"
+    ? {
+        section_type: "recurring",
+        section_title: quotation.billing_type === "yearly" ? "ค่าบริการใช้งานรายปี" : "ค่าบริการใช้งานรายเดือน",
+        section_subtitle: quotation.billing_type === "yearly" ? "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายปี" : "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายเดือน",
+      }
+    : {
+        section_type: "one_time",
+        section_title: "ค่าบริการครั้งเดียว (ค่าแรกเข้า)",
+        section_subtitle: "ส่วนนี้เป็นค่าบริการที่เรียกเก็บครั้งเดียว ณ วันเริ่มใช้งาน",
+      };
+
+  return {
+    ...group,
+    subtotal_amount: 0,
+    discount_amount: 0,
+    taxable_amount: 0,
+    vat_amount: 0,
+    wht_amount: 0,
+    rounding_adjustment: 0,
+    net_total: 0,
+    net_total_display: 0,
+    amount_text_th: amountToThaiTextV15(0),
+  };
 }
 
 function formatSignedAmount(value) {
