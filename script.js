@@ -7695,7 +7695,6 @@ function renderPrintV15ServiceSection(section, model) {
     <section class="print-v2-service-section print-v2-service-${escapeHTML(section.type)} ${longClass}">
       <div class="print-v2-section-heading">
         <h3>${escapeHTML(section.title)}</h3>
-        <p>${escapeHTML(section.subtitle || "")}</p>
       </div>
       ${renderPrintV15ItemsTable(section)}
       ${renderPrintV15SectionSummary(section, model.quotation)}
@@ -7990,4 +7989,582 @@ function thaiNumberToTextV15(input) {
     }
   }
   return result || digits[0];
+}
+
+// =======================================================
+// v1.6 Form UX + Product Code Rule + Excel Report Redesign
+// Loading watchdog + resume hard fix
+// =======================================================
+
+Object.assign(appState, {
+  renderSeqV16: 0,
+  renderInProgressV16: false,
+  lastResumeAttemptAtV16: 0,
+});
+
+const FI_RENDER_TIMEOUT_MS_V16 = 15000;
+const FI_RESUME_DEBOUNCE_MS_V16 = 1400;
+
+function runWithTimeoutV16(promise, timeoutMs, label = "การโหลดข้อมูล") {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label}ใช้เวลานานเกินไป กรุณาลองโหลดใหม่อีกครั้ง`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => window.clearTimeout(timeoutId));
+}
+
+function isLoadingStateVisibleV16() {
+  return Boolean(elements.pageContent?.querySelector?.(".loading-card, .skeleton-card"));
+}
+
+function renderLoading(message = "กำลังโหลดข้อมูล...") {
+  if (!elements.pageContent) return;
+  elements.pageContent.innerHTML = `
+    <div class="loading-card" data-loading-start="${Date.now()}">
+      <div class="spinner"></div>
+      <strong>${escapeHTML(message)}</strong>
+      <p>หากโหลดนานผิดปกติ ระบบจะแสดงปุ่มให้ลองโหลดใหม่โดยไม่ต้องรีเฟรชเว็บ</p>
+    </div>
+  `;
+}
+
+function renderErrorStateWithRetry(message, buttonText = "โหลดข้อมูลอีกครั้ง") {
+  if (!elements.pageContent) return;
+  elements.pageContent.innerHTML = `
+    <div class="card error-state-card render-retry-card">
+      <div>
+        <h3>โหลดข้อมูลไม่สำเร็จ</h3>
+        <p>${escapeHTML(message || "ไม่สามารถโหลดข้อมูลได้")}</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="retryCurrentPageButton">${escapeHTML(buttonText)}</button>
+    </div>
+  `;
+
+  $("#retryCurrentPageButton")?.addEventListener("click", () => {
+    renderCurrentPage({ force: true, reason: "manual-retry" });
+  });
+}
+
+async function renderCurrentPage(options = {}) {
+  if (!appState.profile) {
+    if (!supabaseClient) return;
+
+    try {
+      const { data, error } = await runWithTimeoutV16(
+        supabaseClient.auth.getSession(),
+        8000,
+        "การตรวจสอบ session"
+      );
+      if (error) throw error;
+      if (!data.session?.user) {
+        showLoginPage();
+        return;
+      }
+      appState.user = data.session.user;
+      await runWithTimeoutV16(loadProfile(), 8000, "การโหลดข้อมูลผู้ใช้");
+      showAppShell();
+    } catch (error) {
+      console.error("renderCurrentPage session bootstrap", error);
+      hidePageBusy();
+      renderErrorStateWithRetry("ไม่สามารถตรวจสอบ session ได้ กรุณาลองโหลดใหม่");
+      return;
+    }
+  }
+
+  const token = ++appState.renderSeqV16;
+  appState.renderInProgressV16 = true;
+  appState.currentPage = getPageFromHash();
+  renderMenu();
+  updateHeaderUser?.();
+  hidePageBusy();
+
+  const page = appState.currentPage;
+  const label = `การโหลดหน้า ${page}`;
+
+  const watchdogId = window.setTimeout(() => {
+    if (appState.renderSeqV16 !== token) return;
+    if (!isLoadingStateVisibleV16()) return;
+    renderErrorStateWithRetry("โหลดข้อมูลนานเกินไปหรือการเชื่อมต่อค้าง กรุณาลองโหลดใหม่อีกครั้ง");
+  }, FI_RENDER_TIMEOUT_MS_V16 + 400);
+
+  try {
+    await runWithTimeoutV16(renderPageByKeyV16(page), FI_RENDER_TIMEOUT_MS_V16, label);
+    if (appState.renderSeqV16 !== token) return;
+
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (elements.pageContent && elements.pageContent.textContent.trim() === "") {
+      throw new Error("หน้าเว็บแสดงผลว่างหลังโหลดข้อมูล");
+    }
+
+    decorateRequiredStars();
+  } catch (error) {
+    if (appState.renderSeqV16 !== token) return;
+    console.error("renderCurrentPage v1.6", error);
+    hidePageBusy();
+    renderErrorStateWithRetry(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    window.clearTimeout(watchdogId);
+    if (appState.renderSeqV16 === token) appState.renderInProgressV16 = false;
+    hidePageBusy();
+  }
+}
+
+async function renderPageByKeyV16(page) {
+  if (page === "dashboard") {
+    await renderDashboardPage();
+  } else if (page === "quotations") {
+    await renderQuotationsPage();
+  } else if (page === "quotation-new") {
+    await renderQuotationCreatePage();
+  } else if (page.startsWith("quotation-edit/")) {
+    await renderQuotationEditPage(page.replace("quotation-edit/", ""));
+  } else if (page.startsWith("quotation-view/")) {
+    await renderQuotationViewPage(page.replace("quotation-view/", ""));
+  } else if (page.startsWith("quotation-print/")) {
+    await renderQuotationPrintPage(page.replace("quotation-print/", ""));
+  } else if (page === "customers") {
+    await renderCustomersPage();
+  } else if (page === "products") {
+    await renderProductsPage();
+  } else if (page === "product-new") {
+    await renderProductFormPage({ mode: "create", productId: null });
+  } else if (page.startsWith("product-edit/")) {
+    await renderProductFormPage({ mode: "edit", productId: page.replace("product-edit/", "") });
+  } else if (page === "company") {
+    await renderCompanyPage();
+  } else if (page === "settings") {
+    await renderSettingsPage();
+  } else {
+    navigateToPage("dashboard", { force: true });
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient) return;
+  if (shouldSkipResumeRecoveryForFilePicker?.()) {
+    releaseFilePickerInteraction?.(1600);
+    return;
+  }
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAttemptAtV16 || 0) < FI_RESUME_DEBOUNCE_MS_V16) return;
+  appState.lastResumeAttemptAtV16 = now;
+
+  if (appState.resumeInProgress) return;
+  appState.resumeInProgress = true;
+
+  try {
+    hidePageBusy();
+    appState.activeActions?.clear?.();
+
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+    const { data, error } = await runWithTimeoutV16(
+      supabaseClient.auth.getSession(),
+      8000,
+      "การตรวจสอบ session หลังกลับมาหน้าเว็บ"
+    );
+    if (error) throw error;
+
+    if (!data.session?.user) {
+      appState.user = null;
+      appState.profile = null;
+      showLoginPage();
+      showToast("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = data.session.user;
+    await runWithTimeoutV16(loadProfile(), 8000, "การโหลดข้อมูลผู้ใช้");
+    showAppShell();
+
+    try {
+      await runWithTimeoutV16(loadAndApplyAppBranding(), 8000, "การโหลด branding");
+    } catch (brandingError) {
+      console.warn("branding reload skipped", brandingError);
+    }
+
+    await renderCurrentPage({ force: true, reason });
+
+    window.setTimeout(() => {
+      if (shouldSkipResumeRecoveryForFilePicker?.()) return;
+      if (isLoadingStateVisibleV16() || !elements.pageContent?.textContent.trim()) {
+        renderCurrentPage({ force: true, reason: `${reason}-watchdog-retry` });
+      }
+    }, 900);
+  } catch (error) {
+    console.error("recoverAppAfterResume v1.6", reason, error);
+    hidePageBusy();
+    renderErrorStateWithRetry(error.message || "โหลดข้อมูลหลังกลับมาหน้าเว็บไม่สำเร็จ", "โหลดข้อมูลใหม่");
+    showToast("โหลดข้อมูลใหม่ไม่สำเร็จ กรุณากดโหลดข้อมูลใหม่", "warning", { duration: 5200 });
+  } finally {
+    appState.resumeInProgress = false;
+  }
+}
+
+function decorateRequiredStars(root = document) {
+  const scope = root?.querySelectorAll ? root : document;
+  scope.querySelectorAll("label").forEach((label) => {
+    if (label.querySelector(".required-star")) return;
+    if (label.querySelector("input, select, textarea, button")) return;
+    const text = label.textContent || "";
+    if (!text.includes("*")) return;
+    label.innerHTML = escapeHTML(text).replace(/\*/g, '<span class="required-star">*</span>');
+  });
+}
+
+function startRequiredStarObserverV16() {
+  decorateRequiredStars();
+  if (window.__fiRequiredObserverV16) return;
+  window.__fiRequiredObserverV16 = true;
+
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === 1) decorateRequiredStars(node);
+      });
+    }
+  });
+
+  const target = document.getElementById("app") || document.body;
+  observer.observe(target, { childList: true, subtree: true });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startRequiredStarObserverV16);
+} else {
+  startRequiredStarObserverV16();
+}
+
+const renderProductFormPageV16Base = renderProductFormPage;
+async function renderProductFormPage(options) {
+  await renderProductFormPageV16Base(options);
+  const helper = document.querySelector("#productForm .card-header p");
+  if (helper) helper.textContent = "Code สามารถซ้ำได้ แต่ชื่อสินค้า/บริการต้องไม่ซ้ำ";
+  decorateRequiredStars();
+}
+
+async function saveProduct({ mode, productId }) {
+  const saveButton = $("#saveProductButton");
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "กำลังบันทึก...";
+  }
+
+  try {
+    const payload = {
+      code: $("#productCode")?.value.trim() || "",
+      name: $("#productName")?.value.trim() || "",
+      description: $("#productDescription")?.value.trim() || "",
+      default_unit: $("#productUnit")?.value.trim() || "คัน",
+      is_active: $("#productIsActive")?.checked ?? true,
+    };
+
+    if (!payload.code || !payload.name || !payload.default_unit) {
+      throw new Error("กรุณากรอก Code, ชื่อสินค้า/บริการ และหน่วย");
+    }
+
+    const { data: productsForNameCheck, error: nameCheckError } = await supabaseClient
+      .from("products")
+      .select("id, name");
+
+    if (nameCheckError) throw nameCheckError;
+
+    const normalizedName = normalizeProductNameV16(payload.name);
+    const duplicatedName = (productsForNameCheck || []).find((item) => {
+      if (mode === "edit" && item.id === productId) return false;
+      return normalizeProductNameV16(item.name) === normalizedName;
+    });
+
+    if (duplicatedName) {
+      throw new Error("ชื่อสินค้า/บริการนี้มีอยู่แล้ว กรุณาใช้ชื่ออื่น");
+    }
+
+    if (mode === "edit") {
+      const { error } = await supabaseClient
+        .from("products")
+        .update(payload)
+        .eq("id", productId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabaseClient
+        .from("products")
+        .insert(payload);
+      if (error) throw error;
+    }
+
+    showToast("บันทึกสินค้า/บริการสำเร็จ", "success");
+    location.hash = "#products";
+  } catch (error) {
+    console.error(error);
+    const duplicateMessage = isProductNameDuplicateErrorV16(error)
+      ? "ชื่อสินค้า/บริการนี้มีอยู่แล้ว กรุณาใช้ชื่ออื่น"
+      : error.message || "ไม่สามารถบันทึกสินค้า/บริการได้";
+    showToast(duplicateMessage, "error", { duration: 5200 });
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "บันทึก";
+    }
+  }
+}
+
+function normalizeProductNameV16(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function isProductNameDuplicateErrorV16(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return error?.code === "23505" || message.includes("products_name_unique") || message.includes("duplicate key");
+}
+
+async function exportQuotationsXlsx(rows) {
+  if (!rows?.length) {
+    showToast("ไม่มีข้อมูลสำหรับ Export", "warning");
+    return;
+  }
+
+  if (!window.XLSX) {
+    showToast("ไม่พบ Excel library กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่", "error", { duration: 5200 });
+    return;
+  }
+
+  await withAction("export-quotations-xlsx-v16", async () => {
+    showPageBusy("กำลังสร้าง Excel Report...");
+
+    const ids = rows.map((row) => row.id).filter(Boolean);
+    const [quotationsResult, itemsResult] = await Promise.all([
+      supabaseClient
+        .from("quotations")
+        .select("id, quotation_no, status, billing_type, customer_name, quote_date, valid_until, sent_at, paid_at, cancelled_reason, vat_enabled, vat_rate, wht_enabled, wht_rate, discount_percent, rounding_enabled, subtotal_amount, discount_amount, taxable_amount, vat_amount, wht_amount, rounding_adjustment, grand_total_display, created_at, updated_at")
+        .in("id", ids),
+      supabaseClient
+        .from("quotation_items")
+        .select("id, quotation_id, section_type, product_id, product_name_snapshot, description, quantity, unit, unit_price, line_subtotal, sort_order")
+        .in("quotation_id", ids)
+        .order("quotation_id", { ascending: true })
+        .order("section_type", { ascending: false })
+        .order("sort_order", { ascending: true }),
+    ]);
+
+    if (quotationsResult.error) throw quotationsResult.error;
+    if (itemsResult.error) throw itemsResult.error;
+
+    const quotationById = new Map((quotationsResult.data || []).map((item) => [item.id, item]));
+    const items = itemsResult.data || [];
+    const itemsByQuotation = groupByV16(items, "quotation_id");
+
+    const productIds = Array.from(new Set(items.map((item) => item.product_id).filter(Boolean)));
+    const productById = new Map();
+    if (productIds.length) {
+      const { data: products, error: productsError } = await supabaseClient
+        .from("products")
+        .select("id, code, name")
+        .in("id", productIds);
+      if (productsError) throw productsError;
+      (products || []).forEach((product) => productById.set(product.id, product));
+    }
+
+    const exportRows = rows.map((row) => {
+      const quotation = { ...(quotationById.get(row.id) || {}), ...row };
+      const sectionItems = itemsByQuotation.get(row.id) || [];
+      const sectionMap = buildSectionTotalsForExportV16(quotation, sectionItems);
+      return {
+        ...row,
+        _quotation: quotation,
+        _items: sectionItems,
+        _recurringTotal: sectionMap.get("recurring")?.net_total_display || 0,
+        _oneTimeTotal: sectionMap.get("one_time")?.net_total_display || 0,
+      };
+    });
+
+    const workbook = XLSX.utils.book_new();
+    appendSheetV16(workbook, "Summary", buildExcelSummaryRowsV16(exportRows));
+    appendSheetV16(workbook, "Quotations", buildExcelQuotationRowsV16(exportRows));
+    appendSheetV16(workbook, "Items", buildExcelItemRowsV16(exportRows, itemsByQuotation, productById));
+    appendSheetV16(workbook, "By Sales", buildExcelBySalesRowsV16(exportRows));
+    appendSheetV16(workbook, "By Status", buildExcelByStatusRowsV16(exportRows));
+
+    XLSX.writeFile(workbook, `fi-quotation-report-${toDateInputValue(new Date())}.xlsx`);
+    showToast(`Export Excel สำเร็จ ${number(rows.length)} รายการ`, "success");
+  });
+}
+
+function appendSheetV16(workbook, sheetName, rows) {
+  const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{ รายละเอียด: "ไม่มีข้อมูล" }], { skipHeader: false });
+  worksheet["!cols"] = inferSheetColumnsV16(rows);
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+}
+
+function inferSheetColumnsV16(rows) {
+  if (!rows?.length) return [{ wch: 24 }];
+  const keys = Object.keys(rows[0]);
+  return keys.map((key) => {
+    const max = Math.max(
+      String(key).length,
+      ...rows.slice(0, 200).map((row) => String(row[key] ?? "").length)
+    );
+    return { wch: Math.min(Math.max(max + 2, 12), 42) };
+  });
+}
+
+function buildSectionTotalsForExportV16(quotation, items) {
+  const recurringItems = items.filter((item) => item.section_type === "recurring");
+  const oneTimeItems = items.filter((item) => item.section_type === "one_time");
+  const map = new Map();
+
+  if (recurringItems.length) {
+    map.set("recurring", calculatePrintSectionTotalsFromItemsV15(quotation, {
+      section_type: "recurring",
+      section_title: quotation.billing_type === "yearly" ? "ค่าบริการใช้งานรายปี" : "ค่าบริการใช้งานรายเดือน",
+      section_subtitle: "",
+    }, recurringItems));
+  }
+
+  if (oneTimeItems.length) {
+    map.set("one_time", calculatePrintSectionTotalsFromItemsV15(quotation, {
+      section_type: "one_time",
+      section_title: "ค่าบริการครั้งเดียว (ค่าแรกเข้า)",
+      section_subtitle: "",
+    }, oneTimeItems));
+  }
+
+  return map;
+}
+
+function buildExcelSummaryRowsV16(rows) {
+  const filters = appState.quotationFilters || {};
+  const counts = countByV16(rows, (row) => statusLabel(row.effective_status || row.status));
+  const sentAmount = sumByV16(rows.filter((row) => (row.effective_status || row.status) === "sent"), "grand_total_display");
+  const paidAmount = sumByV16(rows.filter((row) => (row.effective_status || row.status) === "paid"), "grand_total_display");
+
+  const result = [
+    { หัวข้อ: "Export เมื่อ", ค่า: new Date().toLocaleString("th-TH") },
+    { หัวข้อ: "ผู้ Export", ค่า: appState.profile?.full_name || appState.profile?.email || "-" },
+    { หัวข้อ: "ช่วงวันที่เสนอราคา", ค่า: formatRangeLabel(filters.quoteFrom, filters.quoteTo) },
+    { หัวข้อ: "ช่วงวันหมดอายุ", ค่า: formatRangeLabel(filters.validFrom, filters.validTo) },
+    { หัวข้อ: "สถานะที่กรอง", ค่า: filters.status ? statusLabel(filters.status) : "ทุกสถานะ" },
+    { หัวข้อ: "ประเภทที่กรอง", ค่า: filters.billingType ? billingTypeLabel(filters.billingType) : "ทุกประเภท" },
+    { หัวข้อ: "จำนวนใบเสนอราคา", ค่า: rows.length },
+    { หัวข้อ: "ยอดสถานะส่งแล้ว", ค่า: sentAmount },
+    { หัวข้อ: "ยอดสถานะชำระเงินแล้ว", ค่า: paidAmount },
+  ];
+
+  Object.entries(counts).forEach(([status, count]) => {
+    result.push({ หัวข้อ: `จำนวนสถานะ ${status}`, ค่า: count });
+  });
+
+  return result;
+}
+
+function buildExcelQuotationRowsV16(rows) {
+  return rows.map((row) => ({
+    "เลขที่ใบเสนอราคา": row.quotation_no || "ยังไม่ออกเลข",
+    สถานะ: statusLabel(row.effective_status || row.status),
+    ลูกค้า: row.customer_name || "",
+    ฝ่ายขาย: row.owner_name || "",
+    ประเภท: billingTypeLabel(row.billing_type),
+    "วันที่เสนอราคา": row.quote_date || "",
+    "วันหมดอายุ": row.valid_until || "",
+    "วันที่ส่ง": row.sent_at || "",
+    "วันที่ชำระเงิน": row.paid_at || "",
+    "ยอดรายเดือน/รายปี": Number(row._recurringTotal || 0),
+    "ยอดครั้งเดียว": Number(row._oneTimeTotal || 0),
+    "ยอดรวมสุทธิ": Number(row.grand_total_display || 0),
+    VAT: Number(row.vat_amount || 0),
+    "หัก ณ ที่จ่าย": Number(row.wht_amount || 0),
+    ส่วนลด: Number(row.discount_amount || 0),
+    "เหตุผลยกเลิก": row.cancelled_reason || "",
+    "วันที่สร้าง": row.created_at || "",
+    "วันที่แก้ไขล่าสุด": row.updated_at || "",
+  }));
+}
+
+function buildExcelItemRowsV16(rows, itemsByQuotation, productById) {
+  const result = [];
+  rows.forEach((row) => {
+    const items = itemsByQuotation.get(row.id) || [];
+    items.forEach((item) => {
+      const product = item.product_id ? productById.get(item.product_id) : null;
+      result.push({
+        "เลขที่ใบเสนอราคา": row.quotation_no || "ยังไม่ออกเลข",
+        ลูกค้า: row.customer_name || "",
+        ฝ่ายขาย: row.owner_name || "",
+        Section: item.section_type === "recurring" ? billingTypeLabel(row.billing_type) : "ครั้งเดียว",
+        "รหัสสินค้า": product?.code || "",
+        "ชื่อสินค้า/บริการ": item.product_name_snapshot || product?.name || "",
+        รายละเอียด: item.description || "",
+        จำนวน: Number(item.quantity || 0),
+        หน่วย: item.unit || "",
+        "ราคา/หน่วย": Number(item.unit_price || 0),
+        "มูลค่าก่อนภาษี": Number(getItemLineSubtotalV15(item) || 0),
+      });
+    });
+  });
+  return result;
+}
+
+function buildExcelBySalesRowsV16(rows) {
+  const groups = groupByFunctionV16(rows, (row) => row.owner_name || "ไม่ระบุฝ่ายขาย");
+  return Array.from(groups.entries()).map(([sales, items]) => {
+    const sentRows = items.filter((row) => (row.effective_status || row.status) === "sent");
+    const paidRows = items.filter((row) => (row.effective_status || row.status) === "paid");
+    const sentAmount = sumByV16(sentRows, "grand_total_display");
+    const paidAmount = sumByV16(paidRows, "grand_total_display");
+    return {
+      ฝ่ายขาย: sales,
+      "จำนวนใบเสนอราคา": items.length,
+      "จำนวนส่งแล้ว": sentRows.length,
+      "จำนวนชำระเงินแล้ว": paidRows.length,
+      "ยอดส่งแล้ว": sentAmount,
+      "ยอดชำระเงินแล้ว": paidAmount,
+      "Conversion โดยยอด (%)": sentAmount > 0 ? roundMoney((paidAmount / sentAmount) * 100) : 0,
+    };
+  }).sort((a, b) => String(a.ฝ่ายขาย).localeCompare(String(b.ฝ่ายขาย), "th"));
+}
+
+function buildExcelByStatusRowsV16(rows) {
+  const groups = groupByFunctionV16(rows, (row) => statusLabel(row.effective_status || row.status));
+  return Array.from(groups.entries()).map(([status, items]) => ({
+    สถานะ: status,
+    "จำนวนเอกสาร": items.length,
+    "ยอดรวม": sumByV16(items, "grand_total_display"),
+  }));
+}
+
+function groupByV16(items, key) {
+  const map = new Map();
+  (items || []).forEach((item) => {
+    const value = item[key];
+    if (!map.has(value)) map.set(value, []);
+    map.get(value).push(item);
+  });
+  return map;
+}
+
+function groupByFunctionV16(items, getter) {
+  const map = new Map();
+  (items || []).forEach((item) => {
+    const value = getter(item);
+    if (!map.has(value)) map.set(value, []);
+    map.get(value).push(item);
+  });
+  return map;
+}
+
+function countByV16(items, getter) {
+  const result = {};
+  (items || []).forEach((item) => {
+    const key = getter(item);
+    result[key] = (result[key] || 0) + 1;
+  });
+  return result;
+}
+
+function sumByV16(items, key) {
+  return roundMoney((items || []).reduce((sum, item) => sum + Number(item[key] || 0), 0));
 }
