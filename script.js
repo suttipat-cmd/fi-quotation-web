@@ -7,7 +7,7 @@ const isConfigured =
   !SUPABASE_URL.includes("PASTE_") &&
   !SUPABASE_ANON_KEY.includes("PASTE_");
 
-const supabaseClient = isConfigured
+const supabaseClient = isConfigured && window.supabase?.createClient
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
@@ -11091,3 +11091,482 @@ async function saveProduct({ mode, productId }) {
 }
 
 window.FI_APP_VERSION = FI_STABILITY_FIX_VERSION_V172;
+
+
+// =======================================================
+// v1.7.3 Boot Watchdog + Final Auth Boot Guard
+// Purpose: never leave the app stuck on the boot spinner.
+// =======================================================
+
+const FI_BOOT_FINAL_VERSION_V173 = "1.7.3";
+window.FI_APP_VERSION = FI_BOOT_FINAL_VERSION_V173;
+appState.appVersion = FI_BOOT_FINAL_VERSION_V173;
+appState.bootResolvedV173 = false;
+appState.bootWatchdogIdV173 = null;
+appState.pendingHashV173 = appState.pendingHashV172 || null;
+appState.renderSeqV173 = Number(appState.renderSeqV172 || 0);
+appState.resumeInProgressV173 = false;
+appState.lastResumeAttemptAtV173 = 0;
+
+function isUsableSessionV173(session) {
+  return Boolean(session?.access_token && session?.user?.id);
+}
+
+function isAuthenticatedV17() {
+  return Boolean(appState.user?.id && appState.profile?.id);
+}
+
+function getCurrentHashV173() {
+  return location.hash && location.hash !== "#" ? location.hash : "#dashboard";
+}
+
+function rememberPendingHashV173() {
+  const hash = getCurrentHashV173();
+  if (hash !== "#dashboard") {
+    appState.pendingHashV173 = hash;
+    appState.pendingHashV172 = hash;
+  }
+}
+
+function markBootResolvedV173() {
+  appState.bootResolvedV173 = true;
+  if (appState.bootWatchdogIdV173) {
+    window.clearTimeout(appState.bootWatchdogIdV173);
+    appState.bootWatchdogIdV173 = null;
+  }
+  hideBootPage?.();
+}
+
+function showLoginPageCleanV17(options = {}) {
+  const { message = "", showError = false, rememberHash = true } = options;
+
+  if (rememberHash) rememberPendingHashV173();
+
+  appState.user = null;
+  appState.profile = null;
+  appState.selectedQuotationIds?.clear?.();
+
+  markBootResolvedV173();
+  hidePageBusy?.();
+
+  elements.loginPage?.classList.remove("hidden");
+  elements.appShell?.classList.add("hidden");
+  document.body.classList.remove("nav-open");
+
+  if (showError && message) showLoginError(message);
+  else hideLoginError?.();
+}
+
+function runWithTimeoutV173(promise, timeoutMs, label) {
+  let timerId;
+  const timeout = new Promise((resolve) => {
+    timerId = window.setTimeout(() => resolve({ __timedOut: true, label }), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timerId) window.clearTimeout(timerId);
+  });
+}
+
+async function getSessionV173(timeoutMs = 6500) {
+  if (!supabaseClient?.auth) {
+    return { session: null, error: new Error("SUPABASE_CLIENT_NOT_READY"), timedOut: false };
+  }
+
+  try {
+    const result = await runWithTimeoutV173(
+      supabaseClient.auth.getSession(),
+      timeoutMs,
+      "getSession"
+    );
+
+    if (result?.__timedOut) return { session: null, error: null, timedOut: true };
+    if (result?.error) return { session: null, error: result.error, timedOut: false };
+    return { session: result?.data?.session || null, error: null, timedOut: false };
+  } catch (error) {
+    return { session: null, error, timedOut: false };
+  }
+}
+
+async function loadBrandingSafeV173() {
+  if (typeof loadAndApplyAppBranding !== "function") return;
+
+  try {
+    const result = await runWithTimeoutV173(loadAndApplyAppBranding(), 3500, "loadAndApplyAppBranding");
+    if (result?.__timedOut) console.warn(`Branding timeout ${FI_BOOT_FINAL_VERSION_V173}; continue without blocking boot`);
+  } catch (error) {
+    console.warn(`Branding skipped ${FI_BOOT_FINAL_VERSION_V173}`, error);
+  }
+}
+
+async function loadProfile(sessionArg = null) {
+  const session = isUsableSessionV173(sessionArg) ? sessionArg : (await getSessionV173()).session;
+
+  if (!isUsableSessionV173(session)) {
+    const error = new Error("AUTH_SESSION_MISSING");
+    error.code = "AUTH_SESSION_MISSING";
+    throw error;
+  }
+
+  appState.user = session.user;
+
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("id, email, full_name, role, is_active")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`loadProfile ${FI_BOOT_FINAL_VERSION_V173}`, error);
+    throw error;
+  }
+
+  if (!data) throw new Error("ไม่พบข้อมูลผู้ใช้ในตาราง profiles กรุณาติดต่อ Admin");
+
+  if (data.is_active === false) {
+    await supabaseClient.auth.signOut();
+    throw new Error("บัญชีนี้ถูกปิดการใช้งาน");
+  }
+
+  appState.profile = data;
+  return data;
+}
+
+async function bootAuthenticatedAppV17(session, reason = "boot") {
+  if (!isUsableSessionV173(session)) {
+    showLoginPageCleanV17({ rememberHash: true });
+    return false;
+  }
+
+  appState.user = session.user;
+  appState.profile = null;
+
+  try {
+    await loadProfile(session);
+  } catch (error) {
+    if (String(error?.message || "") === "AUTH_SESSION_MISSING" || String(error?.code || "") === "AUTH_SESSION_MISSING") {
+      showLoginPageCleanV17({ rememberHash: true });
+      return false;
+    }
+
+    console.error(`bootAuthenticatedApp ${FI_BOOT_FINAL_VERSION_V173}`, error);
+    showLoginPageCleanV17({
+      showError: true,
+      message: error.message || "เข้าสู่ระบบได้แล้ว แต่ไม่สามารถโหลดข้อมูลผู้ใช้ได้",
+      rememberHash: true,
+    });
+    return false;
+  }
+
+  hideLoginError?.();
+  showAppShell();
+  await renderCurrentPage({ force: true, reason });
+  return true;
+}
+
+async function initApp() {
+  showBootPage?.();
+  appState.bootResolvedV173 = false;
+
+  appState.bootWatchdogIdV173 = window.setTimeout(() => {
+    if (appState.bootResolvedV173) return;
+    console.warn(`Boot watchdog fired ${FI_BOOT_FINAL_VERSION_V173}; showing clean login`);
+    showLoginPageCleanV17({ rememberHash: true });
+  }, 9000);
+
+  if (!isConfigured || !supabaseClient?.auth) {
+    showLoginPageCleanV17({
+      showError: true,
+      message: window.supabase?.createClient
+        ? "ยังไม่ได้ตั้งค่า Supabase URL และ anon key ในไฟล์ script.js"
+        : "โหลด Supabase SDK ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือ CDN แล้วลองใหม่",
+      rememberHash: false,
+    });
+    return;
+  }
+
+  bindEvents();
+  bindAuthListenerV173();
+  startRequiredStarObserverV16?.();
+  hideLoginError?.();
+
+  await loadBrandingSafeV173();
+
+  const { session, error, timedOut } = await getSessionV173(6500);
+
+  if (timedOut) {
+    console.warn(`Initial getSession timeout ${FI_BOOT_FINAL_VERSION_V173}; showing clean login`);
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  if (error) {
+    console.warn(`Initial getSession failed ${FI_BOOT_FINAL_VERSION_V173}; showing clean login`, error);
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  if (!isUsableSessionV173(session)) {
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  await bootAuthenticatedAppV17(session, "initial-session-v173");
+}
+
+function bindAuthListenerV173() {
+  if (window.__fiAuthListenerV173 || !supabaseClient?.auth) return;
+  window.__fiAuthListenerV173 = true;
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === "TOKEN_REFRESHED" && isUsableSessionV173(session)) {
+      appState.user = session.user;
+      return;
+    }
+
+    if (event === "SIGNED_OUT") {
+      showLoginPageCleanV17({ rememberHash: false });
+      return;
+    }
+
+    if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && isUsableSessionV173(session) && !isAuthenticatedV17()) {
+      await bootAuthenticatedAppV17(session, `auth-${event}-v173`);
+    }
+  });
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v173Bound) {
+    elements.loginForm.dataset.v173Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v173Bound) {
+    elements.logoutButton.dataset.v173Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV173) {
+    window.__fiHashBoundV173 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      if (isAuthenticatedV17()) await renderCurrentPage({ force: true, reason: "hashchange-v173" });
+      else showLoginPageCleanV17({ rememberHash: true });
+    });
+  }
+
+  if (!window.__fiDelegatedClickV173) {
+    window.__fiDelegatedClickV173 = true;
+
+    document.addEventListener("pointerdown", (event) => {
+      if (isFileInputElement?.(event.target)) markFilePickerInteraction?.();
+    }, true);
+
+    document.addEventListener("click", (event) => {
+      if (isFileInputElement?.(event.target)) markFilePickerInteraction?.();
+      handleDelegatedClick?.(event);
+    }, true);
+
+    document.addEventListener("change", (event) => {
+      if (isFileInputElement?.(event.target)) {
+        releaseFilePickerInteraction?.(2200);
+        return;
+      }
+      handleDelegatedChange?.(event);
+    }, true);
+  }
+
+  if (!window.__fiLifecycleBoundV173) {
+    window.__fiLifecycleBoundV173 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+
+  const mobileMenuButton = document.querySelector("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v173Bound) {
+    mobileMenuButton.dataset.v173Bound = "true";
+    mobileMenuButton.addEventListener("click", () => elements.sidebarMenu?.classList.toggle("is-open"));
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  if (!supabaseClient?.auth) {
+    showLoginError("ยังไม่ได้ตั้งค่า Supabase หรือโหลด Supabase SDK ไม่สำเร็จ");
+    return;
+  }
+
+  hideLoginError?.();
+
+  const email = elements.loginEmail?.value?.trim() || "";
+  const password = elements.loginPassword?.value || "";
+
+  if (!email || !password) {
+    showLoginError("กรุณากรอกอีเมลและรหัสผ่าน");
+    return;
+  }
+
+  const executeLogin = async () => {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      showLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    const session = data?.session || (await getSessionV173(6500)).session;
+
+    if (!isUsableSessionV173(session)) {
+      showLoginError("เข้าสู่ระบบสำเร็จแต่ยังไม่พบ session กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    const ok = await bootAuthenticatedAppV17(session, "login-v173");
+
+    if (ok) {
+      const nextHash = appState.pendingHashV173 || appState.pendingHashV172 || "#dashboard";
+      appState.pendingHashV173 = null;
+      appState.pendingHashV172 = null;
+      if (location.hash !== nextHash) location.hash = nextHash;
+      else await renderCurrentPage({ force: true, reason: "login-target-v173" });
+      showToast?.("เข้าสู่ระบบสำเร็จ", "success");
+    }
+  };
+
+  if (typeof withButtonLoading === "function") {
+    await withButtonLoading(elements.loginButton, "กำลังเข้าสู่ระบบ...", executeLogin);
+  } else {
+    setLoginLoading?.(true);
+    try { await executeLogin(); } finally { setLoginLoading?.(false); }
+  }
+}
+
+async function handleLogout() {
+  if (!supabaseClient?.auth) return;
+
+  const ok = window.confirm("ต้องการออกจากระบบใช่ไหม?");
+  if (!ok) return;
+
+  try {
+    await supabaseClient.auth.signOut();
+  } finally {
+    appState.pendingHashV173 = null;
+    appState.pendingHashV172 = null;
+    showLoginPageCleanV17({ rememberHash: false });
+    showToast?.("ออกจากระบบแล้ว", "success");
+  }
+}
+
+async function renderCurrentPage(options = {}) {
+  const token = ++appState.renderSeqV173;
+  appState.currentPage = getPageFromHash() || "dashboard";
+
+  if (!isAuthenticatedV17()) {
+    const { session, error, timedOut } = await getSessionV173(6500);
+
+    if (timedOut || error || !isUsableSessionV173(session)) {
+      if (error) console.warn(`renderCurrentPage no valid session ${FI_BOOT_FINAL_VERSION_V173}`, error);
+      showLoginPageCleanV17({ rememberHash: true });
+      return;
+    }
+
+    await bootAuthenticatedAppV17(session, `bootstrap-${options.reason || "render"}-v173`);
+    return;
+  }
+
+  showAppShell();
+  renderMenu?.();
+  applySystemBrandingToHeader?.();
+  hidePageBusy?.();
+
+  const page = appState.currentPage || "dashboard";
+
+  const watchdogId = window.setTimeout(() => {
+    if (appState.renderSeqV173 !== token) return;
+    if (hasVisibleLoadingV161?.()) {
+      renderErrorStateWithRetry?.("โหลดข้อมูลนานเกินไปหรือการเชื่อมต่อค้าง กรุณากดโหลดข้อมูลใหม่");
+    }
+  }, 16000);
+
+  try {
+    await renderPageByKeyV161(page);
+    if (appState.renderSeqV173 !== token) return;
+
+    appState.lastSuccessfulRenderAtV173 = Date.now();
+    appState.lastSuccessfulRenderAtV172 = Date.now();
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (!elements.pageContent?.textContent?.trim()) {
+      throw new Error("หน้าเว็บแสดงผลว่างหลังโหลดข้อมูล");
+    }
+
+    decorateRequiredStars?.();
+  } catch (error) {
+    if (appState.renderSeqV173 !== token) return;
+    console.error(`renderCurrentPage ${FI_BOOT_FINAL_VERSION_V173}`, page, error);
+    hidePageBusy?.();
+    renderErrorStateWithRetry?.(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    window.clearTimeout(watchdogId);
+    hidePageBusy?.();
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient?.auth || document.visibilityState === "hidden") return;
+
+  if (shouldSkipResumeRecoveryForFilePicker?.()) {
+    releaseFilePickerInteraction?.(1800);
+    return;
+  }
+
+  if (!isAuthenticatedV17()) return;
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAttemptAtV173 || 0) < 1500) return;
+  appState.lastResumeAttemptAtV173 = now;
+
+  if (appState.resumeInProgressV173) return;
+  appState.resumeInProgressV173 = true;
+
+  try {
+    hidePageBusy?.();
+    appState.activeActions?.clear?.();
+    showAppShell();
+    await renderCurrentPage({ force: true, reason: `resume-${reason}-v173` });
+    validateSessionInBackgroundV173(reason);
+  } catch (error) {
+    console.warn(`recoverAppAfterResume ${FI_BOOT_FINAL_VERSION_V173}`, reason, error);
+    hidePageBusy?.();
+    if (isAuthenticatedV17()) await renderCurrentPage({ force: true, reason: `resume-fallback-${reason}-v173` });
+  } finally {
+    appState.resumeInProgressV173 = false;
+  }
+}
+
+function validateSessionInBackgroundV173(reason) {
+  window.setTimeout(async () => {
+    if (!isAuthenticatedV17()) return;
+
+    const { session, error } = await getSessionV173(6500);
+
+    if (error) {
+      console.warn(`background session validation skipped ${FI_BOOT_FINAL_VERSION_V173}`, reason, error);
+      return;
+    }
+
+    if (!isUsableSessionV173(session)) {
+      showLoginPageCleanV17({ rememberHash: true });
+      showToast?.("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = session.user;
+  }, 900);
+}
+
+window.FI_APP_VERSION = FI_BOOT_FINAL_VERSION_V173;

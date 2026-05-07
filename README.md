@@ -1,69 +1,44 @@
-# FI Quotation Web App v1.7.2
+# FI Quotation Web App v1.7.3
 
-## v1.7.2 Stability Fix
+## v1.7.3 Boot Watchdog + Auth Boot Final Guard
 
-Release นี้แก้ปัญหาเสถียรภาพ 2 จุดหลักจาก v1.7.1:
+Release นี้แก้ปัญหาหลัง Refresh Browser แล้วหน้าเว็บค้างอยู่ที่ `กำลังเปิดระบบ` ตลอด
 
-1. Refresh browser แล้ว Auth boot/session guard ทำงานแรงเกินไปจนกลับหน้า Login พร้อม console error `AUTH_SESSION_MISSING`
-2. กด `+ เพิ่มสินค้า` แล้วเกิด `RangeError: Maximum call stack size exceeded` จาก `renderProductFormPage()` เรียกตัวเองวนซ้ำ
+## สิ่งที่แก้
 
-## สิ่งที่แก้ใน v1.7.2
-
-- เอา timeout ออกจาก initial `getSession()` ตอนเปิดระบบ
-- ถ้าไม่มี session ให้กลับหน้า Login แบบ clean โดยไม่ถือเป็น system error
-- ไม่เรียก `loadProfile()` ถ้าไม่มี `session.access_token`
-- ปรับ `loadProfile(session)` ให้รับ session ที่แน่นอนและยิง `profiles` เฉพาะตอน authenticated แล้วเท่านั้น
-- Resume recovery จะไม่ทำงานบนหน้า Login
-- จำ hash เดิม เช่น `#customers`, `#products`, `#product-new` ไว้ และหลัง login สำเร็จจะกลับไปหน้าที่ต้องการ
-- แก้ `renderProductFormPage()` ไม่ให้ wrap/เรียกตัวเองอีก
-- `Product Code` ซ้ำได้ แต่ `ชื่อสินค้า/บริการ` ยังต้องไม่ซ้ำตาม requirement
-- เพิ่ม cache busting เป็น `script.js?v=1.7.2` และ `style.css?v=1.7.2`
-
-## ไฟล์ใน package
-
-```text
-index.html
-style.css
-script.js
-README.md
-TEST_CHECKLIST.md
-supabase/
-  patch_v1_7_2.sql
-```
+- เพิ่ม Boot Watchdog: ถ้าเปิดระบบนานเกิน 9 วินาที จะกลับหน้า Login แบบ clean แทนการหมุนค้าง
+- เพิ่ม timeout เฉพาะจุดที่เสี่ยงค้าง เช่น `getSession()` และการโหลด branding
+- ถ้า Supabase SDK/CDN โหลดไม่สำเร็จ จะแสดง error ที่หน้า Login แทนค้างที่ Boot
+- Auth boot ไม่ block ด้วย branding อีกต่อไป
+- ถ้าไม่มี session หลัง refresh จะกลับหน้า Login แบบ clean และจำ hash เดิมไว้
+- หลัง login สำเร็จจะกลับไปหน้าเดิมที่เคยเปิดไว้
+- คง fix ของ v1.7.2: Product Form recursion และ Product Code ซ้ำได้
+- Cache busting เป็น `script.js?v=1.7.3` และ `style.css?v=1.7.3`
 
 ## วิธีติดตั้ง
 
 1. แตก ZIP
-2. Copy ไฟล์ทั้งหมดไปทับใน repo `fi-quotation-web`
-3. ไปที่ Supabase → SQL Editor
-4. รันไฟล์นี้:
+2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ `fi-quotation-web-v1.7.3-package` ไปทับ repo เดิม
+3. ถ้าเคยรัน `patch_v1_7_2.sql` แล้ว รอบนี้ไม่จำเป็นต้องรัน SQL เพิ่ม
+4. เปิด Live Server ทดสอบก่อน push
 
-```text
-supabase/patch_v1_7_2.sql
-```
-
-5. เปิด Live Server ทดสอบก่อน push
-6. ถ้าผ่านแล้วค่อย push ขึ้น GitHub Pages
-
-## Push ผ่าน VS Code Terminal
+## Push
 
 ```bash
 git status
 git add .
-git commit -m "Hotfix v1.7.2 auth boot and product form stability"
+git commit -m "Hotfix v1.7.3 boot watchdog and auth guard"
 git push origin main
 ```
 
-## หลัง Push ขึ้น GitHub Pages
+## หลัง Push
 
-ทำ hard refresh 1 ครั้ง:
+ทำ hard refresh:
 
-```text
-Mac: Command + Shift + R
-Windows: Ctrl + Shift + R
-```
+- Mac: Command + Shift + R
+- Windows: Ctrl + Shift + R
 
-## ตรวจเวอร์ชันใน Console
+## ตรวจเวอร์ชัน
 
 ```js
 window.FI_APP_VERSION
@@ -72,5 +47,5 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.7.2
+1.7.3
 ```
