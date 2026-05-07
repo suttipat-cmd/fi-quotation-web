@@ -11570,3 +11570,369 @@ function validateSessionInBackgroundV173(reason) {
 }
 
 window.FI_APP_VERSION = FI_BOOT_FINAL_VERSION_V173;
+
+// =======================================================
+// v1.7.4 Login Timeout Guard + Non-blocking Boot
+// Purpose: prevent login button and boot screen from getting stuck.
+// =======================================================
+
+const FI_LOGIN_GUARD_VERSION_V174 = "1.7.4";
+window.FI_APP_VERSION = FI_LOGIN_GUARD_VERSION_V174;
+appState.appVersion = FI_LOGIN_GUARD_VERSION_V174;
+appState.pendingHashV174 = appState.pendingHashV173 || appState.pendingHashV172 || null;
+appState.bootResolvedV174 = false;
+appState.bootWatchdogIdV174 = null;
+
+function isUsableSessionV174(session) {
+  return Boolean(session && session.access_token && session.user && session.user.id);
+}
+
+function isAuthenticatedV174() {
+  return Boolean(appState.user && appState.user.id && appState.profile && appState.profile.id);
+}
+
+function resolveBootV174() {
+  appState.bootResolvedV174 = true;
+  appState.bootResolvedV173 = true;
+  if (appState.bootWatchdogIdV174) {
+    window.clearTimeout(appState.bootWatchdogIdV174);
+    appState.bootWatchdogIdV174 = null;
+  }
+  if (appState.bootWatchdogIdV173) {
+    window.clearTimeout(appState.bootWatchdogIdV173);
+    appState.bootWatchdogIdV173 = null;
+  }
+  if (typeof hideBootPage === "function") hideBootPage();
+  else document.querySelector("#bootPage")?.classList.add("hidden");
+}
+
+function rememberPendingHashV174() {
+  const hash = location.hash && location.hash !== "#" ? location.hash : "#dashboard";
+  if (hash && hash !== "#dashboard") {
+    appState.pendingHashV174 = hash;
+    appState.pendingHashV173 = hash;
+    appState.pendingHashV172 = hash;
+  }
+}
+
+function showLoginPageCleanV17(options = {}) {
+  const { message = "", showError = false, rememberHash = true } = options;
+  if (rememberHash) rememberPendingHashV174();
+
+  appState.user = null;
+  appState.profile = null;
+  appState.selectedQuotationIds?.clear?.();
+  appState.activeActions?.clear?.();
+
+  resolveBootV174();
+  if (typeof hidePageBusy === "function") hidePageBusy();
+
+  elements.loginPage?.classList.remove("hidden");
+  elements.appShell?.classList.add("hidden");
+  document.body.classList.remove("nav-open");
+
+  if (showError && message) showLoginError(message);
+  else if (typeof hideLoginError === "function") hideLoginError();
+}
+
+function waitWithTimeoutV174(promise, timeoutMs, label) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label}ใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  });
+}
+
+async function getSessionV174(timeoutMs = 8000) {
+  if (!supabaseClient?.auth) return { session: null, error: new Error("SUPABASE_CLIENT_NOT_READY") };
+
+  try {
+    const result = await waitWithTimeoutV174(
+      supabaseClient.auth.getSession(),
+      timeoutMs,
+      "การตรวจสอบ session "
+    );
+    return { session: result?.data?.session || null, error: result?.error || null };
+  } catch (error) {
+    return { session: null, error };
+  }
+}
+
+async function loadProfile(sessionArg = null) {
+  const session = isUsableSessionV174(sessionArg)
+    ? sessionArg
+    : (await getSessionV174(8000)).session;
+
+  if (!isUsableSessionV174(session)) {
+    const error = new Error("AUTH_SESSION_MISSING");
+    error.code = "AUTH_SESSION_MISSING";
+    throw error;
+  }
+
+  appState.user = session.user;
+
+  const query = supabaseClient
+    .from("profiles")
+    .select("id, email, full_name, role, is_active")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  const { data, error } = await waitWithTimeoutV174(query, 10000, "การโหลดข้อมูลผู้ใช้ ");
+
+  if (error) {
+    console.error(`loadProfile ${FI_LOGIN_GUARD_VERSION_V174}`, error);
+    throw error;
+  }
+
+  if (!data) throw new Error("ไม่พบข้อมูลผู้ใช้ในตาราง profiles กรุณาติดต่อ Admin");
+
+  if (data.is_active === false) {
+    await supabaseClient.auth.signOut();
+    throw new Error("บัญชีนี้ถูกปิดการใช้งาน");
+  }
+
+  appState.profile = data;
+  return data;
+}
+
+async function bootAuthenticatedAppV17(session, reason = "boot") {
+  if (!isUsableSessionV174(session)) {
+    showLoginPageCleanV17({ rememberHash: true });
+    return false;
+  }
+
+  appState.user = session.user;
+  appState.profile = null;
+
+  try {
+    await loadProfile(session);
+  } catch (error) {
+    const code = String(error?.code || error?.message || "");
+    if (code === "AUTH_SESSION_MISSING") {
+      showLoginPageCleanV17({ rememberHash: true });
+      return false;
+    }
+
+    showLoginPageCleanV17({
+      showError: true,
+      message: error.message || "เข้าสู่ระบบได้แล้ว แต่ไม่สามารถโหลดข้อมูลผู้ใช้ได้",
+      rememberHash: true,
+    });
+    return false;
+  }
+
+  resolveBootV174();
+  if (typeof hideLoginError === "function") hideLoginError();
+  showAppShell();
+
+  // Important: do not block login button on slow page rendering.
+  window.setTimeout(() => {
+    renderCurrentPage({ force: true, reason: `${reason}-nonblocking-v174` }).catch((error) => {
+      console.error(`render after boot ${FI_LOGIN_GUARD_VERSION_V174}`, error);
+      if (typeof renderErrorStateWithRetry === "function") {
+        renderErrorStateWithRetry(error.message || "ไม่สามารถโหลดหน้านี้ได้ กรุณากดโหลดข้อมูลใหม่");
+      }
+    });
+  }, 0);
+
+  return true;
+}
+
+async function initApp() {
+  if (typeof showBootPage === "function") showBootPage();
+  appState.bootResolvedV174 = false;
+
+  appState.bootWatchdogIdV174 = window.setTimeout(() => {
+    if (appState.bootResolvedV174) return;
+    console.warn(`Boot watchdog fired ${FI_LOGIN_GUARD_VERSION_V174}; showing clean login`);
+    showLoginPageCleanV17({ rememberHash: true });
+  }, 9000);
+
+  if (!isConfigured || !supabaseClient?.auth) {
+    showLoginPageCleanV17({
+      showError: true,
+      message: window.supabase?.createClient
+        ? "ยังไม่ได้ตั้งค่า Supabase URL และ anon key ในไฟล์ script.js"
+        : "โหลด Supabase SDK ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือ CDN แล้วลองใหม่",
+      rememberHash: false,
+    });
+    return;
+  }
+
+  bindEvents();
+  if (typeof bindAuthListenerV173 === "function") bindAuthListenerV173();
+  if (typeof startRequiredStarObserverV16 === "function") startRequiredStarObserverV16();
+  if (typeof hideLoginError === "function") hideLoginError();
+
+  // Branding must never block boot.
+  if (typeof loadAndApplyAppBranding === "function") {
+    waitWithTimeoutV174(loadAndApplyAppBranding(), 3000, "การโหลด Branding ")
+      .catch((error) => console.warn(`Branding skipped ${FI_LOGIN_GUARD_VERSION_V174}`, error));
+  }
+
+  const { session, error } = await getSessionV174(8000);
+
+  if (error) {
+    console.warn(`Initial session check skipped ${FI_LOGIN_GUARD_VERSION_V174}`, error);
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  if (!isUsableSessionV174(session)) {
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  await bootAuthenticatedAppV17(session, "initial-session-v174");
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v174Bound) {
+    elements.loginForm.dataset.v174Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v174Bound) {
+    elements.logoutButton.dataset.v174Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV174) {
+    window.__fiHashBoundV174 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      if (isAuthenticatedV174()) await renderCurrentPage({ force: true, reason: "hashchange-v174" });
+      else showLoginPageCleanV17({ rememberHash: true });
+    });
+  }
+
+  if (!window.__fiDelegatedClickV174) {
+    window.__fiDelegatedClickV174 = true;
+    document.addEventListener("pointerdown", (event) => {
+      if (typeof isFileInputElement === "function" && isFileInputElement(event.target)) markFilePickerInteraction?.();
+    }, true);
+    document.addEventListener("click", (event) => {
+      if (typeof isFileInputElement === "function" && isFileInputElement(event.target)) markFilePickerInteraction?.();
+      handleDelegatedClick?.(event);
+    }, true);
+    document.addEventListener("change", (event) => {
+      if (typeof isFileInputElement === "function" && isFileInputElement(event.target)) {
+        releaseFilePickerInteraction?.(2200);
+        return;
+      }
+      handleDelegatedChange?.(event);
+    }, true);
+  }
+
+  if (!window.__fiLifecycleBoundV174) {
+    window.__fiLifecycleBoundV174 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  if (!supabaseClient?.auth) {
+    showLoginError("ยังไม่ได้ตั้งค่า Supabase หรือโหลด Supabase SDK ไม่สำเร็จ");
+    return;
+  }
+
+  const email = elements.loginEmail?.value?.trim() || "";
+  const password = elements.loginPassword?.value || "";
+
+  if (!email || !password) {
+    showLoginError("กรุณากรอกอีเมลและรหัสผ่าน");
+    return;
+  }
+
+  if (typeof hideLoginError === "function") hideLoginError();
+
+  const button = elements.loginButton;
+  const oldText = button?.textContent || "เข้าสู่ระบบ";
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.textContent = "กำลังเข้าสู่ระบบ...";
+  }
+
+  try {
+    const { data, error } = await waitWithTimeoutV174(
+      supabaseClient.auth.signInWithPassword({ email, password }),
+      15000,
+      "การเข้าสู่ระบบ "
+    );
+
+    if (error) {
+      showLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    let session = data?.session || null;
+
+    if (!isUsableSessionV174(session)) {
+      const sessionResult = await getSessionV174(6000);
+      session = sessionResult.session;
+    }
+
+    if (!isUsableSessionV174(session)) {
+      showLoginError("เข้าสู่ระบบสำเร็จแต่ยังไม่พบ session กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    const ok = await bootAuthenticatedAppV17(session, "login-v174");
+
+    if (!ok) return;
+
+    const nextHash = appState.pendingHashV174 || appState.pendingHashV173 || appState.pendingHashV172 || "#dashboard";
+    appState.pendingHashV174 = null;
+    appState.pendingHashV173 = null;
+    appState.pendingHashV172 = null;
+
+    if (location.hash !== nextHash) location.hash = nextHash;
+    else renderCurrentPage({ force: true, reason: "login-target-v174" }).catch(console.error);
+
+    showToast?.("เข้าสู่ระบบสำเร็จ", "success");
+  } catch (error) {
+    console.error(`handleLogin ${FI_LOGIN_GUARD_VERSION_V174}`, error);
+    showLoginError(error.message || "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.textContent = oldText || "เข้าสู่ระบบ";
+    }
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient?.auth || document.visibilityState === "hidden") return;
+  if (!isAuthenticatedV174()) return;
+  if (typeof shouldSkipResumeRecoveryForFilePicker === "function" && shouldSkipResumeRecoveryForFilePicker()) {
+    releaseFilePickerInteraction?.(1800);
+    return;
+  }
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAttemptAtV173 || 0) < 1500) return;
+  appState.lastResumeAttemptAtV173 = now;
+
+  try {
+    hidePageBusy?.();
+    showAppShell();
+    await renderCurrentPage({ force: true, reason: `resume-${reason}-v174` });
+  } catch (error) {
+    console.warn(`recoverAppAfterResume ${FI_LOGIN_GUARD_VERSION_V174}`, error);
+  }
+}
+
+window.FI_APP_VERSION = FI_LOGIN_GUARD_VERSION_V174;
