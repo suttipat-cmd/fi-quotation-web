@@ -13179,3 +13179,43 @@ window.FI_DEBUG = async function FI_DEBUG() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V191_VERSION;
+
+// =======================================================
+// v1.9.2 Hotfix: Restore Delegated Events
+// Scope: quotation list view button, sortable headers, row checkboxes, select-all,
+// and other document-level delegated interactions that were not rebound by the
+// final v1.9.1 lifecycle layer.
+// =======================================================
+
+const FI_V192_VERSION = "1.9.2";
+
+(function restoreDelegatedEventsV192() {
+  window.FI_APP_VERSION = FI_V192_VERSION;
+
+  if (window.__fiDelegatedEventsBoundV192) return;
+  window.__fiDelegatedEventsBoundV192 = true;
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (typeof handleDelegatedClick === "function") {
+        handleDelegatedClick(event);
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
+    "change",
+    (event) => {
+      if (typeof handleDelegatedChange === "function") {
+        handleDelegatedChange(event);
+      }
+    },
+    true
+  );
+})();
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V192_VERSION;
+

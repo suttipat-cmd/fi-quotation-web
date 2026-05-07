@@ -1,21 +1,24 @@
-# FI Quotation Web App v1.9.1
+# FI Quotation Web App v1.9.2
 
-## v1.9.1 Foundation Stabilization
+## v1.9.2 Hotfix: Delegated Events Restore
 
-Release นี้ต่อยอดจาก v1.9.0 โดยแก้จุดติดตั้งและเสถียรภาพที่ยังเสี่ยง โดยเฉพาะ SQL patch dependency, error guard, debug helper และ release quality gate
+Release นี้ต่อยอดจาก v1.9.1 Foundation Stabilization โดยแก้ regression ในหน้าใบเสนอราคา ที่เกิดจาก delegated event listener ไม่ถูกผูกกลับเข้า runtime สุดท้าย
 
-ไฟล์ฐานที่ใช้คือ v1.9.0 ที่ `index.html` เดิมโหลด `style.css?v=1.9.0` และ `script.js?v=1.9.0` และ README ระบุว่า v1.9.0 เป็น Clean Codebase Stabilization
+## สิ่งที่แก้ใน v1.9.2
 
-## สิ่งที่ปรับใน v1.9.1
-
-- อัปเดต cache busting เป็น `style.css?v=1.9.1` และ `script.js?v=1.9.1`
-- อัปเดต `window.FI_APP_VERSION = "1.9.1"`
-- เพิ่ม `supabase/patch_v1_9_1.sql` ที่แก้ลำดับ dependency ของ policy/function ให้ถูกต้อง
-- แก้ error message สำหรับ RLS / permission / missing DB function ให้บอกชัดว่าต้องรัน patch ใด
-- เพิ่ม `window.FI_DEBUG()` สำหรับตรวจสถานะระบบโดยไม่แสดง secret
-- เพิ่ม `RELEASE_CHECKLIST.md`
-- เพิ่ม `supabase/README_SQL.md`
-- เพิ่ม `scripts/check-release.js` สำหรับตรวจ release ก่อน push
+- อัปเดต cache busting เป็น `style.css?v=1.9.2` และ `script.js?v=1.9.2`
+- อัปเดต `window.FI_APP_VERSION = "1.9.2"`
+- Restore delegated `click` event สำหรับ:
+  - ปุ่ม `ดูรายละเอียด` ในรายการใบเสนอราคา
+  - compact quotation links บน Dashboard
+  - sorting ที่หัวคอลัมน์
+  - menu delegated actions ที่ยังพึ่ง handler กลาง
+- Restore delegated `change` event สำหรับ:
+  - checkbox รายแถว
+  - select all
+  - bulk selection state
+- ไม่เปลี่ยน SQL / RLS ในรอบนี้
+- คง patch SQL ล่าสุดที่ต้องใช้คือ `supabase/patch_v1_9_1.sql`
 
 ## ไฟล์ใน package
 
@@ -34,36 +37,33 @@ supabase/
   patch_v1_8_0.sql
   patch_v1_9_0.sql
   patch_v1_9_1.sql
+  patch_v1_9_2.sql
 ```
 
 ## วิธีติดตั้ง
 
 1. แตก ZIP
 2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
-3. ไปที่ Supabase → SQL Editor
-4. รันไฟล์ `supabase/patch_v1_9_1.sql`
-5. เปิด Live Server ทดสอบก่อน push
+3. รอบนี้ไม่ต้องรัน SQL ใหม่ ถ้าเคยรัน `supabase/patch_v1_9_1.sql` สำเร็จแล้ว
+4. เปิด Live Server หรือ GitHub Pages แล้วทำ hard refresh
 
 ## ตรวจ release ก่อน push
 
-เปิด VS Code Terminal แล้วรัน:
+ถ้าเครื่องมี Node.js ให้รัน:
 
 ```bash
 node scripts/check-release.js
-```
-
-จากนั้นเช็ก syntax:
-
-```bash
 node --check script.js
 ```
+
+ถ้ายังไม่ได้ติดตั้ง Node.js สามารถข้าม local check แล้วตรวจบน GitHub Pages ด้วย Console แทนได้
 
 ## Push ผ่าน VS Code Terminal
 
 ```bash
 git status
 git add .
-git commit -m "Hotfix v1.9.1 foundation stabilization"
+git commit -m "Hotfix v1.9.2 restore delegated events"
 git push origin main
 ```
 
@@ -85,7 +85,21 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.1
+1.9.2
+```
+
+## จุดที่ต้องทดสอบ
+
+```text
+1. หน้าใบเสนอราคา กดปุ่ม ดูรายละเอียด แล้วต้องเข้า quotation-view ได้
+2. จากหน้ารายละเอียด กด Preview / Print ได้
+3. กดหัวคอลัมน์แล้ว sorting ได้
+4. checkbox รายแถวเลือกได้
+5. select all เลือกได้
+6. bulk action enable/disable ตามจำนวนที่เลือก
+7. filter แล้ว checkbox state ไม่เพี้ยน
+8. Export Excel ยังทำงาน
+9. + เพิ่มสินค้า ยังเปิดฟอร์มได้
 ```
 
 ## Debug helper
