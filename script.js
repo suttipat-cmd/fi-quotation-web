@@ -7466,3 +7466,484 @@ async function uploadAppBrandingFile(inputId, settingKey, fileNamePrefix, label)
     await renderSettingsPage();
   });
 }
+
+// =======================================================
+// v1.5 Print Layout Redesign
+// Modern Compact Hybrid + section-level summaries
+// =======================================================
+
+async function renderQuotationPrintPage(quotationId) {
+  if (!quotationId) {
+    renderError("ไม่พบรหัสใบเสนอราคา");
+    return;
+  }
+
+  setPageHeader("Preview / Print");
+  renderLoading("กำลังโหลดใบเสนอราคา...");
+
+  const [quotationResult, itemsResult, defaultCompanyResult, ownerResult, sectionTotalsResult] = await Promise.all([
+    supabaseClient.from("quotations").select("*").eq("id", quotationId).single(),
+    supabaseClient
+      .from("quotation_items")
+      .select("*")
+      .eq("quotation_id", quotationId)
+      .order("section_type", { ascending: false })
+      .order("sort_order", { ascending: true }),
+    supabaseClient.from("company_profile").select("*").eq("is_default", true).maybeSingle(),
+    supabaseClient
+      .from("quotations")
+      .select("owner_id, sales_name_snapshot")
+      .eq("id", quotationId)
+      .single()
+      .then(async (quotationOwnerResult) => {
+        if (quotationOwnerResult.error) return quotationOwnerResult;
+        const ownerId = quotationOwnerResult.data?.owner_id;
+        if (!ownerId) return { data: null, error: null };
+        const profileResult = await supabaseClient.from("profiles").select("full_name, email").eq("id", ownerId).maybeSingle();
+        return {
+          data: {
+            sales_name_snapshot: quotationOwnerResult.data?.sales_name_snapshot,
+            profile: profileResult.data,
+          },
+          error: profileResult.error,
+        };
+      }),
+    supabaseClient.rpc("calculate_quotation_section_totals", { p_quotation_id: quotationId }),
+  ]);
+
+  if (quotationResult.error) throw quotationResult.error;
+  if (itemsResult.error) throw itemsResult.error;
+  if (defaultCompanyResult.error) throw defaultCompanyResult.error;
+  if (ownerResult.error) throw ownerResult.error;
+
+  const quotation = quotationResult.data;
+  const items = itemsResult.data || [];
+  const defaultCompany = defaultCompanyResult.data || {};
+  const ownerName =
+    quotation.sales_name_snapshot ||
+    ownerResult.data?.sales_name_snapshot ||
+    ownerResult.data?.profile?.full_name ||
+    ownerResult.data?.profile?.email ||
+    "-";
+
+  if (quotation.status === "draft") {
+    elements.pageContent.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <div><h3>ยังไม่สามารถ Preview / Print ได้</h3></div>
+          <button class="btn btn-ghost" onclick="location.hash='quotation-view/${quotation.id}'">กลับไปหน้ารายละเอียด</button>
+        </div>
+        <div class="empty-state compact">ต้อง Confirm ใบเสนอราคาเพื่อสร้างเลขเอกสารก่อน</div>
+      </div>
+    `;
+    return;
+  }
+
+  let sectionTotals = [];
+  if (!sectionTotalsResult.error && Array.isArray(sectionTotalsResult.data)) {
+    sectionTotals = sectionTotalsResult.data;
+  } else {
+    console.warn("calculate_quotation_section_totals fallback", sectionTotalsResult.error);
+    sectionTotals = calculateSectionTotalsLocal(quotation, items);
+    showToast("ใช้การคำนวณสำรองสำหรับ Preview กรุณารัน SQL v1.5 เพื่อความแม่นยำสูงสุด", "warning", { duration: 5200 });
+  }
+
+  const model = buildQuotationPrintModelV15({
+    quotation,
+    items,
+    company: getCompanySnapshot(quotation, defaultCompany),
+    ownerName,
+    sectionTotals,
+  });
+
+  elements.pageContent.innerHTML = renderPrintV15(model);
+  bindPrintV15Actions(model);
+
+  requestAnimationFrame(() => applyPrintFitModeV15());
+  window.setTimeout(() => applyPrintFitModeV15(), 350);
+}
+
+function buildQuotationPrintModelV15({ quotation, items, company, ownerName, sectionTotals }) {
+  const totalsBySection = new Map((sectionTotals || []).map((item) => [item.section_type, item]));
+  const recurringItems = items.filter((item) => item.section_type === "recurring");
+  const oneTimeItems = items.filter((item) => item.section_type === "one_time");
+  const sections = [];
+
+  if (recurringItems.length && Number(totalsBySection.get("recurring")?.subtotal_amount || 0) > 0) {
+    sections.push({
+      type: "recurring",
+      title: totalsBySection.get("recurring")?.section_title || (quotation.billing_type === "yearly" ? "ค่าบริการใช้งานรายปี" : "ค่าบริการใช้งานรายเดือน"),
+      subtitle: totalsBySection.get("recurring")?.section_subtitle || (quotation.billing_type === "yearly" ? "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายปี" : "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายเดือน"),
+      quantityHeader: "จำนวนรถ",
+      items: recurringItems,
+      totals: totalsBySection.get("recurring") || {},
+    });
+  }
+
+  if (oneTimeItems.length && Number(totalsBySection.get("one_time")?.subtotal_amount || 0) > 0) {
+    sections.push({
+      type: "one_time",
+      title: totalsBySection.get("one_time")?.section_title || "ค่าบริการครั้งเดียว (ค่าแรกเข้า)",
+      subtitle: totalsBySection.get("one_time")?.section_subtitle || "ส่วนนี้เป็นค่าบริการที่เรียกเก็บครั้งเดียว ณ วันเริ่มใช้งาน",
+      quantityHeader: "จำนวน",
+      items: oneTimeItems,
+      totals: totalsBySection.get("one_time") || {},
+    });
+  }
+
+  const documentTotal = roundMoney(sections.reduce((sum, section) => sum + Number(section.totals.net_total_display || 0), 0));
+  const combinedAmountText = amountToThaiTextV15(documentTotal);
+
+  return {
+    quotation,
+    company,
+    ownerName,
+    sections,
+    documentTotal,
+    combinedAmountText,
+  };
+}
+
+function renderPrintV15(model) {
+  const quotation = model.quotation;
+  return `
+    <div class="print-v2-toolbar">
+      <div>
+        <strong>${escapeHTML(quotation.quotation_no || "-")}</strong>
+        <div class="print-muted">${escapeHTML(quotation.customer_name || "-")}</div>
+      </div>
+      <div class="print-toolbar-actions">
+        <button id="backFromPrintButton" class="btn btn-ghost">กลับไปหน้ารายละเอียด</button>
+        <button id="printButton" class="btn btn-primary">พิมพ์ / บันทึกเป็น PDF</button>
+      </div>
+    </div>
+
+    <div class="print-v2-wrap">
+      <article class="print-v2-page" id="quotationPrintPage">
+        ${renderPrintV15Header(model)}
+        ${renderPrintV15Customer(model)}
+        ${model.sections.map((section) => renderPrintV15ServiceSection(section, model)).join("")}
+        ${renderPrintV15GrandTotal(model)}
+        ${renderPrintV15BottomInfo(model)}
+        ${renderPrintV15Signatures(model)}
+      </article>
+    </div>
+  `;
+}
+
+function renderPrintV15Header(model) {
+  const company = model.company;
+  const quotation = model.quotation;
+  const logo = company.logo_url
+    ? `<img class="print-v2-logo" src="${escapeHTML(company.logo_url)}" alt="logo" />`
+    : `<div class="print-v2-logo-mark">FI</div>`;
+
+  return `
+    <header class="print-v2-header">
+      <div class="print-v2-company">
+        ${logo}
+        <div>
+          <h1>${escapeHTML(company.company_name || "-")}</h1>
+          <p>${escapeHTML(company.address || "-")}</p>
+          <p>เลขประจำตัวผู้เสียภาษี: ${escapeHTML(company.tax_id || "-")} ${company.branch_name ? `(${escapeHTML(company.branch_name)})` : ""}</p>
+          <p>โทร: ${escapeHTML(company.phone || "-")} · อีเมล: ${escapeHTML(company.email || "-")}</p>
+        </div>
+      </div>
+      <div class="print-v2-doc">
+        <h2>ใบเสนอราคา</h2>
+        <p>QUOTATION</p>
+        <dl>
+          <div><dt>เลขที่</dt><dd>${escapeHTML(quotation.quotation_no || "-")}</dd></div>
+          <div><dt>วันที่</dt><dd>${formatDate(quotation.quote_date)}</dd></div>
+          <div><dt>วันหมดอายุ</dt><dd>${formatDate(quotation.valid_until)}</dd></div>
+          <div><dt>ผู้เสนอราคา</dt><dd>${escapeHTML(model.ownerName || "-")}</dd></div>
+        </dl>
+      </div>
+    </header>
+  `;
+}
+
+function renderPrintV15Customer(model) {
+  const quotation = model.quotation;
+  return `
+    <section class="print-v2-customer">
+      <div class="print-v2-customer-row">
+        <span>เรียน</span>
+        <strong>${escapeHTML(quotation.customer_name || "-")}</strong>
+      </div>
+      <div class="print-v2-customer-row print-v2-customer-address">
+        <span>ที่อยู่</span>
+        <strong>${escapeHTML(quotation.customer_address || "-")}</strong>
+      </div>
+    </section>
+  `;
+}
+
+function renderPrintV15ServiceSection(section, model) {
+  const longClass = section.items.length > 3 ? "is-long-section" : "";
+  return `
+    <section class="print-v2-service-section print-v2-service-${escapeHTML(section.type)} ${longClass}">
+      <div class="print-v2-section-heading">
+        <h3>${escapeHTML(section.title)}</h3>
+        <p>${escapeHTML(section.subtitle || "")}</p>
+      </div>
+      ${renderPrintV15ItemsTable(section)}
+      ${renderPrintV15SectionSummary(section, model.quotation)}
+    </section>
+  `;
+}
+
+function renderPrintV15ItemsTable(section) {
+  return `
+    <table class="print-v2-service-table">
+      <thead>
+        <tr>
+          <th class="center col-index">ลำดับ</th>
+          <th>รายละเอียด</th>
+          <th class="num col-qty">${escapeHTML(section.quantityHeader || "จำนวน")}</th>
+          <th class="center col-unit">หน่วย</th>
+          <th class="num col-price">ราคา/หน่วย</th>
+          <th class="num col-subtotal">มูลค่าก่อนภาษี</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${section.items.map((item, index) => renderPrintV15ItemRow(item, index)).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderPrintV15ItemRow(item, index) {
+  const lineSubtotal = getItemLineSubtotalV15(item);
+  return `
+    <tr>
+      <td class="center">${index + 1}</td>
+      <td>
+        <strong>${escapeHTML(item.product_name_snapshot || "-")}</strong>
+        ${item.description ? `<div class="print-v2-item-desc">${escapeHTML(item.description)}</div>` : ""}
+      </td>
+      <td class="num">${number(item.quantity)}</td>
+      <td class="center">${escapeHTML(item.unit || "-")}</td>
+      <td class="num">${formatAmount(item.unit_price)}</td>
+      <td class="num">${formatAmount(lineSubtotal)}</td>
+    </tr>
+  `;
+}
+
+function renderPrintV15SectionSummary(section, quotation) {
+  const totals = section.totals || {};
+  const amountText = totals.amount_text_th || amountToThaiTextV15(Number(totals.net_total_display || 0));
+  const discount = Number(totals.discount_amount || 0);
+  const rounding = Number(totals.rounding_adjustment || 0);
+  const vat = Number(totals.vat_amount || 0);
+  const wht = Number(totals.wht_amount || 0);
+
+  return `
+    <div class="print-v2-section-summary">
+      <div class="print-v2-amount-text">${escapeHTML(amountText)}</div>
+      <table class="print-v2-summary-table">
+        <tbody>
+          ${renderPrintV15SummaryRow("มูลค่าก่อนภาษี", totals.subtotal_amount)}
+          ${discount > 0 ? renderPrintV15SummaryRow("ส่วนลด", -discount) : ""}
+          ${discount > 0 ? renderPrintV15SummaryRow("ฐานคำนวณภาษี", totals.taxable_amount) : ""}
+          ${vat > 0 ? renderPrintV15SummaryRow(`VAT ${Number(quotation.vat_rate || 7)}%`, vat) : ""}
+          ${wht > 0 ? renderPrintV15SummaryRow(`หัก ณ ที่จ่าย ${Number(quotation.wht_rate || 3)}%`, -wht) : ""}
+          ${Math.abs(rounding) > 0 ? renderPrintV15SummaryRow("ส่วนต่างปัดเศษ", rounding) : ""}
+          ${renderPrintV15SummaryRow("ยอดรวมสุทธิ", totals.net_total_display, "is-net")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPrintV15SummaryRow(label, value, className = "") {
+  return `
+    <tr class="${className}">
+      <td>${escapeHTML(label)}</td>
+      <td>${formatSignedAmount(value)}</td>
+    </tr>
+  `;
+}
+
+function renderPrintV15GrandTotal(model) {
+  if (model.sections.length <= 1) return "";
+  return `
+    <section class="print-v2-grand-total-strip">
+      <span>ยอดรวมทั้งฉบับ</span>
+      <strong>${formatAmount(model.documentTotal)}</strong>
+      <em>${escapeHTML(model.combinedAmountText)}</em>
+    </section>
+  `;
+}
+
+function renderPrintV15BottomInfo(model) {
+  const quotation = model.quotation;
+  const company = model.company;
+  return `
+    <section class="print-v2-bottom-grid">
+      <div class="print-v2-bottom-left">
+        ${renderPrintV15TextBox("หมายเหตุ", quotation.note)}
+        ${renderPrintV15TextBox("เงื่อนไขการชำระเงิน", quotation.payment_terms)}
+      </div>
+      <div class="print-v2-bank-box">
+        <h4>ข้อมูลบัญชีสำหรับชำระเงิน</h4>
+        <dl>
+          <div><dt>ธนาคาร</dt><dd>${escapeHTML(company.bank_name || "-")}</dd></div>
+          <div><dt>ชื่อบัญชี</dt><dd>${escapeHTML(company.bank_account_name || "-")}</dd></div>
+          <div><dt>เลขบัญชี</dt><dd>${escapeHTML(company.bank_account_no || "-")}</dd></div>
+          <div><dt>หมายเหตุ</dt><dd>${escapeHTML(company.payment_note || "-")}</dd></div>
+        </dl>
+      </div>
+    </section>
+  `;
+}
+
+function renderPrintV15TextBox(title, text) {
+  if (!String(text || "").trim()) return "";
+  return `
+    <div class="print-v2-note-box">
+      <h4>${escapeHTML(title)}</h4>
+      <div>${escapeHTML(text || "-")}</div>
+    </div>
+  `;
+}
+
+function renderPrintV15Signatures(model) {
+  return `
+    <footer class="print-v2-signatures">
+      <div>
+        <strong>ยืนยันรับราคา / ลูกค้า</strong>
+        <div class="sign-line"></div>
+        <span>วันที่ ______ / ______ / ______</span>
+      </div>
+      <div>
+        <strong>ผู้เสนอราคา</strong>
+        <div class="sign-line"></div>
+        <span>${escapeHTML(model.ownerName || "-")}</span>
+        <span>${escapeHTML(model.company.company_name || "")}</span>
+      </div>
+    </footer>
+  `;
+}
+
+function bindPrintV15Actions(model) {
+  const printButton = $("#printButton");
+  const backButton = $("#backFromPrintButton");
+  if (printButton) printButton.addEventListener("click", () => window.print());
+  if (backButton) {
+    backButton.addEventListener("click", () => {
+      location.hash = `#quotation-view/${model.quotation.id}`;
+    });
+  }
+}
+
+function getItemLineSubtotalV15(item) {
+  if (item.line_subtotal !== null && item.line_subtotal !== undefined) return Number(item.line_subtotal || 0);
+  if (item.section_type === "recurring") return Number(item.unit_price || 0);
+  return Number(item.quantity || 0) * Number(item.unit_price || 0);
+}
+
+function calculateSectionTotalsLocal(quotation, items) {
+  const groups = [
+    {
+      section_type: "recurring",
+      section_title: quotation.billing_type === "yearly" ? "ค่าบริการใช้งานรายปี" : "ค่าบริการใช้งานรายเดือน",
+      section_subtitle: quotation.billing_type === "yearly" ? "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายปี" : "ส่วนนี้เป็นค่าบริการที่เรียกเก็บเป็นรายเดือน",
+    },
+    {
+      section_type: "one_time",
+      section_title: "ค่าบริการครั้งเดียว (ค่าแรกเข้า)",
+      section_subtitle: "ส่วนนี้เป็นค่าบริการที่เรียกเก็บครั้งเดียว ณ วันเริ่มใช้งาน",
+    },
+  ];
+
+  return groups.map((group) => {
+    const sectionItems = items.filter((item) => item.section_type === group.section_type);
+    const subtotal = roundMoney(sectionItems.reduce((sum, item) => sum + getItemLineSubtotalV15(item), 0));
+    const discount = roundMoney(subtotal * Number(quotation.discount_percent || 0) / 100);
+    const taxable = roundMoney(subtotal - discount);
+    const vat = quotation.vat_enabled ? roundMoney(taxable * Number(quotation.vat_rate || 0) / 100) : 0;
+    const wht = quotation.wht_enabled ? roundMoney(taxable * Number(quotation.wht_rate || 0) / 100) : 0;
+    const netTotal = roundMoney(taxable + vat - wht);
+    const displayTotal = quotation.rounding_enabled ? Math.round(netTotal) : netTotal;
+    const rounding = roundMoney(displayTotal - netTotal);
+    return {
+      ...group,
+      subtotal_amount: subtotal,
+      discount_amount: discount,
+      taxable_amount: taxable,
+      vat_amount: vat,
+      wht_amount: wht,
+      rounding_adjustment: rounding,
+      net_total: netTotal,
+      net_total_display: displayTotal,
+      amount_text_th: amountToThaiTextV15(displayTotal),
+    };
+  }).filter((group) => Number(group.subtotal_amount || 0) > 0);
+}
+
+function formatSignedAmount(value) {
+  const n = Number(value || 0);
+  if (n < 0) return `-${formatAmount(Math.abs(n))}`;
+  return formatAmount(n);
+}
+
+function applyPrintFitModeV15() {
+  const page = document.querySelector(".print-v2-page");
+  if (!page) return;
+  page.classList.remove("print-compact", "print-ultra-compact");
+
+  const a4HeightPx = 1122;
+  if (page.scrollHeight > a4HeightPx) page.classList.add("print-compact");
+
+  requestAnimationFrame(() => {
+    if (page.scrollHeight > a4HeightPx) page.classList.add("print-ultra-compact");
+  });
+}
+
+function amountToThaiTextV15(value) {
+  const numberValue = Number(value || 0);
+  if (!Number.isFinite(numberValue)) return "ศูนย์บาทถ้วน";
+
+  const fixed = Math.round((Math.abs(numberValue) + Number.EPSILON) * 100) / 100;
+  const [bahtRaw, satangRaw = "00"] = fixed.toFixed(2).split(".");
+  const baht = Number(bahtRaw);
+  const satang = Number(satangRaw);
+  const prefix = numberValue < 0 ? "ลบ" : "";
+  const bahtText = baht === 0 ? "ศูนย์" : thaiNumberToTextV15(bahtRaw);
+
+  if (satang === 0) return `${prefix}${bahtText}บาทถ้วน`;
+  return `${prefix}${bahtText}บาท${thaiNumberToTextV15(satangRaw)}สตางค์`;
+}
+
+function thaiNumberToTextV15(input) {
+  const digits = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+  const units = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน"];
+  const str = String(input).replace(/^0+/, "") || "0";
+
+  if (str.length > 6) {
+    const head = str.slice(0, -6);
+    const tail = str.slice(-6);
+    const tailText = Number(tail) === 0 ? "" : thaiNumberToTextV15(tail);
+    return `${thaiNumberToTextV15(head)}ล้าน${tailText}`;
+  }
+
+  let result = "";
+  const len = str.length;
+  for (let i = 0; i < len; i += 1) {
+    const n = Number(str[i]);
+    const position = len - i - 1;
+    if (n === 0) continue;
+
+    if (position === 1 && n === 1) {
+      result += "สิบ";
+    } else if (position === 1 && n === 2) {
+      result += "ยี่สิบ";
+    } else if (position === 0 && n === 1 && len > 1) {
+      result += "เอ็ด";
+    } else {
+      result += digits[n] + units[position];
+    }
+  }
+  return result || digits[0];
+}
