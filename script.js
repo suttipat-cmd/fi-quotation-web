@@ -12437,7 +12437,7 @@ window.FI_APP_VERSION = FI_V18_CORRECTED_VERSION;
 // while preserving feature parity from the v1.8.0 corrected integration build.
 // =======================================================
 
-const FI_V19_VERSION = "1.9.0";
+const FI_V19_VERSION = "1.9.1";
 window.FI_APP_VERSION = FI_V19_VERSION;
 
 Object.assign(appState, {
@@ -13035,3 +13035,147 @@ async function recoverAppAfterResume(reason = "resume") {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V19_VERSION;
+
+
+// =======================================================
+// v1.9.1 Foundation Stabilization Patch
+// Scope: SQL/RLS guard, debug helper, clearer error states, and release support.
+// This patch intentionally preserves v1.9 runtime feature parity.
+// =======================================================
+
+const FI_V191_VERSION = "1.9.1";
+window.FI_APP_VERSION = FI_V191_VERSION;
+
+function normalizeErrorMessageV191(error) {
+  const raw = String(error?.message || error?.details || error || "");
+  const code = String(error?.code || "");
+  const lower = raw.toLowerCase();
+
+  if (raw === "AUTH_NO_SESSION" || lower.includes("auth_no_session")) {
+    return "Session หมดอายุหรือยังไม่พร้อม กรุณาเข้าสู่ระบบใหม่";
+  }
+
+  if (code === "42501" || lower.includes("permission denied") || lower.includes("rls")) {
+    return "สิทธิ์ฐานข้อมูลยังไม่ครบหรือ RLS ยังไม่ถูกต้อง กรุณารัน supabase/patch_v1_9_1.sql แล้วลองใหม่";
+  }
+
+  if (code === "42P01" || lower.includes("does not exist") || lower.includes("function") || lower.includes("relation")) {
+    return "โครงสร้างฐานข้อมูลหรือ function ยังไม่ครบ กรุณารัน supabase/patch_v1_9_1.sql แล้วลองใหม่";
+  }
+
+  if (lower.includes("network") || lower.includes("failed to fetch") || lower.includes("fetch")) {
+    return "เชื่อมต่อฐานข้อมูลไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่";
+  }
+
+  if (raw.includes("ใช้เวลานานเกินไป")) {
+    return raw;
+  }
+
+  return raw || "ไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง";
+}
+
+// Override profile loader with stricter session guard and clearer SQL/RLS errors.
+async function loadProfile(sessionArg) {
+  const session = sessionArg || (await supabaseClient.auth.getSession()).data?.session;
+
+  if (!isUsableSessionV19(session)) {
+    const error = new Error("AUTH_NO_SESSION");
+    error.code = "AUTH_NO_SESSION";
+    throw error;
+  }
+
+  appState.user = session.user;
+
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("id, email, full_name, role, is_active")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("loadProfile v1.9.1", error);
+    throw new Error(normalizeErrorMessageV191(error));
+  }
+
+  if (!data) {
+    throw new Error("ไม่พบข้อมูลผู้ใช้ในตาราง profiles กรุณาให้ Admin ตรวจสอบบัญชีนี้");
+  }
+
+  if (data.is_active === false) {
+    await supabaseClient.auth.signOut();
+    throw new Error("บัญชีนี้ถูกปิดการใช้งาน");
+  }
+
+  appState.profile = data;
+  return data;
+}
+
+// Override page error state with practical recovery actions and SQL hint mapping.
+function renderErrorStateV19(message, options = {}) {
+  if (!elements.pageContent) return;
+
+  const normalized = normalizeErrorMessageV191(message);
+  const current = escapeHTML(location.hash || "#dashboard");
+  const version = escapeHTML(window.FI_APP_VERSION || "unknown");
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="alert alert-error">${escapeHTML(normalized)}</div>
+      <div class="error-actions">
+        <button type="button" id="retryCurrentPageButton" class="btn btn-primary">โหลดข้อมูลใหม่</button>
+        <button type="button" id="goDashboardButton" class="btn btn-ghost">กลับแดชบอร์ด</button>
+      </div>
+      <div class="error-meta">
+        Version: ${version}<br />
+        Route: ${current}<br />
+        หากเป็น error เรื่องสิทธิ์ฐานข้อมูล ให้รัน <strong>supabase/patch_v1_9_1.sql</strong>
+      </div>
+    </div>
+  `;
+
+  document.querySelector("#retryCurrentPageButton")?.addEventListener("click", () => {
+    renderCurrentPage({ reason: "retry-v191" });
+  });
+
+  document.querySelector("#goDashboardButton")?.addEventListener("click", () => {
+    location.hash = "#dashboard";
+  });
+}
+
+// Debug helper for support. No secrets are returned.
+window.FI_DEBUG = async function FI_DEBUG() {
+  let sessionInfo = { checked: false, hasSession: false, userId: null, expiresAt: null };
+
+  try {
+    if (supabaseClient?.auth) {
+      const { data } = await supabaseClient.auth.getSession();
+      sessionInfo = {
+        checked: true,
+        hasSession: Boolean(data?.session?.access_token),
+        userId: data?.session?.user?.id || null,
+        expiresAt: data?.session?.expires_at || null,
+      };
+    }
+  } catch (error) {
+    sessionInfo = { checked: true, error: String(error?.message || error) };
+  }
+
+  const result = {
+    version: window.FI_APP_VERSION || null,
+    hash: location.hash || "#dashboard",
+    currentPage: typeof getCurrentPageV19 === "function" ? getCurrentPageV19() : appState.currentPage,
+    authState: appState.authStateV19 || null,
+    hasUser: Boolean(appState.user?.id),
+    hasProfile: Boolean(appState.profile?.id),
+    role: appState.profile?.role || null,
+    supabaseConfigured: Boolean(isConfigured && supabaseClient),
+    session: sessionInfo,
+    lastSuccessfulRenderAt: appState.lastSuccessfulRenderAtV19 || appState.lastSuccessfulRenderAt || null,
+  };
+
+  console.table(result);
+  return result;
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V191_VERSION;

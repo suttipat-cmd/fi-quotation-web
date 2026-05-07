@@ -1,23 +1,21 @@
-# FI Quotation Web App v1.9.0
+# FI Quotation Web App v1.9.1
 
-## v1.9.0 Clean Codebase Stabilization
+## v1.9.1 Foundation Stabilization
 
-Release นี้ต่อยอดจาก v1.8.0 Corrected Integration Build โดยโฟกัสที่การจัด Core Lifecycle ให้คาดเดาได้มากขึ้น และลดความเสี่ยงของ bug กลุ่มเดิม เช่น boot ค้าง, login ค้าง, refresh แล้วหลุด flow, route/render ซ้อนกัน และ product form recursion
+Release นี้ต่อยอดจาก v1.9.0 โดยแก้จุดติดตั้งและเสถียรภาพที่ยังเสี่ยง โดยเฉพาะ SQL patch dependency, error guard, debug helper และ release quality gate
 
-> หมายเหตุ: v1.9.0 ยังรักษา feature parity จาก v1.8.0 ไว้ก่อน จึงยังไม่ได้ rewrite ทุก feature ให้เป็น module แยกไฟล์ทั้งหมด แต่เพิ่ม final stabilization layer ที่เป็น Auth / Router / Render flow หลักชุดเดียวสำหรับ runtime
+ไฟล์ฐานที่ใช้คือ v1.9.0 ที่ `index.html` เดิมโหลด `style.css?v=1.9.0` และ `script.js?v=1.9.0` และ README ระบุว่า v1.9.0 เป็น Clean Codebase Stabilization
 
-## สิ่งที่ปรับใน v1.9.0
+## สิ่งที่ปรับใน v1.9.1
 
-- อัปเดต cache busting เป็น `script.js?v=1.9.0` และ `style.css?v=1.9.0`
-- เพิ่ม `window.FI_APP_VERSION = "1.9.0"`
-- เพิ่ม route table กลาง `FI_ROUTES_V19` สำหรับ page routing หลัก
-- ปรับ Auth / Login / Logout / Resume flow ชุดสุดท้ายให้คาดเดาได้มากขึ้น
-- ป้องกันหน้า boot ค้าง โดยซ่อน boot page ตั้งแต่ init และให้ Login พร้อมใช้งานเสมอ
-- Login button reset ทุก success/error/timeout path
-- `loadProfile(session)` ต้องมี session/access token ก่อน query `profiles`
-- `renderCurrentPage()` ตรวจ role ผ่าน route table ก่อน render
-- Error state มีปุ่ม `โหลดข้อมูลใหม่` และ `กลับแดชบอร์ด`
-- คง feature เดิมจาก v1.8.0 corrected ไว้ เช่น Quotation, Product, Print, Excel Export, Settings, Logo/Branding, Required star และ Status actions
+- อัปเดต cache busting เป็น `style.css?v=1.9.1` และ `script.js?v=1.9.1`
+- อัปเดต `window.FI_APP_VERSION = "1.9.1"`
+- เพิ่ม `supabase/patch_v1_9_1.sql` ที่แก้ลำดับ dependency ของ policy/function ให้ถูกต้อง
+- แก้ error message สำหรับ RLS / permission / missing DB function ให้บอกชัดว่าต้องรัน patch ใด
+- เพิ่ม `window.FI_DEBUG()` สำหรับตรวจสถานะระบบโดยไม่แสดง secret
+- เพิ่ม `RELEASE_CHECKLIST.md`
+- เพิ่ม `supabase/README_SQL.md`
+- เพิ่ม `scripts/check-release.js` สำหรับตรวจ release ก่อน push
 
 ## ไฟล์ใน package
 
@@ -27,10 +25,15 @@ style.css
 script.js
 README.md
 TEST_CHECKLIST.md
+RELEASE_CHECKLIST.md
+scripts/
+  check-release.js
 supabase/
+  README_SQL.md
   patch_v1_7_2.sql
   patch_v1_8_0.sql
   patch_v1_9_0.sql
+  patch_v1_9_1.sql
 ```
 
 ## วิธีติดตั้ง
@@ -38,15 +41,29 @@ supabase/
 1. แตก ZIP
 2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
 3. ไปที่ Supabase → SQL Editor
-4. รันไฟล์ `supabase/patch_v1_9_0.sql`
+4. รันไฟล์ `supabase/patch_v1_9_1.sql`
 5. เปิด Live Server ทดสอบก่อน push
+
+## ตรวจ release ก่อน push
+
+เปิด VS Code Terminal แล้วรัน:
+
+```bash
+node scripts/check-release.js
+```
+
+จากนั้นเช็ก syntax:
+
+```bash
+node --check script.js
+```
 
 ## Push ผ่าน VS Code Terminal
 
 ```bash
 git status
 git add .
-git commit -m "Release v1.9.0 clean codebase stabilization"
+git commit -m "Hotfix v1.9.1 foundation stabilization"
 git push origin main
 ```
 
@@ -68,9 +85,15 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.0
+1.9.1
 ```
 
-## หมายเหตุสำคัญ
+## Debug helper
 
-ถ้า v1.9.0 ผ่าน QA แล้ว เวอร์ชันถัดไปที่เหมาะสมคือ v2.0 แยกไฟล์/โมดูลจริง เช่น `auth.js`, `router.js`, `quotations.js`, `products.js`, `ui.js` และเริ่มเพิ่ม automated smoke test เพื่อกัน regression
+ใน Console สามารถรัน:
+
+```js
+await window.FI_DEBUG()
+```
+
+ข้อมูลที่แสดงจะมี version, route, auth state, role และ session presence โดยไม่แสดง access token หรือ anon key
