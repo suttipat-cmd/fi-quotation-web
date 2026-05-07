@@ -3377,3 +3377,56 @@ body {
     width: 100%;
   }
 }
+
+/* =======================================================
+   v1.6.1 Corrected Build
+   Resume reliability + versioned retry state
+   ======================================================= */
+
+.loading-card.page-loading-card {
+  min-height: 132px;
+  padding: 24px;
+}
+
+.loading-card.page-loading-card .spinner {
+  margin-bottom: 2px;
+}
+
+.render-retry-card[data-version="1.6.1"] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  border-left: 5px solid #ef4444;
+}
+
+.render-retry-card[data-version="1.6.1"] h3 {
+  margin: 0 0 6px;
+  color: #991b1b;
+}
+
+.render-retry-card[data-version="1.6.1"] p {
+  margin: 0 0 4px;
+  color: #475569;
+}
+
+.render-retry-card[data-version="1.6.1"] small {
+  color: #64748b;
+}
+
+.required-star {
+  color: #ef4444 !important;
+  font-weight: 900;
+  margin-left: 3px;
+}
+
+@media (max-width: 720px) {
+  .render-retry-card[data-version="1.6.1"] {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .render-retry-card[data-version="1.6.1"] .btn {
+    width: 100%;
+  }
+}

@@ -8568,3 +8568,433 @@ function countByV16(items, getter) {
 function sumByV16(items, key) {
   return roundMoney((items || []).reduce((sum, item) => sum + Number(item[key] || 0), 0));
 }
+
+// =======================================================
+// v1.6.1 Corrected Build
+// Resume/session recovery must not block data rendering.
+// This block intentionally sits at the end of the file so these
+// function declarations override older appended release blocks.
+// =======================================================
+
+const FI_APP_VERSION = "1.6.1";
+const FI_RENDER_TIMEOUT_MS_V161 = 30000;
+const FI_SESSION_TIMEOUT_MS_V161 = 18000;
+const FI_RESUME_DEBOUNCE_MS_V161 = 1800;
+
+Object.assign(appState, {
+  appVersion: FI_APP_VERSION,
+  renderSeqV161: 0,
+  resumeInProgressV161: false,
+  lastResumeAttemptAtV161: 0,
+  lastSuccessfulRenderAtV161: 0,
+});
+
+function timeoutPromiseV161(timeoutMs, label) {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => {
+      reject(new Error(`${label || "การทำงาน"}ใช้เวลานานเกินไป กรุณากดโหลดข้อมูลใหม่`));
+    }, timeoutMs);
+  });
+}
+
+async function withTimeoutV161(promise, timeoutMs, label) {
+  return Promise.race([promise, timeoutPromiseV161(timeoutMs, label)]);
+}
+
+function isAppAuthenticatedV161() {
+  return Boolean(appState.user?.id && appState.profile?.id);
+}
+
+function hasVisibleLoadingV161() {
+  return Boolean(elements.pageContent?.querySelector?.(".loading-card, .skeleton-card, .page-loading-card"));
+}
+
+function hideBootPage() {
+  document.querySelector("#bootPage")?.classList.add("hidden");
+}
+
+function showBootPage() {
+  document.querySelector("#bootPage")?.classList.remove("hidden");
+}
+
+function showLoginPage() {
+  hideBootPage();
+  elements.loginPage?.classList.remove("hidden");
+  elements.appShell?.classList.add("hidden");
+}
+
+function showAppShell() {
+  hideBootPage();
+  elements.loginPage?.classList.add("hidden");
+  elements.appShell?.classList.remove("hidden");
+
+  if (appState.profile) {
+    if (elements.userName) elements.userName.textContent = appState.profile.full_name || appState.profile.email || "-";
+    if (elements.userRole) elements.userRole.textContent = roleLabel(appState.profile.role);
+  }
+
+  renderMenu();
+  if (!location.hash) location.hash = "#dashboard";
+  appState.currentPage = getPageFromHash();
+
+  updateHeaderUser?.();
+  applySystemBrandingToHeader?.();
+}
+
+function renderLoading(message = "กำลังโหลดข้อมูล...") {
+  if (!elements.pageContent) return;
+  elements.pageContent.innerHTML = `
+    <div class="loading-card page-loading-card" data-loading-start="${Date.now()}" data-version="${FI_APP_VERSION}">
+      <div class="spinner"></div>
+      <strong>${escapeHTML(message)}</strong>
+      <p>ระบบกำลังดึงข้อมูล หากใช้เวลานานเกินไปจะแสดงปุ่มโหลดข้อมูลใหม่</p>
+    </div>
+  `;
+}
+
+function renderError(message) {
+  renderErrorStateWithRetry(message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+}
+
+function renderErrorStateWithRetry(message, buttonText = "โหลดข้อมูลใหม่") {
+  if (!elements.pageContent) return;
+  elements.pageContent.innerHTML = `
+    <div class="card error-state-card render-retry-card" data-version="${FI_APP_VERSION}">
+      <div>
+        <h3>โหลดข้อมูลไม่สำเร็จ</h3>
+        <p>${escapeHTML(message || "ไม่สามารถโหลดข้อมูลได้")}</p>
+        <small>ระบบจะลองโหลดหน้าเดิมใหม่โดยไม่ต้องรีเฟรช Browser</small>
+      </div>
+      <button type="button" class="btn btn-primary" id="retryCurrentPageButton">${escapeHTML(buttonText)}</button>
+    </div>
+  `;
+
+  document.querySelector("#retryCurrentPageButton")?.addEventListener("click", async () => {
+    await recoverAppAfterResume("manual-retry");
+  });
+}
+
+async function initApp() {
+  showBootPage();
+
+  if (!isConfigured) {
+    hideBootPage();
+    showLoginPage();
+    showSetupWarningOnLogin();
+    return;
+  }
+
+  bindEvents();
+  startRequiredStarObserverV16?.();
+
+  try {
+    await loadAndApplyAppBranding?.();
+  } catch (brandingError) {
+    console.warn("Branding skipped during init", brandingError);
+  }
+
+  try {
+    const { data, error } = await withTimeoutV161(
+      supabaseClient.auth.getSession(),
+      FI_SESSION_TIMEOUT_MS_V161,
+      "การตรวจสอบ session"
+    );
+    if (error) throw error;
+
+    if (data?.session?.user) {
+      appState.user = data.session.user;
+      await withTimeoutV161(loadProfile(), FI_SESSION_TIMEOUT_MS_V161, "การโหลดข้อมูลผู้ใช้");
+      showAppShell();
+      await renderCurrentPage({ force: true, reason: "initial-session" });
+    } else {
+      hideBootPage();
+      showLoginPage();
+    }
+  } catch (error) {
+    console.error("initApp v1.6.1", error);
+    hideBootPage();
+    showLoginPage();
+    showLoginError("ไม่สามารถตรวจสอบ session ได้ กรุณาลองเข้าสู่ระบบใหม่");
+  }
+
+  bindAuthListenerV161();
+}
+
+function bindAuthListenerV161() {
+  if (window.__fiAuthListenerV161 || !supabaseClient) return;
+  window.__fiAuthListenerV161 = true;
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === "TOKEN_REFRESHED" && session?.user) {
+      appState.user = session.user;
+      return;
+    }
+
+    if (event === "SIGNED_OUT") {
+      appState.user = null;
+      appState.profile = null;
+      appState.selectedQuotationIds?.clear?.();
+      hidePageBusy?.();
+      showLoginPage();
+      return;
+    }
+
+    if (session?.user && !isAppAuthenticatedV161()) {
+      appState.user = session.user;
+      try {
+        await loadProfile();
+        showAppShell();
+        await renderCurrentPage({ force: true, reason: `auth-${event}` });
+      } catch (error) {
+        console.error("auth listener v1.6.1", error);
+        showToast("โหลดข้อมูลผู้ใช้ไม่สำเร็จ", "error");
+      }
+    }
+  });
+}
+
+async function renderCurrentPage(options = {}) {
+  const token = ++appState.renderSeqV161;
+  appState.currentPage = getPageFromHash();
+
+  if (!isAppAuthenticatedV161()) {
+    try {
+      const { data, error } = await withTimeoutV161(
+        supabaseClient.auth.getSession(),
+        FI_SESSION_TIMEOUT_MS_V161,
+        "การตรวจสอบ session"
+      );
+      if (error) throw error;
+      if (!data?.session?.user) {
+        showLoginPage();
+        return;
+      }
+      appState.user = data.session.user;
+      await withTimeoutV161(loadProfile(), FI_SESSION_TIMEOUT_MS_V161, "การโหลดข้อมูลผู้ใช้");
+      showAppShell();
+    } catch (error) {
+      console.error("renderCurrentPage session bootstrap v1.6.1", error);
+      hidePageBusy?.();
+      renderErrorStateWithRetry("ไม่สามารถตรวจสอบ session ได้ กรุณากดโหลดข้อมูลใหม่");
+      return;
+    }
+  }
+
+  showAppShell();
+  renderMenu();
+  updateHeaderUser?.();
+  hidePageBusy?.();
+
+  const page = appState.currentPage || "dashboard";
+  const watchdogId = window.setTimeout(() => {
+    if (appState.renderSeqV161 !== token) return;
+    if (hasVisibleLoadingV161()) {
+      renderErrorStateWithRetry("โหลดข้อมูลนานเกินไปหรือการเชื่อมต่อค้าง กรุณากดโหลดข้อมูลใหม่");
+    }
+  }, FI_RENDER_TIMEOUT_MS_V161 + 1500);
+
+  try {
+    await withTimeoutV161(renderPageByKeyV161(page), FI_RENDER_TIMEOUT_MS_V161, `การโหลดหน้า ${page}`);
+    if (appState.renderSeqV161 !== token) return;
+
+    appState.lastSuccessfulRenderAtV161 = Date.now();
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (!elements.pageContent?.textContent?.trim()) {
+      throw new Error("หน้าเว็บแสดงผลว่างหลังโหลดข้อมูล");
+    }
+
+    decorateRequiredStars?.();
+  } catch (error) {
+    if (appState.renderSeqV161 !== token) return;
+    console.error("renderCurrentPage v1.6.1", page, error);
+    hidePageBusy?.();
+    renderErrorStateWithRetry(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    window.clearTimeout(watchdogId);
+    hidePageBusy?.();
+  }
+}
+
+async function renderPageByKeyV161(page) {
+  if (page === "dashboard") return renderDashboardPage();
+  if (page === "quotations") return renderQuotationsPage();
+  if (page === "quotation-new") return renderQuotationCreatePage();
+  if (page.startsWith("quotation-edit/")) return renderQuotationEditPage(page.replace("quotation-edit/", ""));
+  if (page.startsWith("quotation-view/")) return renderQuotationViewPage(page.replace("quotation-view/", ""));
+  if (page.startsWith("quotation-print/")) return renderQuotationPrintPage(page.replace("quotation-print/", ""));
+  if (page === "customers") return renderCustomersPage();
+  if (page === "products") return renderProductsPage();
+  if (page === "product-new") return renderProductFormPage({ mode: "create", productId: null });
+  if (page.startsWith("product-edit/")) return renderProductFormPage({ mode: "edit", productId: page.replace("product-edit/", "") });
+  if (page === "company") return renderCompanyPage();
+  if (page === "settings") return renderSettingsPage();
+
+  appState.currentPage = "dashboard";
+  location.hash = "#dashboard";
+  return renderDashboardPage();
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient) return;
+
+  if (shouldSkipResumeRecoveryForFilePicker?.()) {
+    releaseFilePickerInteraction?.(1800);
+    return;
+  }
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAttemptAtV161 || 0) < FI_RESUME_DEBOUNCE_MS_V161) return;
+  appState.lastResumeAttemptAtV161 = now;
+
+  if (appState.resumeInProgressV161) return;
+  appState.resumeInProgressV161 = true;
+
+  try {
+    hidePageBusy?.();
+    appState.activeActions?.clear?.();
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+    // Important fix: if the app already has a valid in-memory user/profile,
+    // render the current page first. Do not block rendering on getSession(),
+    // because browser resume can delay Supabase session checks.
+    if (isAppAuthenticatedV161()) {
+      showAppShell();
+      await renderCurrentPage({ force: true, reason: `resume-${reason}` });
+      validateSessionInBackgroundV161(reason);
+      schedulePostResumeGuardV161(reason);
+      return;
+    }
+
+    const { data, error } = await withTimeoutV161(
+      supabaseClient.auth.getSession(),
+      FI_SESSION_TIMEOUT_MS_V161,
+      "การตรวจสอบ session หลังกลับมาหน้าเว็บ"
+    );
+    if (error) throw error;
+
+    if (!data?.session?.user) {
+      appState.user = null;
+      appState.profile = null;
+      showLoginPage();
+      showToast("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = data.session.user;
+    await withTimeoutV161(loadProfile(), FI_SESSION_TIMEOUT_MS_V161, "การโหลดข้อมูลผู้ใช้");
+    showAppShell();
+    await renderCurrentPage({ force: true, reason: `resume-${reason}` });
+    schedulePostResumeGuardV161(reason);
+  } catch (error) {
+    console.error("recoverAppAfterResume v1.6.1", reason, error);
+    hidePageBusy?.();
+
+    if (isAppAuthenticatedV161()) {
+      await renderCurrentPage({ force: true, reason: `resume-fallback-${reason}` });
+      return;
+    }
+
+    renderErrorStateWithRetry(error.message || "โหลดข้อมูลหลังกลับมาหน้าเว็บไม่สำเร็จ", "โหลดข้อมูลใหม่");
+    showToast("โหลดข้อมูลใหม่ไม่สำเร็จ กรุณากดโหลดข้อมูลใหม่", "warning", { duration: 5200 });
+  } finally {
+    appState.resumeInProgressV161 = false;
+  }
+}
+
+function validateSessionInBackgroundV161(reason) {
+  window.setTimeout(async () => {
+    try {
+      const { data, error } = await withTimeoutV161(
+        supabaseClient.auth.getSession(),
+        FI_SESSION_TIMEOUT_MS_V161,
+        "การตรวจสอบ session แบบเบื้องหลัง"
+      );
+      if (error) throw error;
+      if (!data?.session?.user) {
+        appState.user = null;
+        appState.profile = null;
+        showLoginPage();
+        showToast("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      } else {
+        appState.user = data.session.user;
+      }
+    } catch (error) {
+      console.warn("background session validation skipped", reason, error);
+    }
+  }, 600);
+}
+
+function schedulePostResumeGuardV161(reason) {
+  window.setTimeout(() => {
+    if (shouldSkipResumeRecoveryForFilePicker?.()) return;
+    if (hasVisibleLoadingV161() || !elements.pageContent?.textContent?.trim()) {
+      renderCurrentPage({ force: true, reason: `${reason}-post-resume-guard` });
+    }
+  }, 1800);
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v161Bound) {
+    elements.loginForm.dataset.v161Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v161Bound) {
+    elements.logoutButton.dataset.v161Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV161) {
+    window.__fiHashBoundV161 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      await renderCurrentPage({ force: true, reason: "hashchange" });
+    });
+  }
+
+  if (!window.__fiDelegatedClickV161) {
+    window.__fiDelegatedClickV161 = true;
+
+    document.addEventListener("pointerdown", (event) => {
+      if (isFileInputElement?.(event.target)) markFilePickerInteraction?.();
+    }, true);
+
+    document.addEventListener("click", (event) => {
+      if (isFileInputElement?.(event.target)) markFilePickerInteraction?.();
+      handleDelegatedClick?.(event);
+    }, true);
+
+    document.addEventListener("change", (event) => {
+      if (isFileInputElement?.(event.target)) {
+        releaseFilePickerInteraction?.(2200);
+        return;
+      }
+      handleDelegatedChange?.(event);
+    }, true);
+  }
+
+  if (!window.__fiLifecycleBoundV161) {
+    window.__fiLifecycleBoundV161 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+
+  const mobileMenuButton = document.querySelector("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v161Bound) {
+    mobileMenuButton.dataset.v161Bound = "true";
+    mobileMenuButton.addEventListener("click", () => {
+      elements.sidebarMenu?.classList.toggle("is-open");
+    });
+  }
+}
+
+// Re-apply required star styling after all final overrides are registered.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => decorateRequiredStars?.());
+} else {
+  decorateRequiredStars?.();
+}
