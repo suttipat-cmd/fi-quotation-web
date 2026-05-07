@@ -12429,3 +12429,609 @@ async function recoverAppAfterResume(reason = "resume") {
 }
 
 window.FI_APP_VERSION = FI_V18_CORRECTED_VERSION;
+
+
+// =======================================================
+// v1.9.0 Clean Codebase Stabilization Layer
+// Purpose: provide one final, predictable Auth / Router / Render lifecycle
+// while preserving feature parity from the v1.8.0 corrected integration build.
+// =======================================================
+
+const FI_V19_VERSION = "1.9.0";
+window.FI_APP_VERSION = FI_V19_VERSION;
+
+Object.assign(appState, {
+  authSeqV19: 0,
+  renderSeqV19: 0,
+  pendingHashV19: null,
+  authStateV19: "booting",
+  lastSuccessfulRenderAtV19: 0,
+  lastResumeAtV19: 0,
+  isBootingV19: false,
+});
+
+const FI_ROUTES_V19 = [
+  {
+    key: "dashboard",
+    label: "แดชบอร์ด",
+    menu: true,
+    roles: ["admin", "manager", "sales"],
+    match: (page) => page === "dashboard",
+    render: () => renderDashboardPage(),
+  },
+  {
+    key: "quotations",
+    label: "ใบเสนอราคา",
+    menu: true,
+    roles: ["admin", "manager", "sales"],
+    match: (page) => page === "quotations",
+    render: () => renderQuotationsPage(),
+  },
+  {
+    key: "quotation-new",
+    label: "สร้างใบเสนอราคา",
+    roles: ["admin", "sales"],
+    match: (page) => page === "quotation-new",
+    render: () => renderQuotationCreatePage(),
+  },
+  {
+    key: "quotation-edit",
+    label: "แก้ไข Draft",
+    roles: ["admin", "sales"],
+    match: (page) => page.startsWith("quotation-edit/"),
+    render: (page) => renderQuotationEditPage(page.replace("quotation-edit/", "")),
+  },
+  {
+    key: "quotation-view",
+    label: "รายละเอียดใบเสนอราคา",
+    roles: ["admin", "manager", "sales"],
+    match: (page) => page.startsWith("quotation-view/"),
+    render: (page) => renderQuotationViewPage(page.replace("quotation-view/", "")),
+  },
+  {
+    key: "quotation-print",
+    label: "Preview / Print",
+    roles: ["admin", "manager", "sales"],
+    match: (page) => page.startsWith("quotation-print/"),
+    render: (page) => renderQuotationPrintPage(page.replace("quotation-print/", "")),
+  },
+  {
+    key: "customers",
+    label: "ลูกค้า",
+    menu: true,
+    roles: ["admin", "manager", "sales"],
+    match: (page) => page === "customers",
+    render: () => renderCustomersPage(),
+  },
+  {
+    key: "products",
+    label: "สินค้า/บริการ",
+    menu: true,
+    roles: ["admin", "manager", "sales"],
+    match: (page) => page === "products",
+    render: () => renderProductsPage(),
+  },
+  {
+    key: "product-new",
+    label: "เพิ่มสินค้า",
+    roles: ["admin"],
+    match: (page) => page === "product-new",
+    render: () => renderProductFormPage({ mode: "create", productId: null }),
+  },
+  {
+    key: "product-edit",
+    label: "แก้ไขสินค้า",
+    roles: ["admin"],
+    match: (page) => page.startsWith("product-edit/"),
+    render: (page) => renderProductFormPage({ mode: "edit", productId: page.replace("product-edit/", "") }),
+  },
+  {
+    key: "company",
+    label: "Company Profile",
+    menu: true,
+    roles: ["admin"],
+    match: (page) => page === "company",
+    render: () => renderCompanyPage(),
+  },
+  {
+    key: "settings",
+    label: "ตั้งค่า",
+    menu: true,
+    roles: ["admin"],
+    match: (page) => page === "settings",
+    render: () => renderSettingsPage(),
+  },
+];
+
+function withTimeoutV19(promise, milliseconds, label = "การทำงาน") {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label}ใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง`));
+    }, milliseconds);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+}
+
+function isUsableSessionV19(session) {
+  return Boolean(session?.access_token && session?.user?.id);
+}
+
+function isAuthenticatedV19() {
+  return Boolean(appState.user?.id && appState.profile?.id);
+}
+
+function rememberCurrentHashV19() {
+  const hash = location.hash || "#dashboard";
+  if (hash && hash !== "#") appState.pendingHashV19 = hash;
+}
+
+function hideBootPageV19() {
+  const bootPage = document.querySelector("#bootPage");
+  if (bootPage) bootPage.classList.add("hidden");
+}
+
+function resetLoginButtonV19() {
+  if (!elements.loginButton) return;
+  elements.loginButton.disabled = false;
+  elements.loginButton.removeAttribute("aria-busy");
+  elements.loginButton.textContent = "เข้าสู่ระบบ";
+}
+
+function showLoginPageCleanV19(options = {}) {
+  const { showError = false, message = "", rememberHash = true } = options;
+
+  if (rememberHash) rememberCurrentHashV19();
+
+  appState.user = null;
+  appState.profile = null;
+  appState.authStateV19 = "unauthenticated";
+
+  hideBootPageV19();
+  if (typeof hidePageBusy === "function") hidePageBusy();
+
+  elements.appShell?.classList.add("hidden");
+  elements.loginPage?.classList.remove("hidden");
+  resetLoginButtonV19();
+
+  if (showError && message) {
+    showLoginError(message);
+  } else if (typeof hideLoginError === "function") {
+    hideLoginError();
+  }
+}
+
+function showAppShellV19() {
+  if (!isAuthenticatedV19()) {
+    showLoginPageCleanV19({ rememberHash: true });
+    return;
+  }
+
+  hideBootPageV19();
+  elements.loginPage?.classList.add("hidden");
+  elements.appShell?.classList.remove("hidden");
+
+  if (elements.userName) {
+    elements.userName.textContent = appState.profile.full_name || appState.profile.email || "-";
+  }
+
+  if (elements.userRole) {
+    elements.userRole.textContent = roleLabel(appState.profile.role);
+  }
+
+  const userChip = document.querySelector("#headerUserChip");
+  if (userChip) {
+    const name = appState.profile.full_name || appState.profile.email || "-";
+    userChip.textContent = `${name} · ${roleLabel(appState.profile.role)}`;
+  }
+
+  renderMenu();
+}
+
+async function loadProfile(sessionArg) {
+  const session = sessionArg || (await supabaseClient.auth.getSession()).data?.session;
+
+  if (!isUsableSessionV19(session)) {
+    throw new Error("AUTH_NO_SESSION");
+  }
+
+  appState.user = session.user;
+
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("id, email, full_name, role, is_active")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("loadProfile v1.9", error);
+    throw new Error("ไม่สามารถโหลดข้อมูลผู้ใช้ได้ กรุณาติดต่อ Admin หรือลองเข้าสู่ระบบใหม่");
+  }
+
+  if (!data) {
+    throw new Error("ไม่พบข้อมูลผู้ใช้ในตาราง profiles กรุณาให้ Admin ตรวจสอบบัญชีนี้");
+  }
+
+  if (data.is_active === false) {
+    await supabaseClient.auth.signOut();
+    throw new Error("บัญชีนี้ถูกปิดการใช้งาน");
+  }
+
+  appState.profile = data;
+  return data;
+}
+
+function findRouteV19(page) {
+  return FI_ROUTES_V19.find((route) => route.match(page));
+}
+
+function canAccessRouteV19(route) {
+  if (!route) return false;
+  const role = appState.profile?.role;
+  return Boolean(role && route.roles.includes(role));
+}
+
+function getCurrentPageV19() {
+  return (location.hash || "#dashboard").replace(/^#/, "") || "dashboard";
+}
+
+function getMenuActiveKeyV19(page) {
+  if (page.startsWith("quotation-")) return "quotations";
+  if (page.startsWith("product-")) return "products";
+  return page;
+}
+
+function renderMenu() {
+  if (!elements.sidebarMenu || !appState.profile?.role) return;
+
+  const role = appState.profile.role;
+  const currentPage = getCurrentPageV19();
+  const activeKey = getMenuActiveKeyV19(currentPage);
+
+  const menus = FI_ROUTES_V19.filter((route) => route.menu && route.roles.includes(role));
+
+  elements.sidebarMenu.innerHTML = menus
+    .map((route) => `
+      <button type="button" class="menu-item ${route.key === activeKey ? "active" : ""}" data-page="${escapeHTML(route.key)}">
+        <span>${menuIcon(route.key)}</span>
+        <span>${escapeHTML(route.label)}</span>
+      </button>
+    `)
+    .join("");
+
+  elements.sidebarMenu.querySelectorAll(".menu-item[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      location.hash = `#${button.dataset.page}`;
+      elements.sidebarMenu?.classList.remove("is-open");
+      document.body.classList.remove("nav-open");
+    });
+  });
+}
+
+async function bootAuthenticatedAppV19(session, reason = "boot") {
+  if (!isUsableSessionV19(session)) {
+    showLoginPageCleanV19({ rememberHash: true });
+    return false;
+  }
+
+  const seq = ++appState.authSeqV19;
+  appState.authStateV19 = "profile_loading";
+
+  try {
+    await withTimeoutV19(loadProfile(session), 15000, "การโหลดข้อมูลผู้ใช้ ");
+
+    if (seq !== appState.authSeqV19) return false;
+
+    appState.authStateV19 = "ready";
+    showAppShellV19();
+
+    const targetHash = appState.pendingHashV19 || location.hash || "#dashboard";
+    appState.pendingHashV19 = null;
+
+    if (location.hash !== targetHash) {
+      location.hash = targetHash;
+      return true;
+    }
+
+    window.setTimeout(() => {
+      renderCurrentPage({ reason: `boot-v19-${reason}` }).catch((error) => {
+        console.error("boot render v1.9", error);
+        renderErrorStateV19(error.message || "ไม่สามารถโหลดหน้านี้ได้");
+      });
+    }, 0);
+
+    return true;
+  } catch (error) {
+    if (seq !== appState.authSeqV19) return false;
+    console.error("bootAuthenticatedApp v1.9", error);
+    showLoginPageCleanV19({
+      showError: true,
+      message: error.message === "AUTH_NO_SESSION"
+        ? "Session หมดอายุ กรุณาเข้าสู่ระบบใหม่"
+        : error.message || "ไม่สามารถเปิดระบบได้ กรุณาเข้าสู่ระบบใหม่",
+      rememberHash: true,
+    });
+    return false;
+  }
+}
+
+function bindAuthStateV19() {
+  if (window.__fiAuthBoundV19) return;
+  window.__fiAuthBoundV19 = true;
+
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT") {
+      ++appState.authSeqV19;
+      showLoginPageCleanV19({ rememberHash: false });
+      return;
+    }
+
+    if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+      if (isUsableSessionV19(session)) {
+        bootAuthenticatedAppV19(session, event).catch((error) => {
+          console.error("auth state v1.9", error);
+          showLoginPageCleanV19({
+            showError: true,
+            message: error.message || "ไม่สามารถใช้ session ปัจจุบันได้ กรุณาเข้าสู่ระบบใหม่",
+            rememberHash: true,
+          });
+        });
+      }
+    }
+  });
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v19Bound) {
+    elements.loginForm.dataset.v19Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v19Bound) {
+    elements.logoutButton.dataset.v19Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  const mobileMenuButton = document.querySelector("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v19Bound) {
+    mobileMenuButton.dataset.v19Bound = "true";
+    mobileMenuButton.addEventListener("click", () => {
+      elements.sidebarMenu?.classList.toggle("is-open");
+      document.body.classList.toggle("nav-open");
+    });
+  }
+
+  if (!window.__fiHashBoundV19) {
+    window.__fiHashBoundV19 = true;
+    window.addEventListener("hashchange", () => {
+      appState.currentPage = getCurrentPageV19();
+      if (isAuthenticatedV19()) {
+        renderCurrentPage({ reason: "hashchange-v19" }).catch((error) => {
+          console.error("hashchange v1.9", error);
+          renderErrorStateV19(error.message || "ไม่สามารถโหลดหน้านี้ได้");
+        });
+      } else {
+        showLoginPageCleanV19({ rememberHash: true });
+      }
+    });
+  }
+
+  if (!window.__fiLifecycleBoundV19) {
+    window.__fiLifecycleBoundV19 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+}
+
+async function initApp() {
+  bindEvents();
+  hideBootPageV19();
+
+  if (!isConfigured || !supabaseClient?.auth) {
+    showLoginPageCleanV19({
+      showError: true,
+      message: window.supabase?.createClient
+        ? "ยังไม่ได้ตั้งค่า Supabase URL และ anon key ในไฟล์ script.js"
+        : "โหลด Supabase SDK ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือ CDN แล้วลองใหม่",
+      rememberHash: false,
+    });
+    return;
+  }
+
+  appState.currentPage = getCurrentPageV19();
+  showLoginPageCleanV19({ rememberHash: true });
+  bindAuthStateV19();
+
+  // Cosmetic only. Branding must not block login or boot.
+  if (typeof loadAndApplyAppBranding === "function") {
+    withTimeoutV19(loadAndApplyAppBranding(), 2500, "การโหลด Branding ")
+      .catch((error) => console.warn("Branding skipped v1.9", error));
+  }
+
+  // Explicit background session check for browsers where INITIAL_SESSION is delayed.
+  withTimeoutV19(supabaseClient.auth.getSession(), 8000, "การตรวจสอบ session ")
+    .then(({ data }) => {
+      if (isUsableSessionV19(data?.session)) return bootAuthenticatedAppV19(data.session, "getSession-v19");
+      return null;
+    })
+    .catch((error) => {
+      console.warn("Initial session check skipped v1.9", error);
+      showLoginPageCleanV19({ rememberHash: true });
+    });
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  if (!supabaseClient?.auth) {
+    showLoginError("ยังไม่ได้ตั้งค่า Supabase หรือโหลด Supabase SDK ไม่สำเร็จ");
+    return;
+  }
+
+  const email = elements.loginEmail?.value?.trim() || "";
+  const password = elements.loginPassword?.value || "";
+
+  if (!email || !password) {
+    showLoginError("กรุณากรอกอีเมลและรหัสผ่าน");
+    return;
+  }
+
+  const seq = ++appState.authSeqV19;
+  hideLoginError?.();
+
+  if (elements.loginButton) {
+    elements.loginButton.disabled = true;
+    elements.loginButton.setAttribute("aria-busy", "true");
+    elements.loginButton.textContent = "กำลังเข้าสู่ระบบ...";
+  }
+
+  try {
+    const { data, error } = await withTimeoutV19(
+      supabaseClient.auth.signInWithPassword({ email, password }),
+      20000,
+      "การเข้าสู่ระบบ "
+    );
+
+    if (seq !== appState.authSeqV19) return;
+
+    if (error) {
+      showLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    if (!isUsableSessionV19(data?.session)) {
+      showLoginError("เข้าสู่ระบบสำเร็จแต่ยังไม่พบ session กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    const ok = await bootAuthenticatedAppV19(data.session, "login");
+    if (ok) showToast?.("เข้าสู่ระบบสำเร็จ", "success");
+  } catch (error) {
+    if (seq !== appState.authSeqV19) return;
+    console.error("handleLogin v1.9", error);
+    showLoginError(error.message || "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    if (seq === appState.authSeqV19) resetLoginButtonV19();
+  }
+}
+
+async function handleLogout() {
+  if (!supabaseClient?.auth) return;
+
+  const ok = window.confirm("ต้องการออกจากระบบใช่ไหม?");
+  if (!ok) return;
+
+  ++appState.authSeqV19;
+  try {
+    await withTimeoutV19(supabaseClient.auth.signOut(), 10000, "การออกจากระบบ ");
+  } catch (error) {
+    console.warn("signOut v1.9", error);
+  } finally {
+    showLoginPageCleanV19({ rememberHash: false });
+    showToast?.("ออกจากระบบแล้ว", "success");
+  }
+}
+
+async function renderCurrentPage(options = {}) {
+  if (!isAuthenticatedV19()) {
+    showLoginPageCleanV19({ rememberHash: true });
+    return;
+  }
+
+  const token = ++appState.renderSeqV19;
+  const page = getCurrentPageV19();
+  appState.currentPage = page;
+
+  showAppShellV19();
+
+  const route = findRouteV19(page);
+
+  if (!route) {
+    location.hash = "#dashboard";
+    return;
+  }
+
+  if (!canAccessRouteV19(route)) {
+    renderErrorStateV19("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+    return;
+  }
+
+  const watchdogId = window.setTimeout(() => {
+    if (appState.renderSeqV19 !== token) return;
+    renderErrorStateV19("โหลดข้อมูลนานเกินไปหรือการเชื่อมต่อค้าง กรุณากดโหลดข้อมูลใหม่");
+  }, 20000);
+
+  try {
+    await route.render(page);
+
+    if (appState.renderSeqV19 !== token) return;
+
+    appState.lastSuccessfulRenderAtV19 = Date.now();
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (typeof decorateRequiredStars === "function") decorateRequiredStars();
+    renderMenu();
+  } catch (error) {
+    if (appState.renderSeqV19 !== token) return;
+    console.error("renderCurrentPage v1.9", page, error);
+    renderErrorStateV19(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    window.clearTimeout(watchdogId);
+    if (typeof hidePageBusy === "function") hidePageBusy();
+  }
+}
+
+function renderErrorStateV19(message) {
+  if (!elements.pageContent) return;
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="alert alert-error">${escapeHTML(message || "ไม่สามารถโหลดข้อมูลได้")}</div>
+      <div class="error-actions">
+        <button type="button" id="retryCurrentPageButton" class="btn btn-primary">โหลดข้อมูลใหม่</button>
+        <button type="button" id="goDashboardButton" class="btn btn-ghost">กลับแดชบอร์ด</button>
+      </div>
+    </div>
+  `;
+
+  document.querySelector("#retryCurrentPageButton")?.addEventListener("click", () => {
+    renderCurrentPage({ reason: "retry-v19" });
+  });
+
+  document.querySelector("#goDashboardButton")?.addEventListener("click", () => {
+    location.hash = "#dashboard";
+  });
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient?.auth || document.visibilityState === "hidden") return;
+  if (!isAuthenticatedV19()) return;
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAtV19 || 0) < 1800) return;
+  appState.lastResumeAtV19 = now;
+
+  try {
+    if (typeof shouldSkipResumeRecoveryForFilePicker === "function" && shouldSkipResumeRecoveryForFilePicker()) {
+      if (typeof releaseFilePickerInteraction === "function") releaseFilePickerInteraction(1800);
+      return;
+    }
+
+    const { data } = await withTimeoutV19(supabaseClient.auth.getSession(), 6000, "การตรวจสอบ session ");
+
+    if (!isUsableSessionV19(data?.session)) {
+      showLoginPageCleanV19({ rememberHash: true });
+      return;
+    }
+
+    await renderCurrentPage({ reason: `resume-${reason}` });
+  } catch (error) {
+    console.warn("recoverAppAfterResume v1.9", error);
+  }
+}
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V19_VERSION;
