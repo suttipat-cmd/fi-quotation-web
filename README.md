@@ -1,29 +1,23 @@
-# FI Quotation Web App v1.7.1
+# FI Quotation Web App v1.7.2
 
-## v1.7.1 Auth Session Guard + Profiles RLS Fix
+## v1.7.2 Stability Fix
 
-Release นี้แก้ปัญหาหลัง refresh browser แล้ว request ไปอ่าน `public.profiles` ด้วย role `anon` จนเกิด error:
+Release นี้แก้ปัญหาเสถียรภาพ 2 จุดหลักจาก v1.7.1:
 
-```json
-{
-  "code": "42501",
-  "message": "permission denied for table profiles",
-  "hint": "Grant the required privileges to the current role with: GRANT SELECT ON public.profiles TO anon;"
-}
-```
+1. Refresh browser แล้ว Auth boot/session guard ทำงานแรงเกินไปจนกลับหน้า Login พร้อม console error `AUTH_SESSION_MISSING`
+2. กด `+ เพิ่มสินค้า` แล้วเกิด `RangeError: Maximum call stack size exceeded` จาก `renderProductFormPage()` เรียกตัวเองวนซ้ำ
 
-> สำคัญ: ห้ามแก้ด้วยการ `GRANT SELECT ON public.profiles TO anon` เพราะเสี่ยงเปิดข้อมูลผู้ใช้ให้ public อ่านได้
+## สิ่งที่แก้ใน v1.7.2
 
-## สิ่งที่แก้ใน v1.7.1
-
-- แก้ Frontend Auth Boot ให้ไม่ query `profiles` ถ้าไม่มี `session.access_token`
-- แก้ `handleLogin()` ให้ส่ง `data.session` เข้า boot flow แทนการส่งแค่ `data.user`
-- แก้ `loadProfile()` ให้ validate session ก่อนทุกครั้ง
-- ถ้า session หาย/ยังไม่พร้อม จะกลับหน้า Login แบบ clean โดยไม่ยิง `profiles` ด้วย role `anon`
-- เพิ่ม SQL patch สำหรับ `profiles` RLS/GRANT เฉพาะ role `authenticated`
-- ไม่เปิดสิทธิ์ `profiles` ให้ `anon`
-- เพิ่ม helper function `public.fi_current_user_role()` เพื่อให้ policy admin/manager อ่าน profile สำหรับ dashboard/report ได้โดยไม่เกิด RLS recursion
-- เพิ่ม cache busting เป็น `script.js?v=1.7.1` และ `style.css?v=1.7.1`
+- เอา timeout ออกจาก initial `getSession()` ตอนเปิดระบบ
+- ถ้าไม่มี session ให้กลับหน้า Login แบบ clean โดยไม่ถือเป็น system error
+- ไม่เรียก `loadProfile()` ถ้าไม่มี `session.access_token`
+- ปรับ `loadProfile(session)` ให้รับ session ที่แน่นอนและยิง `profiles` เฉพาะตอน authenticated แล้วเท่านั้น
+- Resume recovery จะไม่ทำงานบนหน้า Login
+- จำ hash เดิม เช่น `#customers`, `#products`, `#product-new` ไว้ และหลัง login สำเร็จจะกลับไปหน้าที่ต้องการ
+- แก้ `renderProductFormPage()` ไม่ให้ wrap/เรียกตัวเองอีก
+- `Product Code` ซ้ำได้ แต่ `ชื่อสินค้า/บริการ` ยังต้องไม่ซ้ำตาม requirement
+- เพิ่ม cache busting เป็น `script.js?v=1.7.2` และ `style.css?v=1.7.2`
 
 ## ไฟล์ใน package
 
@@ -34,7 +28,7 @@ script.js
 README.md
 TEST_CHECKLIST.md
 supabase/
-  patch_v1_7_1.sql
+  patch_v1_7_2.sql
 ```
 
 ## วิธีติดตั้ง
@@ -45,7 +39,7 @@ supabase/
 4. รันไฟล์นี้:
 
 ```text
-supabase/patch_v1_7_1.sql
+supabase/patch_v1_7_2.sql
 ```
 
 5. เปิด Live Server ทดสอบก่อน push
@@ -56,7 +50,7 @@ supabase/patch_v1_7_1.sql
 ```bash
 git status
 git add .
-git commit -m "Hotfix v1.7.1 auth session guard and profiles RLS"
+git commit -m "Hotfix v1.7.2 auth boot and product form stability"
 git push origin main
 ```
 
@@ -78,5 +72,5 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.7.1
+1.7.2
 ```

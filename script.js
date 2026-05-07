@@ -10429,3 +10429,665 @@ function validateSessionInBackgroundV17(reason) {
 }
 
 window.FI_APP_VERSION = FI_AUTH_SESSION_GUARD_VERSION;
+
+// =======================================================
+// v1.7.2 Stability Fix
+// Auth Boot Final Fix + Product Form Recursion Fix
+// =======================================================
+
+const FI_STABILITY_FIX_VERSION_V172 = "1.7.2";
+window.FI_APP_VERSION = FI_STABILITY_FIX_VERSION_V172;
+appState.appVersion = FI_STABILITY_FIX_VERSION_V172;
+appState.pendingHashV172 = null;
+appState.renderSeqV172 = 0;
+appState.resumeInProgressV172 = false;
+appState.lastResumeAttemptAtV172 = 0;
+
+function isUsableSessionV172(session) {
+  return Boolean(session?.access_token && session?.user?.id);
+}
+
+function isAuthMissingErrorV172(error) {
+  return String(error?.message || error || "") === "AUTH_SESSION_MISSING" ||
+    String(error?.code || "") === "AUTH_SESSION_MISSING";
+}
+
+async function getSessionV172() {
+  if (!supabaseClient) return { session: null, error: new Error("SUPABASE_NOT_CONFIGURED") };
+
+  try {
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) return { session: null, error };
+    return { session: data?.session || null, error: null };
+  } catch (error) {
+    return { session: null, error };
+  }
+}
+
+function isAuthenticatedV17() {
+  return Boolean(appState.user?.id && appState.profile?.id);
+}
+
+function getCurrentHashV172() {
+  return location.hash && location.hash !== "#" ? location.hash : "#dashboard";
+}
+
+function rememberPendingHashV172() {
+  const hash = getCurrentHashV172();
+  if (hash !== "#dashboard") appState.pendingHashV172 = hash;
+}
+
+function clearAuthStorageV172() {
+  const projectRef = (() => {
+    try { return new URL(SUPABASE_URL).hostname.split(".")[0] || ""; }
+    catch (_error) { return ""; }
+  })();
+
+  if (!projectRef) return;
+
+  const shouldRemove = (key) =>
+    key === `sb-${projectRef}-auth-token` ||
+    key === `sb-${projectRef}-auth-token-code-verifier` ||
+    (key.startsWith(`sb-${projectRef}-`) && key.toLowerCase().includes("auth")) ||
+    (key.includes(projectRef) && key.toLowerCase().includes("auth-token"));
+
+  [window.localStorage, window.sessionStorage].forEach((storage) => {
+    try {
+      const keys = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key && shouldRemove(key)) keys.push(key);
+      }
+      keys.forEach((key) => storage.removeItem(key));
+    } catch (error) {
+      console.warn("clearAuthStorageV172 skipped", error);
+    }
+  });
+}
+
+function showLoginPageCleanV17(options = {}) {
+  const { message = "", showError = false, rememberHash = true } = options;
+
+  if (rememberHash) rememberPendingHashV172();
+
+  appState.user = null;
+  appState.profile = null;
+  appState.selectedQuotationIds?.clear?.();
+
+  hidePageBusy?.();
+  hideBootPage?.();
+
+  elements.loginPage?.classList.remove("hidden");
+  elements.appShell?.classList.add("hidden");
+  document.body.classList.remove("nav-open");
+
+  if (showError && message) showLoginError(message);
+  else hideLoginError?.();
+}
+
+async function loadProfile(sessionArg = null) {
+  const session = isUsableSessionV172(sessionArg)
+    ? sessionArg
+    : (await getSessionV172()).session;
+
+  if (!isUsableSessionV172(session)) {
+    const error = new Error("AUTH_SESSION_MISSING");
+    error.code = "AUTH_SESSION_MISSING";
+    throw error;
+  }
+
+  appState.user = session.user;
+
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("id, email, full_name, role, is_active")
+    .eq("id", session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`loadProfile ${FI_STABILITY_FIX_VERSION_V172}`, error);
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("ไม่พบข้อมูลผู้ใช้ในตาราง profiles กรุณาติดต่อ Admin");
+  }
+
+  if (data.is_active === false) {
+    await supabaseClient.auth.signOut();
+    throw new Error("บัญชีนี้ถูกปิดการใช้งาน");
+  }
+
+  appState.profile = data;
+  return data;
+}
+
+function applySystemBrandingToHeader() {
+  try {
+    const branding = appState.appBranding || {};
+    const loginLogoUrl = branding.login_logo_url || branding.logo_url || "";
+
+    if (typeof applyHeaderLogo === "function") applyHeaderLogo(loginLogoUrl);
+
+    const headerLogo = document.querySelector(".sidebar-brand .brand-mark.small, .app-brand .brand-mark.small");
+    if (headerLogo && loginLogoUrl) {
+      headerLogo.innerHTML = `<img src="${escapeHTML(loginLogoUrl)}" alt="Forward Insight" />`;
+      headerLogo.classList.add("has-image");
+    }
+
+    if (typeof applyFavicon === "function" && (branding.favicon_url || loginLogoUrl)) {
+      applyFavicon(branding.favicon_url || loginLogoUrl);
+    }
+  } catch (error) {
+    console.warn("applySystemBrandingToHeader skipped", error);
+  }
+}
+
+function showAppShell() {
+  hideBootPage?.();
+  elements.loginPage?.classList.add("hidden");
+  elements.appShell?.classList.remove("hidden");
+  document.body.classList.remove("nav-open");
+
+  if (appState.profile) {
+    const fullName = appState.profile.full_name || appState.profile.email || "-";
+    const roleText = roleLabel(appState.profile.role);
+
+    if (elements.userName) elements.userName.textContent = fullName;
+    if (elements.userRole) elements.userRole.textContent = roleText;
+
+    const headerUserChip = document.querySelector("#headerUserChip");
+    if (headerUserChip) {
+      headerUserChip.textContent = `${fullName} · ${roleText}`;
+      headerUserChip.title = `${fullName} · ${roleText}`;
+    }
+  }
+
+  renderMenu?.();
+  applySystemBrandingToHeader();
+
+  if (!location.hash) location.hash = "#dashboard";
+  appState.currentPage = getPageFromHash() || "dashboard";
+  hidePageBusy?.();
+}
+
+async function bootAuthenticatedAppV17(session, reason = "boot") {
+  if (!isUsableSessionV172(session)) {
+    showLoginPageCleanV17({ rememberHash: true });
+    return false;
+  }
+
+  appState.user = session.user;
+  appState.profile = null;
+
+  try {
+    await loadProfile(session);
+  } catch (error) {
+    if (isAuthMissingErrorV172(error)) {
+      showLoginPageCleanV17({ rememberHash: true });
+      return false;
+    }
+
+    console.error(`bootAuthenticatedApp ${FI_STABILITY_FIX_VERSION_V172}`, error);
+    showLoginPageCleanV17({
+      showError: true,
+      message: error.message || "เข้าสู่ระบบได้แล้ว แต่ไม่สามารถโหลดข้อมูลผู้ใช้ได้",
+      rememberHash: true,
+    });
+    return false;
+  }
+
+  hideLoginError?.();
+  showAppShell();
+  await renderCurrentPage({ force: true, reason });
+  return true;
+}
+
+async function initApp() {
+  showBootPage?.();
+
+  if (!isConfigured) {
+    showLoginPageCleanV17({
+      showError: true,
+      message: "ยังไม่ได้ตั้งค่า Supabase URL และ anon key ในไฟล์ script.js",
+      rememberHash: false,
+    });
+    return;
+  }
+
+  bindEvents();
+  bindAuthListenerV172();
+  startRequiredStarObserverV16?.();
+  hideLoginError?.();
+
+  try {
+    if (typeof loadAndApplyAppBranding === "function") await loadAndApplyAppBranding();
+  } catch (error) {
+    console.warn(`Branding skipped during init ${FI_STABILITY_FIX_VERSION_V172}`, error);
+  }
+
+  const { session, error } = await getSessionV172();
+
+  if (error) {
+    console.warn(`Stored session check failed ${FI_STABILITY_FIX_VERSION_V172}; showing clean login`, error);
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  if (!isUsableSessionV172(session)) {
+    showLoginPageCleanV17({ rememberHash: true });
+    return;
+  }
+
+  await bootAuthenticatedAppV17(session, "initial-session-v172");
+}
+
+function bindAuthListenerV172() {
+  if (window.__fiAuthListenerV172 || !supabaseClient) return;
+  window.__fiAuthListenerV172 = true;
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === "TOKEN_REFRESHED" && isUsableSessionV172(session)) {
+      appState.user = session.user;
+      return;
+    }
+
+    if (event === "SIGNED_OUT") {
+      showLoginPageCleanV17({ rememberHash: false });
+      return;
+    }
+
+    if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && isUsableSessionV172(session) && !isAuthenticatedV17()) {
+      await bootAuthenticatedAppV17(session, `auth-${event}-v172`);
+    }
+  });
+}
+
+function bindEvents() {
+  if (elements.loginForm && !elements.loginForm.dataset.v172Bound) {
+    elements.loginForm.dataset.v172Bound = "true";
+    elements.loginForm.addEventListener("submit", handleLogin);
+  }
+
+  if (elements.logoutButton && !elements.logoutButton.dataset.v172Bound) {
+    elements.logoutButton.dataset.v172Bound = "true";
+    elements.logoutButton.addEventListener("click", handleLogout);
+  }
+
+  if (!window.__fiHashBoundV172) {
+    window.__fiHashBoundV172 = true;
+    window.addEventListener("hashchange", async () => {
+      appState.currentPage = getPageFromHash();
+      if (isAuthenticatedV17()) await renderCurrentPage({ force: true, reason: "hashchange-v172" });
+      else showLoginPageCleanV17({ rememberHash: true });
+    });
+  }
+
+  if (!window.__fiDelegatedClickV172) {
+    window.__fiDelegatedClickV172 = true;
+
+    document.addEventListener("pointerdown", (event) => {
+      if (isFileInputElement?.(event.target)) markFilePickerInteraction?.();
+    }, true);
+
+    document.addEventListener("click", (event) => {
+      if (isFileInputElement?.(event.target)) markFilePickerInteraction?.();
+      handleDelegatedClick?.(event);
+    }, true);
+
+    document.addEventListener("change", (event) => {
+      if (isFileInputElement?.(event.target)) {
+        releaseFilePickerInteraction?.(2200);
+        return;
+      }
+      handleDelegatedChange?.(event);
+    }, true);
+  }
+
+  if (!window.__fiLifecycleBoundV172) {
+    window.__fiLifecycleBoundV172 = true;
+    window.addEventListener("focus", () => recoverAppAfterResume("focus"));
+    window.addEventListener("pageshow", (event) => recoverAppAfterResume(event.persisted ? "pageshow-cache" : "pageshow"));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recoverAppAfterResume("visibilitychange");
+    });
+  }
+
+  const mobileMenuButton = document.querySelector("#mobileMenuButton");
+  if (mobileMenuButton && !mobileMenuButton.dataset.v172Bound) {
+    mobileMenuButton.dataset.v172Bound = "true";
+    mobileMenuButton.addEventListener("click", () => elements.sidebarMenu?.classList.toggle("is-open"));
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  if (!supabaseClient) {
+    showLoginError("ยังไม่ได้ตั้งค่า Supabase ใน script.js");
+    return;
+  }
+
+  hideLoginError?.();
+
+  const email = elements.loginEmail?.value?.trim() || "";
+  const password = elements.loginPassword?.value || "";
+
+  if (!email || !password) {
+    showLoginError("กรุณากรอกอีเมลและรหัสผ่าน");
+    return;
+  }
+
+  const executeLogin = async () => {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      showLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    const session = data?.session || (await getSessionV172()).session;
+
+    if (!isUsableSessionV172(session)) {
+      showLoginError("เข้าสู่ระบบสำเร็จแต่ยังไม่พบ session กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    const ok = await bootAuthenticatedAppV17(session, "login-v172");
+
+    if (ok) {
+      const nextHash = appState.pendingHashV172 || "#dashboard";
+      appState.pendingHashV172 = null;
+      if (location.hash !== nextHash) location.hash = nextHash;
+      else await renderCurrentPage({ force: true, reason: "login-target-v172" });
+      showToast?.("เข้าสู่ระบบสำเร็จ", "success");
+    }
+  };
+
+  if (typeof withButtonLoading === "function") {
+    await withButtonLoading(elements.loginButton, "กำลังเข้าสู่ระบบ...", executeLogin);
+  } else {
+    setLoginLoading?.(true);
+    try { await executeLogin(); } finally { setLoginLoading?.(false); }
+  }
+}
+
+async function handleLogout() {
+  if (!supabaseClient) return;
+
+  const ok = window.confirm("ต้องการออกจากระบบใช่ไหม?");
+  if (!ok) return;
+
+  try {
+    await supabaseClient.auth.signOut();
+  } finally {
+    appState.pendingHashV172 = null;
+    showLoginPageCleanV17({ rememberHash: false });
+    showToast?.("ออกจากระบบแล้ว", "success");
+  }
+}
+
+async function renderCurrentPage(options = {}) {
+  const token = ++appState.renderSeqV172;
+  appState.currentPage = getPageFromHash() || "dashboard";
+
+  if (!isAuthenticatedV17()) {
+    const { session, error } = await getSessionV172();
+
+    if (error || !isUsableSessionV172(session)) {
+      if (error) console.warn(`renderCurrentPage no valid session ${FI_STABILITY_FIX_VERSION_V172}`, error);
+      showLoginPageCleanV17({ rememberHash: true });
+      return;
+    }
+
+    await bootAuthenticatedAppV17(session, `bootstrap-${options.reason || "render"}-v172`);
+    return;
+  }
+
+  showAppShell();
+  renderMenu?.();
+  applySystemBrandingToHeader();
+  hidePageBusy?.();
+
+  const page = appState.currentPage || "dashboard";
+
+  const watchdogId = window.setTimeout(() => {
+    if (appState.renderSeqV172 !== token) return;
+    if (hasVisibleLoadingV161?.()) {
+      renderErrorStateWithRetry?.("โหลดข้อมูลนานเกินไปหรือการเชื่อมต่อค้าง กรุณากดโหลดข้อมูลใหม่");
+    }
+  }, 16000);
+
+  try {
+    await renderPageByKeyV161(page);
+    if (appState.renderSeqV172 !== token) return;
+
+    appState.lastSuccessfulRenderAtV172 = Date.now();
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (!elements.pageContent?.textContent?.trim()) {
+      throw new Error("หน้าเว็บแสดงผลว่างหลังโหลดข้อมูล");
+    }
+
+    decorateRequiredStars?.();
+  } catch (error) {
+    if (appState.renderSeqV172 !== token) return;
+    console.error(`renderCurrentPage ${FI_STABILITY_FIX_VERSION_V172}`, page, error);
+    hidePageBusy?.();
+    renderErrorStateWithRetry?.(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    window.clearTimeout(watchdogId);
+    hidePageBusy?.();
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient || document.visibilityState === "hidden") return;
+
+  if (shouldSkipResumeRecoveryForFilePicker?.()) {
+    releaseFilePickerInteraction?.(1800);
+    return;
+  }
+
+  // Do not recover protected data while the user is on the login page.
+  if (!isAuthenticatedV17()) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAttemptAtV172 || 0) < 1500) return;
+  appState.lastResumeAttemptAtV172 = now;
+
+  if (appState.resumeInProgressV172) return;
+  appState.resumeInProgressV172 = true;
+
+  try {
+    hidePageBusy?.();
+    appState.activeActions?.clear?.();
+    showAppShell();
+    await renderCurrentPage({ force: true, reason: `resume-${reason}-v172` });
+    validateSessionInBackgroundV172(reason);
+  } catch (error) {
+    console.warn(`recoverAppAfterResume ${FI_STABILITY_FIX_VERSION_V172}`, reason, error);
+    hidePageBusy?.();
+    if (isAuthenticatedV17()) await renderCurrentPage({ force: true, reason: `resume-fallback-${reason}-v172` });
+  } finally {
+    appState.resumeInProgressV172 = false;
+  }
+}
+
+function validateSessionInBackgroundV172(reason) {
+  window.setTimeout(async () => {
+    if (!isAuthenticatedV17()) return;
+
+    const { session, error } = await getSessionV172();
+
+    if (error) {
+      console.warn(`background session validation skipped ${FI_STABILITY_FIX_VERSION_V172}`, reason, error);
+      return;
+    }
+
+    if (!isUsableSessionV172(session)) {
+      showLoginPageCleanV17({ rememberHash: true });
+      showToast?.("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = session.user;
+  }, 900);
+}
+
+// Product form final renderer. Do not wrap renderProductFormPage with the same name.
+async function renderProductFormPage({ mode, productId }) {
+  if (appState.profile?.role !== "admin") {
+    renderError("เฉพาะ Admin เท่านั้นที่จัดการสินค้า/บริการได้");
+    return;
+  }
+
+  const isEdit = mode === "edit";
+  setPageHeader(isEdit ? "แก้ไขสินค้า/บริการ" : "เพิ่มสินค้า/บริการ", "Code สามารถซ้ำได้ แต่ชื่อสินค้า/บริการต้องไม่ซ้ำ");
+  renderLoading();
+
+  let product = {
+    code: "",
+    name: "",
+    description: "",
+    default_unit: "คัน",
+    is_active: true,
+  };
+
+  if (isEdit) {
+    const { data, error } = await supabaseClient
+      .from("products")
+      .select("*")
+      .eq("id", productId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error("ไม่พบสินค้า/บริการที่ต้องการแก้ไข");
+    product = data;
+  }
+
+  elements.pageContent.innerHTML = `
+    <form id="productForm" class="card form-card">
+      <div class="card-header">
+        <div>
+          <h3>${isEdit ? "แก้ไขสินค้า/บริการ" : "เพิ่มสินค้า/บริการ"}</h3>
+          <p>Code สามารถซ้ำได้ แต่ชื่อสินค้า/บริการต้องไม่ซ้ำ</p>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="field">
+          <label for="productCode">Code *</label>
+          <input id="productCode" type="text" value="${escapeHTML(product.code || "")}" placeholder="เช่น ERP-TRUCK" required />
+        </div>
+
+        <div class="field">
+          <label for="productUnit">หน่วย *</label>
+          <input id="productUnit" type="text" value="${escapeHTML(product.default_unit || "คัน")}" required />
+        </div>
+
+        <div class="field full">
+          <label for="productName">ชื่อสินค้า/บริการ *</label>
+          <input id="productName" type="text" value="${escapeHTML(product.name || "")}" required />
+        </div>
+
+        <div class="field full">
+          <label for="productDescription">รายละเอียด</label>
+          <textarea id="productDescription" rows="4">${escapeHTML(product.description || "")}</textarea>
+        </div>
+
+        <label class="checkbox-row full">
+          <input id="productIsActive" type="checkbox" ${product.is_active !== false ? "checked" : ""} />
+          <span>เปิดใช้งานสินค้า/บริการนี้</span>
+        </label>
+      </div>
+
+      <div class="form-actions normal-flow">
+        <button type="button" id="cancelProductButton" class="btn btn-ghost">ยกเลิก</button>
+        <button type="submit" id="saveProductButton" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  `;
+
+  $("#cancelProductButton")?.addEventListener("click", () => { location.hash = "#products"; });
+  $("#productForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await saveProduct({ mode, productId });
+  });
+
+  decorateRequiredStars?.();
+}
+
+function normalizeProductNameV172(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+async function saveProduct({ mode, productId }) {
+  const saveButton = $("#saveProductButton");
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "กำลังบันทึก...";
+  }
+
+  try {
+    const payload = {
+      code: $("#productCode")?.value.trim() || "",
+      name: $("#productName")?.value.trim() || "",
+      description: $("#productDescription")?.value.trim() || "",
+      default_unit: $("#productUnit")?.value.trim() || "คัน",
+      is_active: $("#productIsActive")?.checked ?? true,
+    };
+
+    if (!payload.code || !payload.name || !payload.default_unit) {
+      throw new Error("กรุณากรอก Code, ชื่อสินค้า/บริการ และหน่วย");
+    }
+
+    const { data: existingProducts, error: checkError } = await supabaseClient
+      .from("products")
+      .select("id, name");
+
+    if (checkError) throw checkError;
+
+    const normalizedName = normalizeProductNameV172(payload.name);
+    const duplicatedName = (existingProducts || []).find((item) => {
+      if (mode === "edit" && item.id === productId) return false;
+      return normalizeProductNameV172(item.name) === normalizedName;
+    });
+
+    if (duplicatedName) {
+      throw new Error("ชื่อสินค้า/บริการนี้มีอยู่แล้ว กรุณาใช้ชื่ออื่น");
+    }
+
+    if (mode === "edit") {
+      const { error } = await supabaseClient
+        .from("products")
+        .update(payload)
+        .eq("id", productId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabaseClient
+        .from("products")
+        .insert(payload);
+      if (error) throw error;
+    }
+
+    showToast?.("บันทึกสินค้า/บริการสำเร็จ", "success");
+    location.hash = "#products";
+  } catch (error) {
+    console.error(error);
+    const message = String(error?.message || "");
+    const friendlyMessage = /duplicate|unique|products.*name/i.test(message)
+      ? "ชื่อสินค้า/บริการนี้มีอยู่แล้ว กรุณาใช้ชื่ออื่น"
+      : message || "ไม่สามารถบันทึกสินค้า/บริการได้";
+    showToast?.(friendlyMessage, "error", { duration: 5200 });
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "บันทึก";
+    }
+  }
+}
+
+window.FI_APP_VERSION = FI_STABILITY_FIX_VERSION_V172;
