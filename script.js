@@ -8570,13 +8570,13 @@ function sumByV16(items, key) {
 }
 
 // =======================================================
-// v1.6.1 Corrected Build
+// v1.6.2 Auth Boot Fix
 // Resume/session recovery must not block data rendering.
 // This block intentionally sits at the end of the file so these
 // function declarations override older appended release blocks.
 // =======================================================
 
-const FI_APP_VERSION = "1.6.1";
+const FI_APP_VERSION = "1.6.2";
 const FI_RENDER_TIMEOUT_MS_V161 = 30000;
 const FI_SESSION_TIMEOUT_MS_V161 = 18000;
 const FI_RESUME_DEBOUNCE_MS_V161 = 1800;
@@ -8711,7 +8711,7 @@ async function initApp() {
       showLoginPage();
     }
   } catch (error) {
-    console.error("initApp v1.6.1", error);
+    console.error("initApp v1.6.2", error);
     hideBootPage();
     showLoginPage();
     showLoginError("ไม่สามารถตรวจสอบ session ได้ กรุณาลองเข้าสู่ระบบใหม่");
@@ -8746,7 +8746,7 @@ function bindAuthListenerV161() {
         showAppShell();
         await renderCurrentPage({ force: true, reason: `auth-${event}` });
       } catch (error) {
-        console.error("auth listener v1.6.1", error);
+        console.error("auth listener v1.6.2", error);
         showToast("โหลดข้อมูลผู้ใช้ไม่สำเร็จ", "error");
       }
     }
@@ -8773,7 +8773,7 @@ async function renderCurrentPage(options = {}) {
       await withTimeoutV161(loadProfile(), FI_SESSION_TIMEOUT_MS_V161, "การโหลดข้อมูลผู้ใช้");
       showAppShell();
     } catch (error) {
-      console.error("renderCurrentPage session bootstrap v1.6.1", error);
+      console.error("renderCurrentPage session bootstrap v1.6.2", error);
       hidePageBusy?.();
       renderErrorStateWithRetry("ไม่สามารถตรวจสอบ session ได้ กรุณากดโหลดข้อมูลใหม่");
       return;
@@ -8807,7 +8807,7 @@ async function renderCurrentPage(options = {}) {
     decorateRequiredStars?.();
   } catch (error) {
     if (appState.renderSeqV161 !== token) return;
-    console.error("renderCurrentPage v1.6.1", page, error);
+    console.error("renderCurrentPage v1.6.2", page, error);
     hidePageBusy?.();
     renderErrorStateWithRetry(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
   } finally {
@@ -8887,7 +8887,7 @@ async function recoverAppAfterResume(reason = "resume") {
     await renderCurrentPage({ force: true, reason: `resume-${reason}` });
     schedulePostResumeGuardV161(reason);
   } catch (error) {
-    console.error("recoverAppAfterResume v1.6.1", reason, error);
+    console.error("recoverAppAfterResume v1.6.2", reason, error);
     hidePageBusy?.();
 
     if (isAppAuthenticatedV161()) {
@@ -8998,3 +8998,377 @@ if (document.readyState === "loading") {
 } else {
   decorateRequiredStars?.();
 }
+
+// =======================================================
+// v1.6.2 Auth Boot Fix
+// Fix: stale/invalid Supabase session must not show a fatal login error.
+// Strategy:
+// - Treat getSession failure during initial boot as a stale local session.
+// - Clear only this Supabase project's auth keys and show a clean login page.
+// - Show login errors only for real sign-in failure or profile-loading failure.
+// - Keep resume recovery non-blocking when in-memory user/profile exists.
+// =======================================================
+
+const FI_AUTH_BOOT_FIX_VERSION = "1.6.2";
+const FI_SESSION_TIMEOUT_MS_V162 = 12000;
+const FI_RENDER_TIMEOUT_MS_V162 = 30000;
+const FI_RESUME_DEBOUNCE_MS_V162 = 1800;
+
+Object.assign(appState, {
+  appVersion: FI_AUTH_BOOT_FIX_VERSION,
+  renderSeqV162: 0,
+  resumeInProgressV162: false,
+  lastResumeAttemptAtV162: 0,
+  lastSuccessfulRenderAtV162: 0,
+});
+
+function getSupabaseProjectRefV162() {
+  try {
+    return new URL(SUPABASE_URL).hostname.split(".")[0] || "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function removeStorageKeysV162(storage, predicate) {
+  if (!storage) return;
+
+  const keys = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key && predicate(key)) keys.push(key);
+  }
+
+  keys.forEach((key) => storage.removeItem(key));
+}
+
+function clearLocalAuthSessionV162() {
+  const projectRef = getSupabaseProjectRefV162();
+  if (!projectRef) return;
+
+  const shouldRemove = (key) =>
+    key === `sb-${projectRef}-auth-token` ||
+    key === `sb-${projectRef}-auth-token-code-verifier` ||
+    (key.startsWith(`sb-${projectRef}-`) && key.includes("auth")) ||
+    (key.includes(projectRef) && key.includes("auth-token"));
+
+  try { removeStorageKeysV162(window.localStorage, shouldRemove); } catch (error) { console.warn("localStorage auth clear skipped", error); }
+  try { removeStorageKeysV162(window.sessionStorage, shouldRemove); } catch (error) { console.warn("sessionStorage auth clear skipped", error); }
+}
+
+function resetAuthStateV162() {
+  appState.user = null;
+  appState.profile = null;
+  appState.selectedQuotationIds?.clear?.();
+  hidePageBusy?.();
+}
+
+function showCleanLoginPageV162(options = {}) {
+  const { message = "", showError = false } = options;
+  resetAuthStateV162();
+  showLoginPage();
+
+  if (showError && message) {
+    showLoginError(message);
+  } else {
+    hideLoginError?.();
+  }
+}
+
+function isExpectedSessionBootErrorV162(error) {
+  if (!error) return false;
+  const message = String(error.message || error.name || error).toLowerCase();
+  return (
+    message.includes("session") ||
+    message.includes("refresh") ||
+    message.includes("token") ||
+    message.includes("jwt") ||
+    message.includes("auth") ||
+    message.includes("timeout") ||
+    message.includes("network") ||
+    message.includes("failed") ||
+    message.includes("fetch") ||
+    message.includes("invalid") ||
+    message.includes("expired")
+  );
+}
+
+async function getSessionSafelyV162(label = "การตรวจสอบ session") {
+  try {
+    const { data, error } = await withTimeoutV161(
+      supabaseClient.auth.getSession(),
+      FI_SESSION_TIMEOUT_MS_V162,
+      label
+    );
+
+    if (error) {
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
+}
+
+async function bootAuthenticatedAppV162(session, reason = "boot") {
+  appState.user = session.user;
+  appState.profile = null;
+
+  try {
+    await withTimeoutV161(loadProfile(), FI_SESSION_TIMEOUT_MS_V162, "การโหลดข้อมูลผู้ใช้");
+  } catch (profileError) {
+    console.error(`loadProfile ${FI_AUTH_BOOT_FIX_VERSION}`, profileError);
+    clearLocalAuthSessionV162();
+    showCleanLoginPageV162({
+      showError: true,
+      message: "เข้าสู่ระบบได้แล้ว แต่ไม่สามารถโหลดข้อมูลผู้ใช้ได้ กรุณาติดต่อ Admin หรือเข้าสู่ระบบใหม่",
+    });
+    return;
+  }
+
+  hideLoginError?.();
+  showAppShell();
+  await renderCurrentPage({ force: true, reason });
+}
+
+async function initApp() {
+  showBootPage();
+
+  if (!isConfigured) {
+    hideBootPage();
+    showLoginPage();
+    showSetupWarningOnLogin();
+    return;
+  }
+
+  bindEvents();
+  bindAuthListenerV162();
+  startRequiredStarObserverV16?.();
+  hideLoginError?.();
+
+  try {
+    await loadAndApplyAppBranding?.();
+  } catch (brandingError) {
+    console.warn("Branding skipped during init", brandingError);
+  }
+
+  const { data, error } = await getSessionSafelyV162("การตรวจสอบ session ตอนเปิดระบบ");
+
+  if (error) {
+    console.warn(`initApp ${FI_AUTH_BOOT_FIX_VERSION}: stored session is invalid; showing clean login`, error);
+    if (isExpectedSessionBootErrorV162(error)) clearLocalAuthSessionV162();
+    hideBootPage();
+    showCleanLoginPageV162();
+    return;
+  }
+
+  if (!data?.session?.user) {
+    hideBootPage();
+    showCleanLoginPageV162();
+    return;
+  }
+
+  await bootAuthenticatedAppV162(data.session, "initial-session-v162");
+}
+
+function bindAuthListenerV162() {
+  if (window.__fiAuthListenerV162 || !supabaseClient) return;
+  window.__fiAuthListenerV162 = true;
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === "TOKEN_REFRESHED" && session?.user) {
+      appState.user = session.user;
+      return;
+    }
+
+    if (event === "SIGNED_OUT") {
+      clearLocalAuthSessionV162();
+      showCleanLoginPageV162();
+      return;
+    }
+
+    if (session?.user && !isAppAuthenticatedV161()) {
+      try {
+        await bootAuthenticatedAppV162(session, `auth-${event}-v162`);
+      } catch (error) {
+        console.error(`auth listener ${FI_AUTH_BOOT_FIX_VERSION}`, error);
+        showLoginError("เข้าสู่ระบบได้แล้ว แต่ไม่สามารถโหลดข้อมูลผู้ใช้ได้");
+      }
+    }
+  });
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  if (!supabaseClient) {
+    showLoginError("ยังไม่ได้ตั้งค่า Supabase ใน script.js");
+    return;
+  }
+
+  hideLoginError?.();
+  clearLocalAuthSessionV162();
+
+  const email = elements.loginEmail?.value?.trim() || "";
+  const password = elements.loginPassword?.value || "";
+
+  const executeLogin = async () => {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      showLoginError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง");
+      showToast?.("เข้าสู่ระบบไม่สำเร็จ", "error");
+      return;
+    }
+
+    if (!data?.user) {
+      showLoginError("ไม่พบข้อมูลผู้ใช้หลังเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง");
+      return;
+    }
+
+    await bootAuthenticatedAppV162({ user: data.user }, "login-v162");
+    showToast?.("เข้าสู่ระบบสำเร็จ", "success");
+  };
+
+  if (typeof withButtonLoading === "function") {
+    await withButtonLoading(elements.loginButton, "กำลังเข้าสู่ระบบ...", executeLogin);
+  } else {
+    setLoginLoading?.(true);
+    try { await executeLogin(); } finally { setLoginLoading?.(false); }
+  }
+}
+
+async function renderCurrentPage(options = {}) {
+  const token = ++appState.renderSeqV162;
+  appState.currentPage = getPageFromHash();
+
+  if (!isAppAuthenticatedV161()) {
+    const { data, error } = await getSessionSafelyV162("การตรวจสอบ session ก่อนโหลดหน้า");
+
+    if (error || !data?.session?.user) {
+      if (error) console.warn(`renderCurrentPage ${FI_AUTH_BOOT_FIX_VERSION}: no valid session`, error);
+      clearLocalAuthSessionV162();
+      showCleanLoginPageV162();
+      return;
+    }
+
+    await bootAuthenticatedAppV162(data.session, `bootstrap-${options.reason || "render"}-v162`);
+    return;
+  }
+
+  showAppShell();
+  renderMenu();
+  updateHeaderUser?.();
+  hidePageBusy?.();
+
+  const page = appState.currentPage || "dashboard";
+  const watchdogId = window.setTimeout(() => {
+    if (appState.renderSeqV162 !== token) return;
+    if (hasVisibleLoadingV161()) {
+      renderErrorStateWithRetry("โหลดข้อมูลนานเกินไปหรือการเชื่อมต่อค้าง กรุณากดโหลดข้อมูลใหม่");
+    }
+  }, FI_RENDER_TIMEOUT_MS_V162 + 1500);
+
+  try {
+    await withTimeoutV161(renderPageByKeyV161(page), FI_RENDER_TIMEOUT_MS_V162, `การโหลดหน้า ${page}`);
+    if (appState.renderSeqV162 !== token) return;
+
+    appState.lastSuccessfulRenderAtV162 = Date.now();
+    appState.lastSuccessfulRenderAtV161 = Date.now();
+    appState.lastSuccessfulRenderAt = Date.now();
+
+    if (!elements.pageContent?.textContent?.trim()) {
+      throw new Error("หน้าเว็บแสดงผลว่างหลังโหลดข้อมูล");
+    }
+
+    decorateRequiredStars?.();
+  } catch (error) {
+    if (appState.renderSeqV162 !== token) return;
+    console.error(`renderCurrentPage ${FI_AUTH_BOOT_FIX_VERSION}`, page, error);
+    hidePageBusy?.();
+    renderErrorStateWithRetry(error.message || "ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่อีกครั้ง");
+  } finally {
+    window.clearTimeout(watchdogId);
+    hidePageBusy?.();
+  }
+}
+
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient) return;
+
+  if (shouldSkipResumeRecoveryForFilePicker?.()) {
+    releaseFilePickerInteraction?.(1800);
+    return;
+  }
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAttemptAtV162 || 0) < FI_RESUME_DEBOUNCE_MS_V162) return;
+  appState.lastResumeAttemptAtV162 = now;
+
+  if (appState.resumeInProgressV162) return;
+  appState.resumeInProgressV162 = true;
+
+  try {
+    hidePageBusy?.();
+    appState.activeActions?.clear?.();
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+    if (isAppAuthenticatedV161()) {
+      showAppShell();
+      await renderCurrentPage({ force: true, reason: `resume-${reason}-v162` });
+      validateSessionInBackgroundV162(reason);
+      schedulePostResumeGuardV161?.(reason);
+      return;
+    }
+
+    const { data, error } = await getSessionSafelyV162("การตรวจสอบ session หลังกลับมาหน้าเว็บ");
+
+    if (error || !data?.session?.user) {
+      if (error) console.warn(`recoverAppAfterResume ${FI_AUTH_BOOT_FIX_VERSION}: invalid session`, error);
+      clearLocalAuthSessionV162();
+      showCleanLoginPageV162();
+      return;
+    }
+
+    await bootAuthenticatedAppV162(data.session, `resume-${reason}-v162`);
+    schedulePostResumeGuardV161?.(reason);
+  } catch (error) {
+    console.error(`recoverAppAfterResume ${FI_AUTH_BOOT_FIX_VERSION}`, reason, error);
+    hidePageBusy?.();
+
+    if (isAppAuthenticatedV161()) {
+      await renderCurrentPage({ force: true, reason: `resume-fallback-${reason}-v162` });
+      return;
+    }
+
+    clearLocalAuthSessionV162();
+    showCleanLoginPageV162();
+  } finally {
+    appState.resumeInProgressV162 = false;
+  }
+}
+
+function validateSessionInBackgroundV162(reason) {
+  window.setTimeout(async () => {
+    const { data, error } = await getSessionSafelyV162("การตรวจสอบ session แบบเบื้องหลัง");
+
+    if (error) {
+      console.warn("background session validation skipped", reason, error);
+      return;
+    }
+
+    if (!data?.session?.user) {
+      clearLocalAuthSessionV162();
+      showCleanLoginPageV162();
+      showToast?.("Session หมดอายุ กรุณาเข้าสู่ระบบใหม่", "warning", { duration: 4200 });
+      return;
+    }
+
+    appState.user = data.session.user;
+  }, 600);
+}
+
+// Ensure the final version marker is visible for debugging.
+window.FI_APP_VERSION = FI_AUTH_BOOT_FIX_VERSION;
+
