@@ -7695,7 +7695,6 @@ function renderPrintV15ServiceSection(section, model) {
     <section class="print-v2-service-section print-v2-service-${escapeHTML(section.type)} ${longClass}">
       <div class="print-v2-section-heading">
         <h3>${escapeHTML(section.title)}</h3>
-        <p>${escapeHTML(section.subtitle || "")}</p>
       </div>
       ${renderPrintV15ItemsTable(section)}
       ${renderPrintV15SectionSummary(section, model.quotation)}
