@@ -4220,3 +4220,30 @@ body {
   }
 }
 
+
+/* =======================================================
+   v1.9.9 Owner Assignment + Auto-grow Detail Textareas
+   ======================================================= */
+
+.auto-grow-textarea-v199 {
+  overflow: hidden;
+  min-height: 72px;
+  resize: none;
+}
+
+#draftOwnerId {
+  font-weight: 700;
+}
+
+.field:has(#draftOwnerId) {
+  border: 1px dashed #bfdbfe;
+  background: #eff6ff;
+  border-radius: 16px;
+  padding: 12px;
+}
+
+@media (max-width: 720px) {
+  .field:has(#draftOwnerId) {
+    padding: 10px;
+  }
+}

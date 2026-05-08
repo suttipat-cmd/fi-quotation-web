@@ -15141,3 +15141,723 @@ window.FI_DEBUG = async function FI_DEBUG_V198() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V198_VERSION;
+
+// =======================================================
+// v1.9.9 Owner Assignment + Sales Name Normalization
+// - Admin can create/edit Draft quotations for self or active Sales users.
+// - owner_id is the source of truth for Sales identity; display names are
+//   resolved from current profiles data instead of sales_name_snapshot.
+// - Auto-grow textarea fields for quotation detail descriptions.
+// =======================================================
+
+const FI_V199_VERSION = "1.9.9";
+window.FI_APP_VERSION = FI_V199_VERSION;
+
+if (Array.isArray(FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193) && !FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.includes("draftOwnerId")) {
+  const insertAt = FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.indexOf("draftBillingType");
+  FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.splice(insertAt >= 0 ? insertAt : FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.length, 0, "draftOwnerId");
+}
+
+function getProfileDisplayNameV199(profile) {
+  if (!profile) return "-";
+  const name = String(profile.full_name || "").trim();
+  const email = String(profile.email || "").trim();
+  return name || email || "-";
+}
+
+function getOwnerDisplayNameV199(row) {
+  const ownerId = row?.owner_id || row?.id || "";
+  if (ownerId && appState.profileNameByIdV199?.[ownerId]) {
+    return appState.profileNameByIdV199[ownerId];
+  }
+  return row?.owner_name || row?.sales_name || row?.sales_name_snapshot || "ไม่ระบุฝ่ายขาย";
+}
+
+function getOwnerGroupKeyV199(row) {
+  return row?.owner_id ? `owner:${row.owner_id}` : `name:${getOwnerDisplayNameV199(row)}`;
+}
+
+function normalizeOwnerNamesOnRowsV199(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    const displayName = getOwnerDisplayNameV199(row);
+    return {
+      ...row,
+      owner_name: displayName,
+      sales_name: displayName,
+      _ownerDisplayNameV199: displayName,
+      _ownerGroupKeyV199: getOwnerGroupKeyV199(row),
+    };
+  });
+}
+
+async function loadAssignableOwnerProfilesV199() {
+  const currentProfile = appState.profile ? { ...appState.profile } : null;
+  const currentUserId = appState.user?.id || currentProfile?.id || "";
+  let rows = [];
+
+  if (appState.profile?.role === "admin") {
+    try {
+      const { data, error } = await supabaseClient
+        .from("profiles")
+        .select("id, email, full_name, role, is_active")
+        .eq("is_active", true)
+        .in("role", ["admin", "sales"])
+        .order("full_name", { ascending: true });
+      if (error) throw error;
+      rows = data || [];
+    } catch (error) {
+      console.warn("loadAssignableOwnerProfilesV199 fallback", error);
+      rows = [];
+    }
+  }
+
+  if (currentProfile?.id && !rows.some((profile) => profile.id === currentProfile.id)) {
+    rows.unshift(currentProfile);
+  }
+
+  if (!rows.length && currentUserId) {
+    rows.push({
+      id: currentUserId,
+      email: appState.profile?.email || "",
+      full_name: appState.profile?.full_name || "",
+      role: appState.profile?.role || "sales",
+      is_active: true,
+    });
+  }
+
+  const unique = new Map();
+  rows.forEach((profile) => {
+    if (!profile?.id) return;
+    if (profile.is_active === false) return;
+    if (!["admin", "sales"].includes(profile.role)) return;
+    unique.set(profile.id, profile);
+  });
+
+  appState.assignableOwnersV199 = Array.from(unique.values()).sort((a, b) => {
+    const aIsCurrent = a.id === currentUserId ? 0 : 1;
+    const bIsCurrent = b.id === currentUserId ? 0 : 1;
+    if (aIsCurrent !== bIsCurrent) return aIsCurrent - bIsCurrent;
+    return getProfileDisplayNameV199(a).localeCompare(getProfileDisplayNameV199(b), "th");
+  });
+
+  if (!appState.profileNameByIdV199) appState.profileNameByIdV199 = {};
+  appState.assignableOwnersV199.forEach((profile) => {
+    appState.profileNameByIdV199[profile.id] = getProfileDisplayNameV199(profile);
+  });
+
+  return appState.assignableOwnersV199;
+}
+
+async function loadProfileNameMapV199() {
+  if (!supabaseClient || !appState.profile) return appState.profileNameByIdV199 || {};
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("profiles")
+      .select("id, email, full_name, role, is_active")
+      .eq("is_active", true);
+
+    if (error) throw error;
+
+    appState.profileNameByIdV199 = {};
+    (data || []).forEach((profile) => {
+      if (!profile?.id) return;
+      appState.profileNameByIdV199[profile.id] = getProfileDisplayNameV199(profile);
+    });
+
+    if (appState.profile?.id && !appState.profileNameByIdV199[appState.profile.id]) {
+      appState.profileNameByIdV199[appState.profile.id] = getProfileDisplayNameV199(appState.profile);
+    }
+  } catch (error) {
+    console.warn("loadProfileNameMapV199 fallback", error);
+    if (!appState.profileNameByIdV199) appState.profileNameByIdV199 = {};
+    if (appState.profile?.id) {
+      appState.profileNameByIdV199[appState.profile.id] = getProfileDisplayNameV199(appState.profile);
+    }
+  }
+
+  return appState.profileNameByIdV199;
+}
+
+async function getQuotationOwnerIdV199(quotationId) {
+  if (!quotationId) return appState.user?.id || "";
+  try {
+    const { data, error } = await supabaseClient
+      .from("quotations")
+      .select("owner_id")
+      .eq("id", quotationId)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.owner_id || appState.user?.id || "";
+  } catch (error) {
+    console.warn("getQuotationOwnerIdV199 fallback", error);
+    return appState.user?.id || "";
+  }
+}
+
+function renderOwnerOptionsV199(selectedOwnerId) {
+  const owners = appState.assignableOwnersV199 || [];
+  return owners.map((profile) => {
+    const role = profile.role === "admin" ? "Admin" : "Sales";
+    const label = `${getProfileDisplayNameV199(profile)} (${role})`;
+    return `<option value="${escapeHTML(profile.id)}" ${profile.id === selectedOwnerId ? "selected" : ""}>${escapeHTML(label)}</option>`;
+  }).join("");
+}
+
+function insertOwnerSelectorV199(selectedOwnerId) {
+  const form = document.getElementById("quotationDraftForm");
+  if (!form || appState.profile?.role !== "admin") return;
+  if (document.getElementById("draftOwnerId")) return;
+
+  const documentSection = Array.from(form.querySelectorAll(".form-section"))
+    .find((section) => section.textContent.includes("ข้อมูลเอกสาร"));
+  const grid = documentSection?.querySelector(".form-grid");
+  if (!grid) return;
+
+  const userField = Array.from(grid.querySelectorAll(".field"))
+    .find((field) => field.querySelector("label")?.textContent.trim() === "ผู้ขาย");
+  if (userField) {
+    userField.querySelector("label").textContent = "ผู้ใช้งานปัจจุบัน";
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "field";
+  wrapper.innerHTML = `
+    <label for="draftOwnerId">เจ้าของใบเสนอราคา / Sales</label>
+    <select id="draftOwnerId" required>
+      ${renderOwnerOptionsV199(selectedOwnerId)}
+    </select>
+  `;
+
+  if (userField?.nextSibling) {
+    grid.insertBefore(wrapper, userField.nextSibling);
+  } else {
+    grid.appendChild(wrapper);
+  }
+
+  const select = wrapper.querySelector("#draftOwnerId");
+  if (select && !select.value && appState.user?.id) select.value = appState.user.id;
+
+  select?.addEventListener("change", () => {
+    if (typeof saveQuotationFormStateV193 === "function") saveQuotationFormStateV193();
+  });
+}
+
+function getSelectedOwnerIdV199() {
+  if (appState.profile?.role !== "admin") return appState.user?.id || appState.profile?.id || "";
+  const selected = document.getElementById("draftOwnerId")?.value;
+  return selected || appState.user?.id || appState.profile?.id || "";
+}
+
+function autoGrowTextareaV199(element) {
+  if (!element) return;
+  element.style.height = "auto";
+  const minHeight = Number(element.dataset.minHeightV199 || 0) || element.offsetHeight || 72;
+  element.dataset.minHeightV199 = String(minHeight);
+  element.style.height = `${Math.max(minHeight, element.scrollHeight + 2)}px`;
+}
+
+function bindAutoGrowTextareasV199(root = document) {
+  root.querySelectorAll?.("textarea").forEach((textarea) => {
+    if (textarea.dataset.autoGrowV199 === "1") {
+      autoGrowTextareaV199(textarea);
+      return;
+    }
+    textarea.dataset.autoGrowV199 = "1";
+    textarea.classList.add("auto-grow-textarea-v199");
+    textarea.addEventListener("input", () => autoGrowTextareaV199(textarea));
+    textarea.addEventListener("change", () => autoGrowTextareaV199(textarea));
+    window.requestAnimationFrame(() => autoGrowTextareaV199(textarea));
+  });
+}
+
+function patchCurrentOwnerNameInQuotationViewV199(ownerName) {
+  const safeName = escapeHTML(ownerName || "-");
+  document.querySelectorAll(".kv-row").forEach((row) => {
+    const label = row.querySelector("span")?.textContent.trim();
+    if (label === "ผู้ขาย" || label === "ผู้เสนอราคา") {
+      const value = row.querySelector("strong");
+      if (value) value.innerHTML = safeName;
+    }
+  });
+}
+
+function patchCurrentOwnerNameInPrintV199(ownerName) {
+  const safeName = escapeHTML(ownerName || "-");
+  document.querySelectorAll(".print-row").forEach((row) => {
+    const label = row.querySelector("span")?.textContent.trim();
+    if (label === "ผู้เสนอราคา") {
+      const value = row.querySelector("strong");
+      if (value) value.innerHTML = safeName;
+    }
+  });
+
+  document.querySelectorAll(".print-signature-box").forEach((box) => {
+    const heading = box.querySelector("strong")?.textContent.trim();
+    if (heading === "ผู้เสนอราคา") {
+      const divs = box.querySelectorAll("div");
+      const last = divs[divs.length - 1];
+      if (last) last.innerHTML = safeName;
+    }
+  });
+}
+
+async function getCurrentOwnerNameForQuotationV199(quotationId) {
+  if (!quotationId) return "-";
+  try {
+    const { data: quotation, error: quotationError } = await supabaseClient
+      .from("quotations")
+      .select("owner_id")
+      .eq("id", quotationId)
+      .maybeSingle();
+    if (quotationError) throw quotationError;
+    const ownerId = quotation?.owner_id;
+    if (!ownerId) return "-";
+    if (appState.profileNameByIdV199?.[ownerId]) return appState.profileNameByIdV199[ownerId];
+
+    const { data: profile, error: profileError } = await supabaseClient
+      .from("profiles")
+      .select("id, email, full_name, role, is_active")
+      .eq("id", ownerId)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (profile?.id) {
+      if (!appState.profileNameByIdV199) appState.profileNameByIdV199 = {};
+      appState.profileNameByIdV199[profile.id] = getProfileDisplayNameV199(profile);
+      return appState.profileNameByIdV199[profile.id];
+    }
+  } catch (error) {
+    console.warn("getCurrentOwnerNameForQuotationV199 fallback", error);
+  }
+  return "-";
+}
+
+function getSavedProductForQuotationV199(products, options = {}) {
+  const selectedProductId = document.getElementById("draftProductId")?.value || "";
+  const baseProduct = (Array.isArray(products) ? products : []).find((item) => item.id === selectedProductId);
+  const snapshot = options.mode === "edit" && typeof getOriginalQuotationSnapshotV195 === "function"
+    ? getOriginalQuotationSnapshotV195(options.quotationId)
+    : null;
+
+  if (snapshot?.product_id && selectedProductId === snapshot.product_id) {
+    return {
+      ...(baseProduct || {}),
+      id: snapshot.product_id,
+      name: snapshot.product_name_snapshot || baseProduct?.name || "สินค้า/บริการเดิม",
+      default_unit: document.getElementById("draftUnit")?.value?.trim?.() || snapshot.unit || baseProduct?.default_unit || "คัน",
+      is_active: true,
+    };
+  }
+
+  return baseProduct;
+}
+
+async function handleSaveQuotationDraftV199(event, products, options = {}) {
+  event.preventDefault();
+
+  const isEdit = options.mode === "edit";
+  const quotationId = options.quotationId;
+  const saveButton = document.getElementById("saveDraftButton");
+
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = isEdit ? "กำลังบันทึกการแก้ไข..." : "กำลังบันทึก...";
+  }
+
+  try {
+    const product = getSavedProductForQuotationV199(products, options);
+    if (!product?.id) throw new Error("กรุณาเลือกสินค้า/บริการ");
+
+    const customerName = document.getElementById("draftCustomerName")?.value.trim() || "";
+    if (!customerName) throw new Error("กรุณากรอกชื่อลูกค้า");
+
+    const selectedOwnerId = getSelectedOwnerIdV199();
+    if (!selectedOwnerId) throw new Error("กรุณาเลือกเจ้าของใบเสนอราคา / Sales");
+
+    const quotePayload = {
+      owner_id: selectedOwnerId,
+      billing_type: document.getElementById("draftBillingType")?.value || "monthly",
+      customer_name: customerName,
+      customer_address: document.getElementById("draftCustomerAddress")?.value.trim() || "",
+      quote_date: document.getElementById("draftQuoteDate")?.value || toDateInputValue(new Date()),
+      valid_until: document.getElementById("draftValidUntil")?.value || toDateInputValue(addDays(new Date(), 30)),
+      vat_enabled: Boolean(document.getElementById("draftVatEnabled")?.checked),
+      vat_rate: 7,
+      wht_enabled: Boolean(document.getElementById("draftWhtEnabled")?.checked),
+      wht_rate: 3,
+      discount_percent: readNumber("#draftDiscountPercent"),
+      rounding_enabled: Boolean(document.getElementById("draftRoundingEnabled")?.checked),
+      note: document.getElementById("draftNote")?.value.trim() || "",
+      payment_terms: document.getElementById("draftPaymentTerms")?.value.trim() || "",
+    };
+
+    let savedQuotationId = quotationId;
+
+    if (isEdit) {
+      const { data: updatedQuotation, error: updateError } = await supabaseClient
+        .from("quotations")
+        .update(quotePayload)
+        .eq("id", quotationId)
+        .select("id")
+        .single();
+      if (updateError) throw updateError;
+
+      savedQuotationId = updatedQuotation.id;
+
+      const { error: deleteError } = await supabaseClient
+        .from("quotation_items")
+        .delete()
+        .eq("quotation_id", savedQuotationId);
+      if (deleteError) throw deleteError;
+    } else {
+      const { data: quotation, error: quotationError } = await supabaseClient
+        .from("quotations")
+        .insert(quotePayload)
+        .select("id")
+        .single();
+      if (quotationError) throw quotationError;
+      savedQuotationId = quotation.id;
+    }
+
+    const quotationItems = [
+      {
+        quotation_id: savedQuotationId,
+        section_type: "recurring",
+        product_id: product.id,
+        product_name_snapshot: product.name,
+        description: document.getElementById("draftRecurringDescription")?.value.trim() || "",
+        quantity_label: "จำนวนรถ",
+        quantity: readNumber("#draftQuantity"),
+        unit: document.getElementById("draftUnit")?.value.trim() || product.default_unit || "คัน",
+        unit_price: readNumber("#draftUnitPrice"),
+        sort_order: 1,
+      },
+      {
+        quotation_id: savedQuotationId,
+        section_type: "one_time",
+        product_id: null,
+        product_name_snapshot: document.getElementById("draftOneTimeName")?.value.trim() || "ค่าบริการชำระครั้งเดียว",
+        description: document.getElementById("draftOneTimeDescription")?.value.trim() || "",
+        quantity_label: "จำนวนครั้ง",
+        quantity: readNumber("#draftOneTimeQty"),
+        unit: "ครั้ง",
+        unit_price: readNumber("#draftOneTimePrice"),
+        sort_order: 1,
+      },
+    ];
+
+    const { error: itemError } = await supabaseClient
+      .from("quotation_items")
+      .insert(quotationItems);
+    if (itemError) throw itemError;
+
+    await updateQuotationTotalsSnapshot(savedQuotationId);
+
+    const pageBeforeSave = getCurrentPageV19?.() || appState.currentPage || "";
+    if (typeof clearQuotationFormStateV193 === "function") clearQuotationFormStateV193(pageBeforeSave);
+
+    showToast(isEdit ? "บันทึกการแก้ไขสำเร็จ" : "บันทึกร่างสำเร็จ", "success");
+    location.hash = `#quotation-view/${savedQuotationId}`;
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || (isEdit ? "ไม่สามารถบันทึกการแก้ไขได้" : "ไม่สามารถบันทึกร่างได้"), "error");
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = isEdit ? "บันทึกการแก้ไข" : "บันทึกร่าง";
+    }
+  }
+}
+
+window.handleSaveQuotationDraft = handleSaveQuotationDraftV199;
+try { handleSaveQuotationDraft = window.handleSaveQuotationDraft; } catch (_error) {}
+
+(function patchOwnerAssignmentV199() {
+  if (window.__fiOwnerAssignmentPatchedV199) return;
+  window.__fiOwnerAssignmentPatchedV199 = true;
+
+  const originalRenderCurrentPage = window.renderCurrentPage || renderCurrentPage;
+  window.renderCurrentPage = async function renderCurrentPageV199(...args) {
+    await loadProfileNameMapV199();
+    const result = await originalRenderCurrentPage.apply(this, args);
+    bindAutoGrowTextareasV199(document);
+    return result;
+  };
+  try { renderCurrentPage = window.renderCurrentPage; } catch (_error) {}
+
+  const originalRenderQuotationFormPage = window.renderQuotationFormPage || renderQuotationFormPage;
+  if (typeof originalRenderQuotationFormPage === "function") {
+    window.renderQuotationFormPage = async function renderQuotationFormPageV199(options = {}) {
+      await loadAssignableOwnerProfilesV199();
+      const selectedOwnerId = options.mode === "edit" && options.quotationId
+        ? await getQuotationOwnerIdV199(options.quotationId)
+        : appState.user?.id || appState.profile?.id || "";
+
+      const result = await originalRenderQuotationFormPage.call(this, options);
+      insertOwnerSelectorV199(selectedOwnerId);
+
+      if (typeof restoreQuotationFormStateV193 === "function") {
+        restoreQuotationFormStateV193();
+      }
+      bindAutoGrowTextareasV199(document);
+      return result;
+    };
+    try { renderQuotationFormPage = window.renderQuotationFormPage; } catch (_error) {}
+  }
+
+  const originalRenderQuotationList = window.renderQuotationList || renderQuotationList;
+  if (typeof originalRenderQuotationList === "function") {
+    window.renderQuotationList = function renderQuotationListV199(rows) {
+      return originalRenderQuotationList.call(this, normalizeOwnerNamesOnRowsV199(rows));
+    };
+    try { renderQuotationList = window.renderQuotationList; } catch (_error) {}
+  }
+
+  const originalRenderQuotationViewPage = window.renderQuotationViewPage || renderQuotationViewPage;
+  if (typeof originalRenderQuotationViewPage === "function") {
+    window.renderQuotationViewPage = async function renderQuotationViewPageV199(quotationId) {
+      const result = await originalRenderQuotationViewPage.call(this, quotationId);
+      const ownerName = await getCurrentOwnerNameForQuotationV199(quotationId);
+      patchCurrentOwnerNameInQuotationViewV199(ownerName);
+      return result;
+    };
+    try { renderQuotationViewPage = window.renderQuotationViewPage; } catch (_error) {}
+  }
+
+  const originalRenderQuotationPrintPage = window.renderQuotationPrintPage || renderQuotationPrintPage;
+  if (typeof originalRenderQuotationPrintPage === "function") {
+    window.renderQuotationPrintPage = async function renderQuotationPrintPageV199(quotationId) {
+      const result = await originalRenderQuotationPrintPage.call(this, quotationId);
+      const ownerName = await getCurrentOwnerNameForQuotationV199(quotationId);
+      patchCurrentOwnerNameInPrintV199(ownerName);
+      return result;
+    };
+    try { renderQuotationPrintPage = window.renderQuotationPrintPage; } catch (_error) {}
+  }
+})();
+
+function buildSalesFilterOptions(rows) {
+  const map = new Map();
+  normalizeOwnerNamesOnRowsV199(rows).forEach((row) => {
+    const id = row?.owner_id || row?._ownerGroupKeyV199;
+    if (!id) return;
+    map.set(id, getOwnerDisplayNameV199(row));
+  });
+  return Array.from(map.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "th"));
+}
+
+function buildDashboardAnalytics(rows, options = {}) {
+  const sourceRows = normalizeOwnerNamesOnRowsV199(Array.isArray(rows) ? rows : []);
+  const monthsBack = options.monthsBack || 6;
+  const today = startOfToday();
+  const currentKey = monthKey(today);
+  const monthStarts = [];
+
+  for (let index = monthsBack - 1; index >= 0; index -= 1) {
+    monthStarts.push(new Date(today.getFullYear(), today.getMonth() - index, 1));
+  }
+
+  const months = monthStarts.map((date) => ({
+    key: monthKey(date),
+    label: formatMonthLabel(date),
+    sentAmount: 0,
+    paidAmount: 0,
+    sentCount: 0,
+    paidCount: 0,
+  }));
+
+  const monthMap = new Map(months.map((item) => [item.key, item]));
+  const salesSentCountsByKey = new Map();
+  const salesDisplayByKey = new Map();
+  const statusCounts = { draft: 0, confirmed: 0, sent: 0, paid: 0, cancelled: 0, expired: 0 };
+
+  let currentMonthSentAmount = 0;
+  let currentMonthPaidAmount = 0;
+  let currentMonthSentCount = 0;
+  let currentMonthPaidCount = 0;
+  let openSentAmount = 0;
+
+  sourceRows.forEach((row) => {
+    const status = getEffectiveStatusForAnalytics(row);
+    if (statusCounts[status] !== undefined) statusCounts[status] += 1;
+
+    const amount = getAmountForBusinessAnalyticsV198(row);
+    const sentDate = getSentBusinessDateV198(row);
+    const sentKey = sentDate ? monthKey(sentDate) : "";
+
+    if (isSentBusinessRowV198(row)) {
+      const month = monthMap.get(sentKey);
+      if (month) {
+        month.sentAmount += amount;
+        month.sentCount += 1;
+      }
+      if (sentKey === currentKey) {
+        currentMonthSentAmount += amount;
+        currentMonthSentCount += 1;
+      }
+      if (!isPaidBusinessRowV198(row)) openSentAmount += amount;
+
+      const ownerKey = getOwnerGroupKeyV199(row);
+      const ownerName = getOwnerDisplayNameV199(row);
+      salesDisplayByKey.set(ownerKey, ownerName);
+      if (!salesSentCountsByKey.has(ownerKey)) {
+        salesSentCountsByKey.set(ownerKey, Object.fromEntries(months.map((item) => [item.key, 0])));
+      }
+      if (sentKey && salesSentCountsByKey.get(ownerKey)[sentKey] !== undefined) {
+        salesSentCountsByKey.get(ownerKey)[sentKey] += 1;
+      }
+    }
+
+    if (isPaidBusinessRowV198(row)) {
+      const paidDate = getPaidBusinessDateV198(row);
+      const paidKey = paidDate ? monthKey(paidDate) : "";
+      const month = monthMap.get(paidKey);
+      if (month) {
+        month.paidAmount += amount;
+        month.paidCount += 1;
+      }
+      if (paidKey === currentKey) {
+        currentMonthPaidAmount += amount;
+        currentMonthPaidCount += 1;
+      }
+    }
+  });
+
+  months.forEach((month) => {
+    month.sentAmount = roundMoney(month.sentAmount);
+    month.paidAmount = roundMoney(month.paidAmount);
+  });
+
+  const salesSentCounts = new Map();
+  Array.from(salesSentCountsByKey.entries()).forEach(([ownerKey, counts]) => {
+    const displayName = salesDisplayByKey.get(ownerKey) || "ไม่ระบุฝ่ายขาย";
+    let key = displayName;
+    let suffix = 2;
+    while (salesSentCounts.has(key)) {
+      key = `${displayName} (${suffix})`;
+      suffix += 1;
+    }
+    salesSentCounts.set(key, counts);
+  });
+
+  const soon = addDays(today, 7);
+  const expiringSoon = sourceRows
+    .filter((row) => ["confirmed", "sent"].includes(getRawStatus(row)))
+    .filter((row) => {
+      const validDate = parseDateOnly(row.valid_until);
+      return validDate && validDate >= today && validDate <= soon;
+    })
+    .slice(0, 8);
+
+  return {
+    months,
+    salesSentCounts,
+    statusCounts,
+    currentMonthSentAmount: roundMoney(currentMonthSentAmount),
+    currentMonthPaidAmount: roundMoney(currentMonthPaidAmount),
+    currentMonthSentCount,
+    currentMonthPaidCount,
+    openSentAmount: roundMoney(openSentAmount),
+    expiringSoon,
+    businessSentLogicV198: true,
+    ownerIdGroupingV199: true,
+  };
+}
+
+function buildExcelQuotationRowsV16(rows) {
+  return normalizeOwnerNamesOnRowsV199(rows).map((row) => ({
+    "เลขที่ใบเสนอราคา": row.quotation_no || "ยังไม่ออกเลข",
+    สถานะ: statusLabel(row.effective_status || row.status),
+    ลูกค้า: row.customer_name || "",
+    ฝ่ายขาย: getOwnerDisplayNameV199(row),
+    ประเภท: billingTypeLabel(row.billing_type),
+    "วันที่เสนอราคา": row.quote_date || "",
+    "วันหมดอายุ": row.valid_until || "",
+    "วันที่ส่ง": row.sent_at || "",
+    "วันที่ชำระเงิน": row.paid_at || "",
+    "ยอดรายเดือน/รายปี": Number(row._recurringTotal || 0),
+    "ยอดครั้งเดียว": Number(row._oneTimeTotal || 0),
+    "ยอดรวมสุทธิ": Number(row.grand_total_display || 0),
+    VAT: Number(row.vat_amount || 0),
+    "หัก ณ ที่จ่าย": Number(row.wht_amount || 0),
+    ส่วนลด: Number(row.discount_amount || 0),
+    "เหตุผลยกเลิก": row.cancelled_reason || "",
+    "วันที่สร้าง": row.created_at || "",
+    "วันที่แก้ไขล่าสุด": row.updated_at || "",
+  }));
+}
+
+function buildExcelItemRowsV16(rows, itemsByQuotation, productById) {
+  const result = [];
+  normalizeOwnerNamesOnRowsV199(rows).forEach((row) => {
+    const items = itemsByQuotation.get(row.id) || [];
+    items.forEach((item) => {
+      const product = item.product_id ? productById.get(item.product_id) : null;
+      result.push({
+        "เลขที่ใบเสนอราคา": row.quotation_no || "ยังไม่ออกเลข",
+        ลูกค้า: row.customer_name || "",
+        ฝ่ายขาย: getOwnerDisplayNameV199(row),
+        Section: item.section_type === "recurring" ? billingTypeLabel(row.billing_type) : "ครั้งเดียว",
+        "รหัสสินค้า": product?.code || "",
+        "ชื่อสินค้า/บริการ": item.product_name_snapshot || product?.name || "",
+        รายละเอียด: item.description || "",
+        จำนวน: Number(item.quantity || 0),
+        หน่วย: item.unit || "",
+        "ราคา/หน่วย": Number(item.unit_price || 0),
+        "มูลค่าก่อนภาษี": Number(getItemLineSubtotalV15(item) || 0),
+      });
+    });
+  });
+  return result;
+}
+
+function buildExcelBySalesRowsV16(rows) {
+  const groups = groupByFunctionV16(normalizeOwnerNamesOnRowsV199(rows), (row) => getOwnerGroupKeyV199(row));
+  return Array.from(groups.entries()).map(([, items]) => {
+    const first = items[0] || {};
+    const sales = getOwnerDisplayNameV199(first);
+    const sentRows = items.filter(isSentBusinessRowV198);
+    const paidRows = items.filter(isPaidBusinessRowV198);
+    const sentAmount = roundMoney(sentRows.reduce((sum, row) => sum + getAmountForBusinessAnalyticsV198(row), 0));
+    const paidAmount = roundMoney(paidRows.reduce((sum, row) => sum + getAmountForBusinessAnalyticsV198(row), 0));
+    return {
+      ฝ่ายขาย: sales,
+      "จำนวนใบเสนอราคา": items.length,
+      "จำนวนที่เคยส่งแล้ว": sentRows.length,
+      "จำนวนชำระเงินแล้ว": paidRows.length,
+      "ยอดส่งแล้ว": sentAmount,
+      "ยอดชำระเงินแล้ว": paidAmount,
+      "ส่วนต่างยอดส่งกับชำระ": roundMoney(sentAmount - paidAmount),
+      "Conversion โดยยอด (%)": sentAmount > 0 ? roundMoney((paidAmount / sentAmount) * 100) : 0,
+    };
+  }).sort((a, b) => String(a.ฝ่ายขาย).localeCompare(String(b.ฝ่ายขาย), "th"));
+}
+
+const originalExportQuotationsXlsxV199 = window.exportQuotationsXlsx || exportQuotationsXlsx;
+window.exportQuotationsXlsx = async function exportQuotationsXlsxV199(rows) {
+  await loadProfileNameMapV199();
+  return originalExportQuotationsXlsxV199.call(this, normalizeOwnerNamesOnRowsV199(rows));
+};
+try { exportQuotationsXlsx = window.exportQuotationsXlsx; } catch (_error) {}
+
+const originalDebugV199 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V199() {
+  const result = typeof originalDebugV199 === "function" ? await originalDebugV199() : {};
+  return {
+    ...result,
+    version: FI_V199_VERSION,
+    ownerAssignment: true,
+    adminCanCreateOwnQuotation: true,
+    ownerIdSourceOfTruth: true,
+    assignableOwnerCount: (appState.assignableOwnersV199 || []).length,
+    profileNameMapSize: Object.keys(appState.profileNameByIdV199 || {}).length,
+    autoGrowTextarea: true,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V199_VERSION;
