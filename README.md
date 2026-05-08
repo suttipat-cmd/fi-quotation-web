@@ -1,22 +1,22 @@
-# FI Quotation Web App v1.9.2
+# FI Quotation Web App v1.9.3
 
-## v1.9.2 Hotfix: Delegated Events Restore
+## v1.9.3 Hotfix: Quotation Form State Preservation
 
-Release นี้ต่อยอดจาก v1.9.1 Foundation Stabilization โดยแก้ regression ในหน้าใบเสนอราคา ที่เกิดจาก delegated event listener ไม่ถูกผูกกลับเข้า runtime สุดท้าย
+Release นี้ต่อยอดจาก v1.9.2 Hotfix: Delegated Events Restore โดยแก้ปัญหาที่ข้อมูลในหน้าสร้าง/แก้ไขใบเสนอราคาถูกรีเซ็ตเมื่อผู้ใช้สลับไปแท็บอื่นแล้วกลับมาใช้งานเว็บเดิม
 
-## สิ่งที่แก้ใน v1.9.2
+## สิ่งที่แก้ใน v1.9.3
 
-- อัปเดต cache busting เป็น `style.css?v=1.9.2` และ `script.js?v=1.9.2`
-- อัปเดต `window.FI_APP_VERSION = "1.9.2"`
-- Restore delegated `click` event สำหรับ:
-  - ปุ่ม `ดูรายละเอียด` ในรายการใบเสนอราคา
-  - compact quotation links บน Dashboard
-  - sorting ที่หัวคอลัมน์
-  - menu delegated actions ที่ยังพึ่ง handler กลาง
-- Restore delegated `change` event สำหรับ:
-  - checkbox รายแถว
-  - select all
-  - bulk selection state
+- อัปเดต cache busting เป็น `style.css?v=1.9.3` และ `script.js?v=1.9.3`
+- อัปเดต `window.FI_APP_VERSION = "1.9.3"`
+- เพิ่ม autosave ชั่วคราวสำหรับฟอร์มใบเสนอราคาใน `sessionStorage`
+- รองรับหน้า:
+  - `#quotation-new`
+  - `#quotation-edit/{id}`
+- เก็บค่าฟอร์มระหว่างสลับแท็บ / กลับจากแท็บอื่น / browser resume
+- ป้องกัน resume recovery re-render หน้า quotation form ทับข้อมูลที่กำลังกรอก
+- Restore ค่าในฟอร์มและคำนวณยอดใหม่อัตโนมัติเมื่อหน้า form ถูก render ใหม่
+- ล้าง autosave เมื่อบันทึกร่าง/บันทึกแก้ไขสำเร็จ หรือกดยกเลิก
+- เพิ่มข้อมูล `formAutosave` ใน `window.FI_DEBUG()`
 - ไม่เปลี่ยน SQL / RLS ในรอบนี้
 - คง patch SQL ล่าสุดที่ต้องใช้คือ `supabase/patch_v1_9_1.sql`
 
@@ -38,6 +38,7 @@ supabase/
   patch_v1_9_0.sql
   patch_v1_9_1.sql
   patch_v1_9_2.sql
+  patch_v1_9_3.sql
 ```
 
 ## วิธีติดตั้ง
@@ -63,7 +64,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Hotfix v1.9.2 restore delegated events"
+git commit -m "Hotfix v1.9.3 preserve quotation form state"
 git push origin main
 ```
 
@@ -85,21 +86,22 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.2
+1.9.3
 ```
 
 ## จุดที่ต้องทดสอบ
 
 ```text
-1. หน้าใบเสนอราคา กดปุ่ม ดูรายละเอียด แล้วต้องเข้า quotation-view ได้
-2. จากหน้ารายละเอียด กด Preview / Print ได้
-3. กดหัวคอลัมน์แล้ว sorting ได้
-4. checkbox รายแถวเลือกได้
-5. select all เลือกได้
-6. bulk action enable/disable ตามจำนวนที่เลือก
-7. filter แล้ว checkbox state ไม่เพี้ยน
-8. Export Excel ยังทำงาน
-9. + เพิ่มสินค้า ยังเปิดฟอร์มได้
+1. เข้า #quotation-new แล้วกรอกข้อมูลลูกค้า / ราคา / หมายเหตุ
+2. สลับไปแท็บเว็บอื่น แล้วกลับมาที่เว็บเดิม ข้อมูลต้องไม่หาย
+3. เปลี่ยนประเภท รายเดือน/รายปี แล้วสลับแท็บกลับมา ค่าต้องยังอยู่
+4. Refresh หน้า #quotation-new แล้วระบบควรกู้ข้อมูลล่าสุดใน tab เดิมได้
+5. กดบันทึกร่างสำเร็จแล้ว autosave ต้องถูกล้าง
+6. เปิดสร้างใบเสนอราคาใหม่หลังบันทึกสำเร็จ ต้องไม่ดึงข้อมูลเก่าที่บันทึกไปแล้วกลับมา
+7. หน้า #quotation-edit/{id} ต้อง preserve ข้อมูลระหว่างสลับแท็บเช่นกัน
+8. หน้าใบเสนอราคา กดดูรายละเอียด / sorting / checkbox จาก v1.9.2 ยังทำงาน
+9. Export Excel ยังทำงาน
+10. + เพิ่มสินค้า ยังเปิดฟอร์มได้
 ```
 
 ## Debug helper
@@ -110,4 +112,4 @@ window.FI_APP_VERSION
 await window.FI_DEBUG()
 ```
 
-ข้อมูลที่แสดงจะมี version, route, auth state, role และ session presence โดยไม่แสดง access token หรือ anon key
+ข้อมูลที่แสดงจะมี version, route, auth state, role, session presence และ `formAutosave` โดยไม่แสดง access token หรือ anon key

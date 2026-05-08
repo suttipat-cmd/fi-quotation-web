@@ -13219,3 +13219,314 @@ const FI_V192_VERSION = "1.9.2";
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V192_VERSION;
 
+
+// =======================================================
+// v1.9.3 Hotfix: Quotation Form State Preservation
+// Scope: preserve unsaved quotation-new / quotation-edit form data when the
+// browser tab is hidden/resumed or the route is re-rendered by lifecycle recovery.
+// =======================================================
+
+const FI_V193_VERSION = "1.9.3";
+
+const FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193 = [
+  "draftCustomerName",
+  "draftCustomerAddress",
+  "draftQuoteDate",
+  "draftValidUntil",
+  "draftBillingType",
+  "draftProductId",
+  "draftQuantity",
+  "draftUnitPrice",
+  "draftUnit",
+  "draftOneTimeName",
+  "draftOneTimeQty",
+  "draftOneTimePrice",
+  "draftOneTimeDescription",
+  "draftDiscountPercent",
+  "draftVatEnabled",
+  "draftWhtEnabled",
+  "draftRoundingEnabled",
+  "draftNote",
+  "draftPaymentTerms",
+];
+
+const FI_QUOTATION_FORM_AUTOSAVE_TTL_MS_V193 = 24 * 60 * 60 * 1000;
+
+function isQuotationFormPageV193(page = getCurrentPageV19?.() || appState.currentPage || "") {
+  return page === "quotation-new" || page.startsWith("quotation-edit/");
+}
+
+function getQuotationFormAutosaveKeyV193(page = getCurrentPageV19?.() || appState.currentPage || "") {
+  const userId = appState.user?.id || "anonymous";
+  return `fi_quotation_form_autosave:v1.9.3:${userId}:${page}`;
+}
+
+function getQuotationFormElementV193() {
+  return document.querySelector("#quotationDraftForm");
+}
+
+function getQuotationFormValueV193(id) {
+  const element = document.getElementById(id);
+  if (!element) return undefined;
+
+  if (element.type === "checkbox") {
+    return Boolean(element.checked);
+  }
+
+  return element.value;
+}
+
+function setQuotationFormValueV193(id, value) {
+  const element = document.getElementById(id);
+  if (!element || value === undefined || value === null) return;
+
+  if (element.type === "checkbox") {
+    element.checked = Boolean(value);
+    return;
+  }
+
+  if (element.tagName === "SELECT") {
+    const hasOption = Array.from(element.options || []).some((option) => option.value === String(value));
+    if (!hasOption) return;
+  }
+
+  element.value = String(value);
+}
+
+function readQuotationFormStateV193() {
+  const values = {};
+
+  FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.forEach((id) => {
+    const value = getQuotationFormValueV193(id);
+    if (value !== undefined) values[id] = value;
+  });
+
+  return {
+    version: FI_V193_VERSION,
+    userId: appState.user?.id || null,
+    page: getCurrentPageV19?.() || appState.currentPage || "",
+    savedAt: Date.now(),
+    values,
+  };
+}
+
+function hasMeaningfulQuotationFormDataV193(state) {
+  const values = state?.values || {};
+  const textFields = [
+    "draftCustomerName",
+    "draftCustomerAddress",
+    "draftOneTimeName",
+    "draftOneTimeDescription",
+    "draftNote",
+    "draftPaymentTerms",
+  ];
+
+  return textFields.some((id) => String(values[id] || "").trim().length > 0) ||
+    Number(values.draftUnitPrice || 0) !== 4500 ||
+    Number(values.draftOneTimePrice || 0) !== 4500 ||
+    Number(values.draftQuantity || 0) !== 20 ||
+    String(values.draftBillingType || "monthly") !== "monthly";
+}
+
+function saveQuotationFormStateV193() {
+  if (!isQuotationFormPageV193()) return;
+  if (!getQuotationFormElementV193()) return;
+
+  try {
+    const state = readQuotationFormStateV193();
+    sessionStorage.setItem(getQuotationFormAutosaveKeyV193(state.page), JSON.stringify(state));
+    appState.quotationFormDirtyV193 = hasMeaningfulQuotationFormDataV193(state);
+    appState.quotationFormLastSavedAtV193 = state.savedAt;
+  } catch (error) {
+    console.warn("saveQuotationFormStateV193 skipped", error);
+  }
+}
+
+function loadQuotationFormStateV193(page = getCurrentPageV19?.() || appState.currentPage || "") {
+  try {
+    const raw = sessionStorage.getItem(getQuotationFormAutosaveKeyV193(page));
+    if (!raw) return null;
+
+    const state = JSON.parse(raw);
+    if (!state?.savedAt || Date.now() - Number(state.savedAt) > FI_QUOTATION_FORM_AUTOSAVE_TTL_MS_V193) {
+      sessionStorage.removeItem(getQuotationFormAutosaveKeyV193(page));
+      return null;
+    }
+
+    return state;
+  } catch (error) {
+    console.warn("loadQuotationFormStateV193 skipped", error);
+    return null;
+  }
+}
+
+function restoreQuotationFormStateV193() {
+  if (!isQuotationFormPageV193()) return false;
+  if (!getQuotationFormElementV193()) return false;
+
+  const state = loadQuotationFormStateV193();
+  if (!state?.values || !hasMeaningfulQuotationFormDataV193(state)) return false;
+
+  Object.entries(state.values).forEach(([id, value]) => {
+    setQuotationFormValueV193(id, value);
+  });
+
+  appState.quotationFormDirtyV193 = true;
+
+  if (typeof updateDraftSummary === "function") {
+    updateDraftSummary();
+  }
+
+  return true;
+}
+
+function clearQuotationFormStateV193(page = getCurrentPageV19?.() || appState.currentPage || "") {
+  try {
+    sessionStorage.removeItem(getQuotationFormAutosaveKeyV193(page));
+    appState.quotationFormDirtyV193 = false;
+    appState.quotationFormLastSavedAtV193 = null;
+  } catch (error) {
+    console.warn("clearQuotationFormStateV193 skipped", error);
+  }
+}
+
+function bindQuotationFormAutosaveV193() {
+  const form = getQuotationFormElementV193();
+  if (!form || form.dataset.autosaveV193 === "1") return;
+
+  form.dataset.autosaveV193 = "1";
+
+  const save = () => saveQuotationFormStateV193();
+
+  form.addEventListener("input", save, true);
+  form.addEventListener("change", save, true);
+
+  document.getElementById("cancelDraftButton")?.addEventListener("click", () => {
+    clearQuotationFormStateV193();
+  }, true);
+
+  document.getElementById("saveDraftButton")?.addEventListener("click", () => {
+    saveQuotationFormStateV193();
+  }, true);
+}
+
+(function patchQuotationDraftBindingV193() {
+  window.FI_APP_VERSION = FI_V193_VERSION;
+
+  if (window.__fiQuotationDraftBindingPatchedV193) return;
+  window.__fiQuotationDraftBindingPatchedV193 = true;
+
+  const originalBindQuotationDraftForm = window.bindQuotationDraftForm;
+  if (typeof originalBindQuotationDraftForm === "function") {
+    window.bindQuotationDraftForm = function bindQuotationDraftFormV193(products, options = {}) {
+      originalBindQuotationDraftForm.call(this, products, options);
+      const restored = restoreQuotationFormStateV193();
+      bindQuotationFormAutosaveV193();
+
+      if (restored) {
+        showToast?.("กู้คืนข้อมูลที่กรอกไว้แล้ว", "success");
+      }
+    };
+
+    try {
+      bindQuotationDraftForm = window.bindQuotationDraftForm;
+    } catch (_error) {
+      // Some browsers may not allow reassignment in edge cases. The window
+      // property is still used by subsequent inline runtime calls.
+    }
+  }
+
+  const originalHandleSaveQuotationDraft = window.handleSaveQuotationDraft;
+  if (typeof originalHandleSaveQuotationDraft === "function") {
+    window.handleSaveQuotationDraft = async function handleSaveQuotationDraftV193(event, products, options = {}) {
+      const pageBeforeSave = getCurrentPageV19?.() || appState.currentPage || "";
+      saveQuotationFormStateV193();
+
+      await originalHandleSaveQuotationDraft.call(this, event, products, options);
+
+      window.setTimeout(() => {
+        if (!isQuotationFormPageV193(getCurrentPageV19?.() || appState.currentPage || "")) {
+          clearQuotationFormStateV193(pageBeforeSave);
+        }
+      }, 0);
+    };
+
+    try {
+      handleSaveQuotationDraft = window.handleSaveQuotationDraft;
+    } catch (_error) {
+      // Keep the window override even if lexical reassignment is unavailable.
+    }
+  }
+})();
+
+window.addEventListener("pagehide", () => {
+  saveQuotationFormStateV193();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    saveQuotationFormStateV193();
+  }
+});
+
+// Override resume recovery so active quotation forms are not re-rendered over
+// unsaved input values when the user returns from another browser tab.
+async function recoverAppAfterResume(reason = "resume") {
+  if (!isConfigured || !supabaseClient?.auth || document.visibilityState === "hidden") return;
+  if (!isAuthenticatedV19()) return;
+
+  const now = Date.now();
+  if (now - Number(appState.lastResumeAtV19 || 0) < 1800) return;
+  appState.lastResumeAtV19 = now;
+
+  try {
+    if (typeof shouldSkipResumeRecoveryForFilePicker === "function" && shouldSkipResumeRecoveryForFilePicker()) {
+      if (typeof releaseFilePickerInteraction === "function") releaseFilePickerInteraction(1800);
+      return;
+    }
+
+    const page = getCurrentPageV19?.() || appState.currentPage || "";
+    const hasActiveQuotationForm = isQuotationFormPageV193(page) && Boolean(getQuotationFormElementV193());
+
+    if (hasActiveQuotationForm) {
+      saveQuotationFormStateV193();
+
+      const { data } = await withTimeoutV19(supabaseClient.auth.getSession(), 6000, "การตรวจสอบ session ");
+      if (!isUsableSessionV19(data?.session)) {
+        showLoginPageCleanV19({ rememberHash: true });
+        return;
+      }
+
+      restoreQuotationFormStateV193();
+      bindQuotationFormAutosaveV193();
+      return;
+    }
+
+    const { data } = await withTimeoutV19(supabaseClient.auth.getSession(), 6000, "การตรวจสอบ session ");
+    if (!isUsableSessionV19(data?.session)) {
+      showLoginPageCleanV19({ rememberHash: true });
+      return;
+    }
+
+    await renderCurrentPage({ reason: `resume-${reason}` });
+  } catch (error) {
+    console.warn("recoverAppAfterResume v1.9.3", error);
+  }
+}
+
+const originalDebugV193 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V193() {
+  const result = typeof originalDebugV193 === "function" ? await originalDebugV193() : {};
+  return {
+    ...result,
+    formAutosave: {
+      isQuotationForm: isQuotationFormPageV193(),
+      hasForm: Boolean(getQuotationFormElementV193()),
+      dirty: Boolean(appState.quotationFormDirtyV193),
+      lastSavedAt: appState.quotationFormLastSavedAtV193 || null,
+    },
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V193_VERSION;
