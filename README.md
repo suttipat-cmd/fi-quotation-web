@@ -1,22 +1,26 @@
-# FI Quotation Web App v1.9.3
+# FI Quotation Web App v1.9.4
 
-## v1.9.3 Hotfix: Quotation Form State Preservation
+## v1.9.4 Hotfix: Recurring Description Field + One-time Defaults
 
-Release นี้ต่อยอดจาก v1.9.2 Hotfix: Delegated Events Restore โดยแก้ปัญหาที่ข้อมูลในหน้าสร้าง/แก้ไขใบเสนอราคาถูกรีเซ็ตเมื่อผู้ใช้สลับไปแท็บอื่นแล้วกลับมาใช้งานเว็บเดิม
+Release นี้ต่อยอดจาก v1.9.3 Hotfix: Quotation Form State Preservation โดยเพิ่ม field รายละเอียดเพิ่มเติมในส่วนค่าบริการชำระรายเดือน/รายปี และปรับค่าเริ่มต้นของค่าบริการชำระครั้งเดียวตาม requirement ล่าสุด
 
-## สิ่งที่แก้ใน v1.9.3
+## สิ่งที่แก้ใน v1.9.4
 
-- อัปเดต cache busting เป็น `style.css?v=1.9.3` และ `script.js?v=1.9.3`
-- อัปเดต `window.FI_APP_VERSION = "1.9.3"`
-- เพิ่ม autosave ชั่วคราวสำหรับฟอร์มใบเสนอราคาใน `sessionStorage`
-- รองรับหน้า:
-  - `#quotation-new`
-  - `#quotation-edit/{id}`
-- เก็บค่าฟอร์มระหว่างสลับแท็บ / กลับจากแท็บอื่น / browser resume
-- ป้องกัน resume recovery re-render หน้า quotation form ทับข้อมูลที่กำลังกรอก
-- Restore ค่าในฟอร์มและคำนวณยอดใหม่อัตโนมัติเมื่อหน้า form ถูก render ใหม่
-- ล้าง autosave เมื่อบันทึกร่าง/บันทึกแก้ไขสำเร็จ หรือกดยกเลิก
-- เพิ่มข้อมูล `formAutosave` ใน `window.FI_DEBUG()`
+- อัปเดต cache busting เป็น `style.css?v=1.9.4` และ `script.js?v=1.9.4`
+- อัปเดต `window.FI_APP_VERSION = "1.9.4"`
+- เพิ่ม field `รายละเอียดเพิ่มเติม` ในส่วนค่าบริการชำระรายเดือน/รายปี
+- บันทึก field ใหม่นี้ลง `quotation_items.description` ของรายการ `section_type = recurring`
+- รองรับการแก้ไข Draft โดยดึงรายละเอียดเดิมกลับมาแสดงใน field ใหม่
+- ผูก field ใหม่เข้ากับ autosave จาก v1.9.3 เพื่อให้ข้อมูลไม่หายตอนสลับแท็บหรือ refresh
+- เปลี่ยน default ช่อง `รายการ` ของค่าบริการชำระครั้งเดียวเป็น `ค่าบริการเซ็ตอัพข้อมูล`
+- เปลี่ยน default ช่อง `รายละเอียดเพิ่มเติม` ของค่าบริการชำระครั้งเดียวเป็น 3 บรรทัด:
+
+```text
+ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน
+ค่าบริการฝึกอบรมซอฟต์แวร์ระบบ
+ค่าบริการเซ็ตอัพทะเบียนรถ
+```
+
 - ไม่เปลี่ยน SQL / RLS ในรอบนี้
 - คง patch SQL ล่าสุดที่ต้องใช้คือ `supabase/patch_v1_9_1.sql`
 
@@ -39,6 +43,7 @@ supabase/
   patch_v1_9_1.sql
   patch_v1_9_2.sql
   patch_v1_9_3.sql
+  patch_v1_9_4.sql
 ```
 
 ## วิธีติดตั้ง
@@ -64,7 +69,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Hotfix v1.9.3 preserve quotation form state"
+git commit -m "Hotfix v1.9.4 recurring description defaults"
 git push origin main
 ```
 
@@ -86,22 +91,22 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.3
+1.9.4
 ```
 
 ## จุดที่ต้องทดสอบ
 
 ```text
-1. เข้า #quotation-new แล้วกรอกข้อมูลลูกค้า / ราคา / หมายเหตุ
-2. สลับไปแท็บเว็บอื่น แล้วกลับมาที่เว็บเดิม ข้อมูลต้องไม่หาย
-3. เปลี่ยนประเภท รายเดือน/รายปี แล้วสลับแท็บกลับมา ค่าต้องยังอยู่
-4. Refresh หน้า #quotation-new แล้วระบบควรกู้ข้อมูลล่าสุดใน tab เดิมได้
-5. กดบันทึกร่างสำเร็จแล้ว autosave ต้องถูกล้าง
-6. เปิดสร้างใบเสนอราคาใหม่หลังบันทึกสำเร็จ ต้องไม่ดึงข้อมูลเก่าที่บันทึกไปแล้วกลับมา
-7. หน้า #quotation-edit/{id} ต้อง preserve ข้อมูลระหว่างสลับแท็บเช่นกัน
-8. หน้าใบเสนอราคา กดดูรายละเอียด / sorting / checkbox จาก v1.9.2 ยังทำงาน
-9. Export Excel ยังทำงาน
-10. + เพิ่มสินค้า ยังเปิดฟอร์มได้
+1. เข้า #quotation-new
+2. ส่วนค่าบริการชำระรายเดือน/รายปี ต้องมี field รายละเอียดเพิ่มเติม
+3. กรอกรายละเอียดเพิ่มเติมของค่าบริการรายเดือน/รายปี แล้วบันทึกร่าง
+4. เปิดรายละเอียดใบเสนอราคา ต้องเห็นรายละเอียดนี้ในตารางบน
+5. Preview / Print ต้องเห็นรายละเอียดนี้ในตารางบน
+6. แก้ไข Draft ต้องดึงรายละเอียดเดิมกลับมาใน field ใหม่
+7. สลับแท็บหรือ refresh หน้า form แล้ว field ใหม่นี้ต้อง autosave/restore ได้
+8. ช่องรายการของค่าบริการชำระครั้งเดียวต้อง default เป็น ค่าบริการเซ็ตอัพข้อมูล
+9. ช่องรายละเอียดเพิ่มเติมของค่าบริการชำระครั้งเดียวต้อง default เป็น 3 บรรทัดตาม requirement
+10. autosave จาก v1.9.3, ปุ่มดูรายละเอียด, sorting, checkbox และ Export Excel ยังทำงาน
 ```
 
 ## Debug helper

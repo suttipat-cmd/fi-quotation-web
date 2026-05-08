@@ -577,6 +577,11 @@ async function renderQuotationCreatePage() {
                 <label>หน่วย</label>
                 <input id="draftUnit" type="text" value="${escapeHTML(products[0].default_unit || "คัน")}" />
               </div>
+
+              <div class="field full">
+                <label for="draftRecurringDescription">รายละเอียดเพิ่มเติม</label>
+                <textarea id="draftRecurringDescription" rows="2" placeholder="รายละเอียดเพิ่มเติมของค่าบริการรายเดือน/รายปี"></textarea>
+              </div>
             </div>
           </div>
         </section>
@@ -588,7 +593,7 @@ async function renderQuotationCreatePage() {
             <div class="form-grid">
               <div class="field full">
                 <label for="draftOneTimeName">รายการ</label>
-                <input id="draftOneTimeName" type="text" value="ค่าบริการเซ็ตอัพทะเบียนรถ" />
+                <input id="draftOneTimeName" type="text" value="ค่าบริการเซ็ตอัพข้อมูล" />
               </div>
 
               <div class="field">
@@ -603,7 +608,7 @@ async function renderQuotationCreatePage() {
 
               <div class="field full">
                 <label for="draftOneTimeDescription">รายละเอียดเพิ่มเติม</label>
-                <textarea id="draftOneTimeDescription" rows="2">ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน / ค่าบริการฝึกอบรมซอฟต์แวร์ระบบ</textarea>
+                <textarea id="draftOneTimeDescription" rows="2">ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน\nค่าบริการฝึกอบรมซอฟต์แวร์ระบบ\nค่าบริการเซ็ตอัพทะเบียนรถ</textarea>
               </div>
             </div>
           </div>
@@ -863,7 +868,7 @@ async function handleSaveQuotationDraft(event, products) {
         section_type: "recurring",
         product_id: product.id,
         product_name_snapshot: product.name,
-        description: `- ${product.name}`,
+        description: $("#draftRecurringDescription")?.value.trim() || "",
         quantity_label: "จำนวนรถ",
         quantity: readNumber("#draftQuantity"),
         unit: $("#draftUnit").value.trim() || product.default_unit || "คัน",
@@ -2206,12 +2211,13 @@ async function renderQuotationFormPage({ mode, quotationId }) {
     quantity: recurringItem.quantity ?? 20,
     unitPrice: recurringItem.unit_price ?? 4500,
     unit: recurringItem.unit || selectedProduct.default_unit || "คัน",
-    oneTimeName: oneTimeItem.product_name_snapshot || "ค่าบริการเซ็ตอัพทะเบียนรถ",
+    recurringDescription: recurringItem.description || "",
+    oneTimeName: oneTimeItem.product_name_snapshot || "ค่าบริการเซ็ตอัพข้อมูล",
     oneTimeQty: oneTimeItem.quantity ?? 1,
     oneTimePrice: oneTimeItem.unit_price ?? 4500,
     oneTimeDescription:
       oneTimeItem.description ||
-      "ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน / ค่าบริการฝึกอบรมซอฟต์แวร์ระบบ",
+      "ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน\nค่าบริการฝึกอบรมซอฟต์แวร์ระบบ\nค่าบริการเซ็ตอัพทะเบียนรถ",
     discountPercent: quotation?.discount_percent ?? 0,
     vatEnabled: quotation?.vat_enabled ?? true,
     whtEnabled: quotation?.wht_enabled ?? true,
@@ -2314,6 +2320,11 @@ async function renderQuotationFormPage({ mode, quotationId }) {
               <div class="field">
                 <label>หน่วย</label>
                 <input id="draftUnit" type="text" value="${escapeHTML(formValues.unit)}" />
+              </div>
+
+              <div class="field full">
+                <label for="draftRecurringDescription">รายละเอียดเพิ่มเติม</label>
+                <textarea id="draftRecurringDescription" rows="2" placeholder="รายละเอียดเพิ่มเติมของค่าบริการรายเดือน/รายปี">${escapeHTML(formValues.recurringDescription)}</textarea>
               </div>
 
               <div class="field full">
@@ -2576,7 +2587,7 @@ async function handleSaveQuotationDraft(event, products, options = {}) {
         section_type: "recurring",
         product_id: product.id,
         product_name_snapshot: product.name,
-        description: `- ${product.name}`,
+        description: $("#draftRecurringDescription")?.value.trim() || "",
         quantity_label: "จำนวนรถ",
         quantity: readNumber("#draftQuantity"),
         unit: $("#draftUnit").value.trim() || product.default_unit || "คัน",
@@ -3729,7 +3740,7 @@ function buildQuotationItemsPayload(quotationId, product) {
       section_type: "recurring",
       product_id: product.id,
       product_name_snapshot: product.name,
-      description: `- ${product.name}`,
+      description: $("#draftRecurringDescription")?.value.trim() || "",
       quantity_label: "จำนวนรถ",
       quantity: readNumber("#draftQuantity"),
       unit: $("#draftUnit").value.trim() || product.default_unit || "คัน",
@@ -13227,6 +13238,7 @@ window.FI_APP_VERSION = FI_V192_VERSION;
 // =======================================================
 
 const FI_V193_VERSION = "1.9.3";
+const FI_V194_VERSION = "1.9.4";
 
 const FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193 = [
   "draftCustomerName",
@@ -13315,6 +13327,7 @@ function hasMeaningfulQuotationFormDataV193(state) {
   const textFields = [
     "draftCustomerName",
     "draftCustomerAddress",
+    "draftRecurringDescription",
     "draftOneTimeName",
     "draftOneTimeDescription",
     "draftNote",
@@ -13528,5 +13541,20 @@ window.FI_DEBUG = async function FI_DEBUG_V193() {
   };
 };
 
+// =======================================================
+// v1.9.4 Hotfix: Recurring Item Description Defaults
+// Scope: add recurring service description field, update one-time defaults,
+// and include the new field in the existing v1.9.3 autosave flow.
+// =======================================================
+
+(function patchQuotationRecurringDescriptionV194() {
+  window.FI_APP_VERSION = FI_V194_VERSION;
+
+  if (Array.isArray(FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193) && !FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.includes("draftRecurringDescription")) {
+    const unitIndex = FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.indexOf("draftUnit");
+    FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.splice(unitIndex >= 0 ? unitIndex + 1 : FI_QUOTATION_FORM_AUTOSAVE_FIELDS_V193.length, 0, "draftRecurringDescription");
+  }
+})();
+
 // Final visible version stamp for QA.
-window.FI_APP_VERSION = FI_V193_VERSION;
+window.FI_APP_VERSION = FI_V194_VERSION;
