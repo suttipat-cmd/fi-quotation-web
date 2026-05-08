@@ -3526,3 +3526,87 @@ body {
   color: #dc2626;
   font-weight: 800;
 }
+
+
+/* =======================================================
+   v1.9.5 Data Snapshot + Pagination + Status Colors
+   ======================================================= */
+.status-draft {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.status-confirmed {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-sent {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.status-paid {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-expired {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.status-cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pagination-v195 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.pagination-summary-v195 {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagination-controls-v195 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pagination-controls-v195 span {
+  min-width: 72px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.btn-icon-only-v195 {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0 !important;
+  font-size: 20px;
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .pagination-v195 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-controls-v195 {
+    justify-content: space-between;
+  }
+}

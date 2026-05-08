@@ -13558,3 +13558,508 @@ window.FI_DEBUG = async function FI_DEBUG_V193() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V194_VERSION;
+
+
+// =======================================================
+// v1.9.5 Data Snapshot + Pagination + UI Polish
+// Scope: preserve quotation item snapshots after master data changes,
+// add pagination to screen data tables, refresh status colors, and use
+// icon-only back/duplicate actions.
+// =======================================================
+
+const FI_V195_VERSION = "1.9.5";
+const FI_V195_PAGE_SIZE = 10;
+
+window.FI_APP_VERSION = FI_V195_VERSION;
+
+function ensurePaginationStateV195() {
+  if (!appState.paginationV195) {
+    appState.paginationV195 = {};
+  }
+  return appState.paginationV195;
+}
+
+function getPaginationStateV195(key) {
+  const store = ensurePaginationStateV195();
+  if (!store[key]) {
+    store[key] = { page: 1, pageSize: FI_V195_PAGE_SIZE, signature: "" };
+  }
+  return store[key];
+}
+
+function getRowsSignatureV195(rows) {
+  return String((rows || []).map((row) => row?.id || row?.owner_id || row?.customer_name || row?.code || row?.name || "").join("|"));
+}
+
+function maybeResetPaginationV195(key, rows) {
+  const state = getPaginationStateV195(key);
+  const signature = getRowsSignatureV195(rows);
+  if (state.signature !== signature) {
+    state.signature = signature;
+    state.page = 1;
+  }
+}
+
+function paginateRowsV195(key, rows) {
+  const allRows = Array.isArray(rows) ? rows : [];
+  const state = getPaginationStateV195(key);
+  const total = allRows.length;
+  const pageSize = Number(state.pageSize || FI_V195_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  state.page = Math.min(Math.max(1, Number(state.page || 1)), totalPages);
+  const start = (state.page - 1) * pageSize;
+  const end = start + pageSize;
+
+  return {
+    rows: allRows.slice(start, end),
+    offset: start,
+    total,
+    pageSize,
+    page: state.page,
+    totalPages,
+  };
+}
+
+function renderPaginationV195(key, meta) {
+  if (!meta || meta.total <= meta.pageSize) return "";
+  const startNo = meta.total === 0 ? 0 : meta.offset + 1;
+  const endNo = Math.min(meta.offset + meta.rows.length, meta.total);
+
+  return `
+    <div class="pagination-v195" data-pagination-key="${escapeHTML(key)}">
+      <div class="pagination-summary-v195">
+        แสดง ${number(startNo)}-${number(endNo)} จาก ${number(meta.total)} รายการ
+      </div>
+      <div class="pagination-controls-v195">
+        <button type="button" class="btn btn-ghost" data-page-action="prev" ${meta.page <= 1 ? "disabled" : ""}>ก่อนหน้า</button>
+        <span>${number(meta.page)} / ${number(meta.totalPages)}</span>
+        <button type="button" class="btn btn-ghost" data-page-action="next" ${meta.page >= meta.totalPages ? "disabled" : ""}>ถัดไป</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindPaginationV195(key, onRender) {
+  document.querySelectorAll(`[data-pagination-key='${key}'] [data-page-action]`).forEach((button) => {
+    button.addEventListener("click", () => {
+      const state = getPaginationStateV195(key);
+      const action = button.dataset.pageAction;
+      if (action === "prev") state.page = Math.max(1, Number(state.page || 1) - 1);
+      if (action === "next") state.page = Number(state.page || 1) + 1;
+      onRender?.();
+    });
+  });
+}
+
+function renderTableWithPaginationV195({ key, rows, renderTable, bind }) {
+  const allRows = Array.isArray(rows) ? rows : [];
+  maybeResetPaginationV195(key, allRows);
+  const meta = paginateRowsV195(key, allRows);
+  if (!allRows.length) {
+    return renderTable([], { ...meta, offset: 0 });
+  }
+  return `${renderTable(meta.rows, meta)}${renderPaginationV195(key, meta)}`;
+}
+
+function renderQuotationTableV195(rows, meta = {}) {
+  if (!rows.length) {
+    return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
+  }
+
+  const showSales = appState.profile.role !== "sales";
+  const offset = Number(meta.offset || 0);
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table quotation-table-v13">
+        <thead>
+          <tr>
+            <th class="select-col"><input id="selectAllQuotations" type="checkbox" ${areAllVisibleRowsSelected(rows) ? "checked" : ""} /></th>
+            ${sortableTh("row_no", "ลำดับ")}
+            ${sortableTh("quotation_no", "เลขที่")}
+            ${sortableTh("customer_name", "ลูกค้า")}
+            ${sortableTh("billing_type", "ประเภท")}
+            ${showSales ? sortableTh("owner_name", "ฝ่ายขาย") : ""}
+            ${sortableTh("quote_date", "วันที่เสนอราคา")}
+            ${sortableTh("valid_until", "วันหมดอายุ")}
+            ${sortableTh("grand_total_display", "ยอดรวม")}
+            ${sortableTh("effective_status", "สถานะ")}
+            ${sortableTh("created_at", "วันที่สร้าง")}
+            <th>การกระทำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td class="select-col"><input type="checkbox" data-select-quotation="${row.id}" ${appState.selectedQuotationIds.has(row.id) ? "checked" : ""} /></td>
+              <td>${offset + index + 1}</td>
+              <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
+              <td>${escapeHTML(row.customer_name || "-")}</td>
+              <td>${billingTypeLabel(row.billing_type)}</td>
+              ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
+              <td>${formatDate(row.quote_date)}</td>
+              <td>${formatDate(row.valid_until)}</td>
+              <td class="num-cell">${formatTHB(row.grand_total_display)}</td>
+              <td>${statusBadge(row.effective_status || row.status)}</td>
+              <td>${formatDate(row.created_at)}</td>
+              <td><button class="btn btn-ghost" data-action="view" data-id="${row.id}">ดู</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function updateQuotationTableFromFilters() {
+  const filter = appState.quotationFilters;
+  const quoteRange = getDateRangeState(filter.quoteFrom, filter.quoteTo, "วันที่เสนอราคา");
+  const validRange = getDateRangeState(filter.validFrom, filter.validTo, "วันหมดอายุ");
+  const invalidReason = quoteRange.invalidReason || validRange.invalidReason;
+
+  appState.quotationFilteredRows = appState.quotationListRows.filter((row) => {
+    const keyword = (filter.keyword || "").toLowerCase();
+    const text = `${row.quotation_no || ""} ${row.customer_name || ""} ${row.owner_name || ""}`.toLowerCase();
+
+    return (!keyword || text.includes(keyword)) &&
+      (!filter.status || row.effective_status === filter.status || row.status === filter.status) &&
+      (!filter.billingType || row.billing_type === filter.billingType) &&
+      (!filter.ownerId || row.owner_id === filter.ownerId) &&
+      (!quoteRange.active || !quoteRange.valid || isDateWithinRange(row.quote_date, quoteRange.from, quoteRange.to)) &&
+      (!validRange.active || !validRange.valid || isDateWithinRange(row.valid_until, validRange.from, validRange.to));
+  });
+
+  applyQuotationSort();
+  pruneSelectionToRows(appState.quotationFilteredRows);
+  renderQuotationTableFromState();
+  updateExportStateV13({ quoteRange, validRange, invalidReason });
+}
+
+function renderQuotationTableFromState() {
+  const tableTarget = document.getElementById("quotationTable");
+  if (!tableTarget) return;
+
+  tableTarget.innerHTML = renderTableWithPaginationV195({
+    key: "quotations",
+    rows: appState.quotationFilteredRows,
+    renderTable: renderQuotationTableV195,
+  });
+
+  bindPaginationV195("quotations", () => renderQuotationTableFromState());
+  updateBulkActionState();
+}
+
+function renderSalesSummaryTable(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "sales-summary",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ยังไม่มีข้อมูลใบเสนอราคา</div>`;
+      return `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Sales</th>
+                <th>ทั้งหมด</th>
+                <th>Draft</th>
+                <th>Confirmed</th>
+                <th>Sent</th>
+                <th>Paid</th>
+                <th>Expired</th>
+                <th>ยอดเดือนนี้</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td>${escapeHTML(row.owner_name || "-")}</td>
+                  <td>${number(row.total_count)}</td>
+                  <td>${number(row.draft_count)}</td>
+                  <td>${number(row.confirmed_count)}</td>
+                  <td>${number(row.sent_count)}</td>
+                  <td>${number(row.paid_count)}</td>
+                  <td>${number(row.expired_count)}</td>
+                  <td>${formatTHB(row.total_amount_this_month)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+function renderCustomerTable(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "customers",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ยังไม่มีข้อมูลลูกค้า</div>`;
+      return `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ลูกค้า</th>
+                <th>ที่อยู่ล่าสุด</th>
+                <th>จำนวนใบเสนอราคา</th>
+                <th>เสนอล่าสุด</th>
+                <th>ยอดล่าสุด</th>
+                <th>Sales ล่าสุด</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td><strong>${escapeHTML(row.customer_name || "-")}</strong></td>
+                  <td>${escapeHTML(row.latest_customer_address || "-")}</td>
+                  <td>${number(row.quotation_count)}</td>
+                  <td>${formatDate(row.latest_quote_date)}</td>
+                  <td>${formatTHB(row.latest_grand_total)}</td>
+                  <td>${escapeHTML(row.latest_sales_name || "-")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+function renderProductsTable(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "products",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ยังไม่มีสินค้า/บริการ</div>`;
+      return `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>ชื่อสินค้า/บริการ</th>
+                <th>รายละเอียด</th>
+                <th>หน่วย</th>
+                <th>สถานะ</th>
+                <th>การกระทำ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td><strong>${escapeHTML(row.code || "-")}</strong></td>
+                  <td>${escapeHTML(row.name || "-")}</td>
+                  <td>${escapeHTML(row.description || "-")}</td>
+                  <td>${escapeHTML(row.default_unit || "-")}</td>
+                  <td>${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}</td>
+                  <td>${appState.profile?.role === "admin" ? `<button class="btn btn-ghost" data-product-edit="${row.id}">แก้ไข</button>` : "-"}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+(function patchPaginatedTablesV195() {
+  if (window.__fiPaginationBoundV195) return;
+  window.__fiPaginationBoundV195 = true;
+
+  document.addEventListener("click", (event) => {
+    const productEditButton = event.target.closest?.("[data-product-edit]");
+    if (productEditButton) {
+      location.hash = `#product-edit/${productEditButton.dataset.productEdit}`;
+    }
+  }, true);
+})();
+
+function statusLabel(status) {
+  const map = {
+    draft: "ร่าง",
+    confirmed: "ยืนยันแล้ว",
+    sent: "ส่งแล้ว",
+    paid: "ชำระเงิน",
+    expired: "หมดอายุ",
+    cancelled: "ยกเลิก",
+  };
+
+  return map[status] || status || "-";
+}
+
+function statusBadge(status) {
+  const key = status || "draft";
+  return `<span class="status-badge status-${escapeHTML(key)}">${statusLabel(key)}</span>`;
+}
+
+function statusPill(label, style) {
+  return `<span class="status-badge status-${escapeHTML(style || "draft")}">${escapeHTML(label)}</span>`;
+}
+
+function getOriginalQuotationSnapshotV195(quotationId) {
+  return appState.quotationItemSnapshotsV195?.[quotationId] || null;
+}
+
+async function loadOriginalQuotationSnapshotV195(quotationId) {
+  if (!quotationId) return null;
+  if (!appState.quotationItemSnapshotsV195) appState.quotationItemSnapshotsV195 = {};
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("quotation_items")
+      .select("id, product_id, product_name_snapshot, description, quantity_label, quantity, unit, unit_price, sort_order")
+      .eq("quotation_id", quotationId)
+      .eq("section_type", "recurring")
+      .order("sort_order", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    appState.quotationItemSnapshotsV195[quotationId] = data || null;
+    return data || null;
+  } catch (error) {
+    console.warn("loadOriginalQuotationSnapshotV195 skipped", error);
+    appState.quotationItemSnapshotsV195[quotationId] = null;
+    return null;
+  }
+}
+
+function patchProductSelectSnapshotDisplayV195(snapshot) {
+  if (!snapshot?.product_id || !snapshot?.product_name_snapshot) return;
+  const select = document.getElementById("draftProductId");
+  if (!select) return;
+
+  let option = [...select.options].find((item) => item.value === snapshot.product_id);
+  if (!option) {
+    option = new Option(snapshot.product_name_snapshot, snapshot.product_id, true, true);
+    select.insertBefore(option, select.firstChild);
+  }
+
+  option.textContent = snapshot.product_name_snapshot;
+  select.value = snapshot.product_id;
+}
+
+(function patchQuotationProductSnapshotV195() {
+  if (window.__fiSnapshotPatchV195) return;
+  window.__fiSnapshotPatchV195 = true;
+
+  const originalRenderQuotationFormPage = window.renderQuotationFormPage;
+  if (typeof originalRenderQuotationFormPage === "function") {
+    window.renderQuotationFormPage = async function renderQuotationFormPageV195(options = {}) {
+      const snapshot = options.mode === "edit" && options.quotationId
+        ? await loadOriginalQuotationSnapshotV195(options.quotationId)
+        : null;
+
+      await originalRenderQuotationFormPage.call(this, options);
+      patchProductSelectSnapshotDisplayV195(snapshot);
+    };
+
+    try {
+      renderQuotationFormPage = window.renderQuotationFormPage;
+    } catch (_error) {}
+  }
+
+  const originalHandleSaveQuotationDraft = window.handleSaveQuotationDraft;
+  if (typeof originalHandleSaveQuotationDraft === "function") {
+    window.handleSaveQuotationDraft = async function handleSaveQuotationDraftV195(event, products, options = {}) {
+      const selectedProductId = document.getElementById("draftProductId")?.value || "";
+      const snapshot = options.mode === "edit" ? getOriginalQuotationSnapshotV195(options.quotationId) : null;
+      let effectiveProducts = Array.isArray(products) ? products : [];
+
+      if (snapshot?.product_id && selectedProductId === snapshot.product_id) {
+        const snapshotProduct = {
+          ...(effectiveProducts.find((item) => item.id === snapshot.product_id) || {}),
+          id: snapshot.product_id,
+          name: snapshot.product_name_snapshot || effectiveProducts.find((item) => item.id === snapshot.product_id)?.name || "สินค้า/บริการเดิม",
+          default_unit: document.getElementById("draftUnit")?.value?.trim?.() || snapshot.unit || "คัน",
+          is_active: true,
+        };
+
+        effectiveProducts = [
+          snapshotProduct,
+          ...effectiveProducts.filter((item) => item.id !== snapshot.product_id),
+        ];
+      }
+
+      return originalHandleSaveQuotationDraft.call(this, event, effectiveProducts, options);
+    };
+
+    try {
+      handleSaveQuotationDraft = window.handleSaveQuotationDraft;
+    } catch (_error) {}
+  }
+})();
+
+function applyIconOnlyActionsV195() {
+  const iconMap = [
+    ["backToListButton", "←"],
+    ["backFromPrintButton", "←"],
+    ["duplicateQuotationButton", "⧉"],
+  ];
+
+  iconMap.forEach(([id, icon]) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.textContent = icon;
+    button.classList.add("btn-icon-only-v195");
+  });
+
+  document.querySelectorAll("button").forEach((button) => {
+    const text = String(button.textContent || "").trim();
+    if (/^กลับ/.test(text)) {
+      button.textContent = "←";
+      button.classList.add("btn-icon-only-v195");
+    }
+    if (text === "สร้างสำเนา") {
+      button.textContent = "⧉";
+      button.classList.add("btn-icon-only-v195");
+    }
+  });
+}
+
+(function patchIconOnlyActionsV195() {
+  if (window.__fiIconActionsPatchedV195) return;
+  window.__fiIconActionsPatchedV195 = true;
+
+  const originalRenderQuotationViewPage = window.renderQuotationViewPage;
+  if (typeof originalRenderQuotationViewPage === "function") {
+    window.renderQuotationViewPage = async function renderQuotationViewPageV195(quotationId) {
+      const result = await originalRenderQuotationViewPage.call(this, quotationId);
+      applyIconOnlyActionsV195();
+      return result;
+    };
+    try { renderQuotationViewPage = window.renderQuotationViewPage; } catch (_error) {}
+  }
+
+  const originalRenderQuotationPrintPage = window.renderQuotationPrintPage;
+  if (typeof originalRenderQuotationPrintPage === "function") {
+    window.renderQuotationPrintPage = async function renderQuotationPrintPageV195(quotationId) {
+      const result = await originalRenderQuotationPrintPage.call(this, quotationId);
+      applyIconOnlyActionsV195();
+      return result;
+    };
+    try { renderQuotationPrintPage = window.renderQuotationPrintPage; } catch (_error) {}
+  }
+})();
+
+const originalDebugV195 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V195() {
+  const result = typeof originalDebugV195 === "function" ? await originalDebugV195() : {};
+  return {
+    ...result,
+    version: FI_V195_VERSION,
+    pagination: appState.paginationV195 || {},
+    snapshotCache: Object.keys(appState.quotationItemSnapshotsV195 || {}).length,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V195_VERSION;

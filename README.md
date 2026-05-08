@@ -1,28 +1,39 @@
-# FI Quotation Web App v1.9.4
+# FI Quotation Web App v1.9.5
 
-## v1.9.4 Hotfix: Recurring Description Field + One-time Defaults
+## v1.9.5 Data Snapshot + Pagination + UI Polish
 
-Release นี้ต่อยอดจาก v1.9.3 Hotfix: Quotation Form State Preservation โดยเพิ่ม field รายละเอียดเพิ่มเติมในส่วนค่าบริการชำระรายเดือน/รายปี และปรับค่าเริ่มต้นของค่าบริการชำระครั้งเดียวตาม requirement ล่าสุด
+Release นี้ต่อยอดจาก v1.9.4 โดยเพิ่มการคุม snapshot ของสินค้า/บริการในใบเสนอราคา, เพิ่ม pagination ให้ตารางข้อมูลหน้าจอใช้งาน, ปรับสีสถานะใบเสนอราคา, เปลี่ยนปุ่มย้อนกลับ/สร้างสำเนาเป็น icon และเพิ่ม SQL สำหรับล้างข้อมูลการใช้งานโดยไม่ล้าง master data
 
-## สิ่งที่แก้ใน v1.9.4
+## สิ่งที่แก้ใน v1.9.5
 
-- อัปเดต cache busting เป็น `style.css?v=1.9.4` และ `script.js?v=1.9.4`
-- อัปเดต `window.FI_APP_VERSION = "1.9.4"`
-- เพิ่ม field `รายละเอียดเพิ่มเติม` ในส่วนค่าบริการชำระรายเดือน/รายปี
-- บันทึก field ใหม่นี้ลง `quotation_items.description` ของรายการ `section_type = recurring`
-- รองรับการแก้ไข Draft โดยดึงรายละเอียดเดิมกลับมาแสดงใน field ใหม่
-- ผูก field ใหม่เข้ากับ autosave จาก v1.9.3 เพื่อให้ข้อมูลไม่หายตอนสลับแท็บหรือ refresh
-- เปลี่ยน default ช่อง `รายการ` ของค่าบริการชำระครั้งเดียวเป็น `ค่าบริการเซ็ตอัพข้อมูล`
-- เปลี่ยน default ช่อง `รายละเอียดเพิ่มเติม` ของค่าบริการชำระครั้งเดียวเป็น 3 บรรทัด:
-
-```text
-ค่าบริการเซ็ตอัพข้อมูลทั่วไปของหน่วยงาน
-ค่าบริการฝึกอบรมซอฟต์แวร์ระบบ
-ค่าบริการเซ็ตอัพทะเบียนรถ
-```
-
-- ไม่เปลี่ยน SQL / RLS ในรอบนี้
-- คง patch SQL ล่าสุดที่ต้องใช้คือ `supabase/patch_v1_9_1.sql`
+- อัปเดต cache busting เป็น `style.css?v=1.9.5` และ `script.js?v=1.9.5`
+- อัปเดต `window.FI_APP_VERSION = "1.9.5"`
+- เพิ่ม pagination default 10 รายการในตารางข้อมูลหน้าจอใช้งาน:
+  - ตารางใบเสนอราคา
+  - ตารางลูกค้า
+  - ตารางสินค้า/บริการ
+  - ตารางยอดรวมตาม Sales บน Dashboard
+- ไม่ใส่ pagination ในตาราง Preview / Print PDF
+- เพิ่ม logic คุม snapshot ของสินค้า/บริการในใบเสนอราคา:
+  - หน้า View / Print ใช้ข้อมูล snapshot ของ quotation item
+  - หน้า Edit Draft จะแสดงชื่อสินค้า snapshot เดิมเมื่อแก้ master data ภายหลัง
+  - ถ้าไม่ได้เปลี่ยนสินค้าในฟอร์ม ระบบจะไม่ overwrite snapshot ด้วย master data ใหม่ตอนบันทึก Draft
+  - ถ้าเลือกสินค้าใหม่จริง ระบบจะ snapshot จาก master data ตัวใหม่ตามปกติ
+- ปรับสี badge สถานะใบเสนอราคาใหม่ให้แยกชัดขึ้น:
+  - ร่าง = เทา
+  - ยืนยันแล้ว = น้ำเงิน
+  - ส่งแล้ว = Indigo
+  - ชำระเงิน = เขียว
+  - หมดอายุ = ส้ม
+  - ยกเลิก = แดง
+- ยืนยันให้สถานะ `paid` / `ชำระเงิน` อยู่ครบใน frontend
+- เปลี่ยนปุ่มย้อนกลับ เช่น `กลับไปหน้ารายการ`, `กลับไปหน้ารายละเอียด` เป็น icon `←`
+- เปลี่ยนปุ่ม `สร้างสำเนา` เป็น icon `⧉`
+- เพิ่มไฟล์ SQL สำหรับล้างข้อมูลการใช้งาน แต่เก็บ master data ไว้:
+  - `supabase/reset_usage_data_keep_master.sql`
+- เพิ่ม patch note SQL:
+  - `supabase/patch_v1_9_5.sql`
+- ไม่จำเป็นต้องรัน SQL patch ใหม่เพื่อใช้ feature frontend ของ v1.9.5
 
 ## ไฟล์ใน package
 
@@ -44,6 +55,8 @@ supabase/
   patch_v1_9_2.sql
   patch_v1_9_3.sql
   patch_v1_9_4.sql
+  patch_v1_9_5.sql
+  reset_usage_data_keep_master.sql
 ```
 
 ## วิธีติดตั้ง
@@ -69,7 +82,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Hotfix v1.9.4 recurring description defaults"
+git commit -m "Release v1.9.5 data snapshot pagination polish"
 git push origin main
 ```
 
@@ -91,22 +104,44 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.4
+1.9.5
+```
+
+## SQL สำหรับล้างข้อมูลการใช้งาน
+
+ต้องการล้างข้อมูลใบเสนอราคา/รายการใช้งานทั้งหมด แต่ไม่ล้าง master data ให้รันไฟล์นี้ใน Supabase SQL Editor:
+
+```text
+supabase/reset_usage_data_keep_master.sql
+```
+
+ไฟล์นี้จะไม่ล้าง:
+
+```text
+products
+profiles / users
+company_profile
+app_settings
 ```
 
 ## จุดที่ต้องทดสอบ
 
 ```text
-1. เข้า #quotation-new
-2. ส่วนค่าบริการชำระรายเดือน/รายปี ต้องมี field รายละเอียดเพิ่มเติม
-3. กรอกรายละเอียดเพิ่มเติมของค่าบริการรายเดือน/รายปี แล้วบันทึกร่าง
-4. เปิดรายละเอียดใบเสนอราคา ต้องเห็นรายละเอียดนี้ในตารางบน
-5. Preview / Print ต้องเห็นรายละเอียดนี้ในตารางบน
-6. แก้ไข Draft ต้องดึงรายละเอียดเดิมกลับมาใน field ใหม่
-7. สลับแท็บหรือ refresh หน้า form แล้ว field ใหม่นี้ต้อง autosave/restore ได้
-8. ช่องรายการของค่าบริการชำระครั้งเดียวต้อง default เป็น ค่าบริการเซ็ตอัพข้อมูล
-9. ช่องรายละเอียดเพิ่มเติมของค่าบริการชำระครั้งเดียวต้อง default เป็น 3 บรรทัดตาม requirement
-10. autosave จาก v1.9.3, ปุ่มดูรายละเอียด, sorting, checkbox และ Export Excel ยังทำงาน
+1. window.FI_APP_VERSION ต้องได้ 1.9.5
+2. ตารางใบเสนอราคาแสดง pagination default 10 รายการ
+3. Search / Filter / Sorting หน้าใบเสนอราคายังทำงานร่วมกับ pagination
+4. Checkbox / Select all เลือกเฉพาะรายการที่แสดงในหน้าปัจจุบัน
+5. ตารางลูกค้ามี pagination default 10 รายการ
+6. ตารางสินค้า/บริการมี pagination default 10 รายการ
+7. ตารางยอดรวมตาม Sales บน Dashboard มี pagination default 10 รายการ
+8. ตาราง Preview / Print ไม่มี pagination
+9. แก้ชื่อสินค้าใน Master Data แล้วใบเสนอราคาเดิมใน View / Print ไม่เปลี่ยนตาม
+10. แก้ Draft ที่เคยเลือกสินค้าก่อน master ถูกแก้ แล้วกดบันทึกโดยไม่เปลี่ยนสินค้า ข้อมูล snapshot ต้องไม่ถูก overwrite
+11. ถ้าเลือกสินค้าใหม่จริงใน Draft ระบบต้องใช้ข้อมูลสินค้าใหม่เป็น snapshot
+12. ปุ่มย้อนกลับแสดงเป็น ←
+13. ปุ่มสร้างสำเนาแสดงเป็น ⧉
+14. สีสถานะ Draft / Confirmed / Sent / Paid / Expired / Cancelled แยกชัดเจน
+15. autosave, ปุ่มดูรายละเอียด, Export Excel จากเวอร์ชันก่อนยังทำงาน
 ```
 
 ## Debug helper
@@ -117,4 +152,4 @@ window.FI_APP_VERSION
 await window.FI_DEBUG()
 ```
 
-ข้อมูลที่แสดงจะมี version, route, auth state, role, session presence และ `formAutosave` โดยไม่แสดง access token หรือ anon key
+ข้อมูลที่แสดงจะมี version, route, auth state, role, session presence, formAutosave, pagination และ snapshot cache โดยไม่แสดง access token หรือ anon key
