@@ -14063,3 +14063,396 @@ window.FI_DEBUG = async function FI_DEBUG_V195() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V195_VERSION;
+
+// =======================================================
+// v1.9.6 Quotation Section Summary + Print A4 Fix
+// - Quotation view uses per-section summaries instead of one combined summary card
+// - Price history lookup has pagination, default 5 rows
+// - Print page A4 ratio/footer behavior handled in CSS
+// =======================================================
+
+const FI_V196_VERSION = "1.9.6";
+const FI_V196_PRICE_LOOKUP_PAGE_SIZE = 5;
+
+window.FI_APP_VERSION = FI_V196_VERSION;
+
+function getQuotationLineSubtotalV196(item) {
+  if (!item) return 0;
+  if (item.line_subtotal !== null && item.line_subtotal !== undefined) {
+    return roundMoney(Number(item.line_subtotal || 0));
+  }
+  if (item.section_type === "recurring") {
+    return roundMoney(Number(item.unit_price || 0));
+  }
+  return roundMoney(Number(item.quantity || 0) * Number(item.unit_price || 0));
+}
+
+function calculateQuotationSectionSummaryV196(quotation, items) {
+  const sourceItems = Array.isArray(items) ? items : [];
+  const subtotal = roundMoney(sourceItems.reduce((sum, item) => sum + getQuotationLineSubtotalV196(item), 0));
+  const discountPercent = Number(quotation?.discount_percent || 0);
+  const discount = roundMoney(subtotal * discountPercent / 100);
+  const taxable = roundMoney(subtotal - discount);
+  const vatRate = Number(quotation?.vat_rate ?? 7);
+  const whtRate = Number(quotation?.wht_rate ?? 3);
+  const vat = quotation?.vat_enabled === false ? 0 : roundMoney(taxable * vatRate / 100);
+  const wht = quotation?.wht_enabled === false ? 0 : roundMoney(taxable * whtRate / 100);
+  const grandTotal = roundMoney(taxable + vat - wht);
+  const grandTotalDisplay = quotation?.rounding_enabled ? Math.round(grandTotal) : grandTotal;
+  const rounding = roundMoney(grandTotalDisplay - grandTotal);
+
+  return {
+    subtotal,
+    discount,
+    taxable,
+    vat,
+    wht,
+    rounding,
+    grandTotal,
+    grandTotalDisplay,
+    vatRate,
+    whtRate,
+    roundingEnabled: quotation?.rounding_enabled === true,
+  };
+}
+
+function renderQuotationSectionSummaryV196(quotation, items) {
+  const summary = calculateQuotationSectionSummaryV196(quotation, items);
+
+  return `
+    <div class="section-summary-v196">
+      <div class="section-summary-row-v196">
+        <span>มูลค่าก่อนภาษี</span>
+        <strong>${formatTHB(summary.subtotal)}</strong>
+      </div>
+      <div class="section-summary-row-v196">
+        <span>ส่วนลด</span>
+        <strong>${formatTHB(summary.discount)}</strong>
+      </div>
+      <div class="section-summary-row-v196">
+        <span>ฐานคำนวณภาษี</span>
+        <strong>${formatTHB(summary.taxable)}</strong>
+      </div>
+      <div class="section-summary-row-v196">
+        <span>VAT ${Number(summary.vatRate || 0)}%</span>
+        <strong>${formatTHB(summary.vat)}</strong>
+      </div>
+      <div class="section-summary-row-v196">
+        <span>หัก ณ ที่จ่าย ${Number(summary.whtRate || 0)}%</span>
+        <strong>-${formatTHB(summary.wht)}</strong>
+      </div>
+      ${summary.roundingEnabled ? `
+        <div class="section-summary-row-v196">
+          <span>ส่วนต่างปัดเศษ</span>
+          <strong>${formatTHB(summary.rounding)}</strong>
+        </div>
+      ` : ""}
+      <div class="section-summary-total-v196">
+        <span>ยอดรวมสุทธิ</span>
+        <strong>${formatTHB(summary.grandTotalDisplay)}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderQuotationItemsTableWithSummaryV196(items, quotation) {
+  return `
+    ${renderQuotationItemsTable(items)}
+    ${renderQuotationSectionSummaryV196(quotation, items)}
+  `;
+}
+
+async function renderQuotationViewPageV196(quotationId) {
+  if (!quotationId) {
+    renderError("ไม่พบรหัสใบเสนอราคา");
+    return;
+  }
+
+  setPageHeader("รายละเอียดใบเสนอราคา", "ตรวจสอบข้อมูลก่อน Confirm หรือส่งออกเอกสาร");
+  renderLoading();
+
+  const [quotationResult, itemsResult] = await Promise.all([
+    supabaseClient
+      .from("quotations")
+      .select("*")
+      .eq("id", quotationId)
+      .single(),
+
+    supabaseClient
+      .from("quotation_items")
+      .select("*")
+      .eq("quotation_id", quotationId)
+      .order("section_type", { ascending: false })
+      .order("sort_order", { ascending: true }),
+  ]);
+
+  if (quotationResult.error) throw quotationResult.error;
+  if (itemsResult.error) throw itemsResult.error;
+
+  const quotation = quotationResult.data;
+  const items = itemsResult.data || [];
+
+  const ownerResult = await supabaseClient
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", quotation.owner_id)
+    .maybeSingle();
+
+  const ownerName =
+    quotation.sales_name_snapshot ||
+    ownerResult.data?.full_name ||
+    ownerResult.data?.email ||
+    "-";
+
+  const recurringItems = items.filter((item) => item.section_type === "recurring");
+  const oneTimeItems = items.filter((item) => item.section_type === "one_time");
+  const effectiveStatus = getEffectiveStatusFromQuotation(quotation);
+
+  elements.pageContent.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>${escapeHTML(quotation.quotation_no || "ยังไม่ออกเลขเอกสาร")}</h3>
+          <p>${escapeHTML(quotation.customer_name || "-")} · ${billingTypeLabel(quotation.billing_type)}</p>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+          <button id="backToListButton" class="btn btn-ghost">←</button>
+          ${renderQuotationActionButtons(quotation, effectiveStatus)}
+        </div>
+      </div>
+
+      <div class="alert alert-warning ${quotation.status === "draft" ? "" : "hidden"}">
+        เอกสารนี้ยังเป็น Draft และยังไม่มีเลขใบเสนอราคา กด Confirm เพื่อสร้างเลขและล็อกเอกสาร
+      </div>
+
+      <div class="kv-list">
+        <div class="kv-row">
+          <span>สถานะ</span>
+          <strong>${statusBadge(effectiveStatus)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ลูกค้า</span>
+          <strong>${escapeHTML(quotation.customer_name || "-")}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ที่อยู่ลูกค้า</span>
+          <strong>${escapeHTML(quotation.customer_address || "-")}</strong>
+        </div>
+        <div class="kv-row">
+          <span>วันที่ออกเอกสาร</span>
+          <strong>${formatDate(quotation.quote_date)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>วันหมดอายุ</span>
+          <strong>${formatDate(quotation.valid_until)}</strong>
+        </div>
+        <div class="kv-row">
+          <span>ผู้ขาย</span>
+          <strong>${escapeHTML(ownerName)}</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>${quotation.billing_type === "yearly" ? "ค่าบริการชำระรายปี" : "ค่าบริการชำระรายเดือน"}</h3>
+          <p>จำนวนรถใช้เป็นเงื่อนไขราคา ไม่ได้นำไปคูณกับราคา</p>
+        </div>
+      </div>
+      ${renderQuotationItemsTableWithSummaryV196(recurringItems, quotation)}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>ค่าบริการชำระครั้งเดียวจบ</h3>
+          <p>ค่าแรกเข้า / Setup / Training</p>
+        </div>
+      </div>
+      ${renderQuotationItemsTableWithSummaryV196(oneTimeItems, quotation)}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>หมายเหตุและเงื่อนไข</h3>
+          <p>ข้อความที่จะแสดงในเอกสาร</p>
+        </div>
+      </div>
+
+      <div class="kv-list">
+        <div class="kv-row">
+          <span>หมายเหตุ</span>
+          <strong style="white-space:pre-wrap;">${escapeHTML(quotation.note || "-")}</strong>
+        </div>
+        <div class="kv-row">
+          <span>เงื่อนไขการชำระเงิน</span>
+          <strong style="white-space:pre-wrap;">${escapeHTML(quotation.payment_terms || "-")}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+
+  bindQuotationViewActions(quotation);
+  if (typeof applyIconOnlyActionsV195 === "function") {
+    applyIconOnlyActionsV195();
+  }
+}
+
+function renderPriceLookupPageV196(resultTarget, rows, page) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const pageSize = FI_V196_PRICE_LOOKUP_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(sourceRows.length / pageSize));
+  const currentPage = Math.min(Math.max(Number(page || 1), 1), totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pagedRows = sourceRows.slice(start, start + pageSize);
+
+  resultTarget.innerHTML = `
+    <div class="lookup-panel">
+      <div class="lookup-panel-header lookup-panel-header-v196">
+        <div>
+          <strong>พบราคาเดิม ${number(sourceRows.length)} รายการ</strong>
+          <span>เลือกใช้ราคาจากประวัติที่ตรงกับสินค้า ประเภท และจำนวนรถ</span>
+        </div>
+        <div class="lookup-page-status-v196">หน้า ${number(currentPage)} / ${number(totalPages)}</div>
+      </div>
+
+      <div class="lookup-list">
+        ${pagedRows.map((row) => `
+          <div class="lookup-item">
+            <div>
+              <div class="lookup-price">${formatTHB(row.unit_price)}</div>
+              <div class="lookup-meta">
+                <span>${escapeHTML(row.quotation_no || "-")}</span>
+                <span>${escapeHTML(row.customer_name || "-")}</span>
+                <span>${formatDate(row.quote_date)}</span>
+                <span>${escapeHTML(row.sales_name || "-")}</span>
+              </div>
+            </div>
+
+            <button type="button" class="btn btn-primary" data-history-price="${Number(row.unit_price || 0)}">
+              ใช้ราคานี้
+            </button>
+          </div>
+        `).join("")}
+      </div>
+
+      ${totalPages > 1 ? `
+        <div class="lookup-pagination-v196">
+          <button type="button" class="btn btn-ghost" data-price-page="${currentPage - 1}" ${currentPage <= 1 ? "disabled" : ""}>ก่อนหน้า</button>
+          <span>แสดง ${number(start + 1)}-${number(start + pagedRows.length)} จาก ${number(sourceRows.length)}</span>
+          <button type="button" class="btn btn-ghost" data-price-page="${currentPage + 1}" ${currentPage >= totalPages ? "disabled" : ""}>ถัดไป</button>
+        </div>
+      ` : ""}
+    </div>
+  `;
+
+  resultTarget.querySelectorAll("[data-history-price]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const unitPriceInput = document.getElementById("draftUnitPrice");
+      if (unitPriceInput) unitPriceInput.value = button.dataset.historyPrice;
+      updateDraftSummary();
+      showToast("ใช้ราคาจากประวัติแล้ว");
+    });
+  });
+
+  resultTarget.querySelectorAll("[data-price-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextPage = Number(button.dataset.pricePage || currentPage);
+      renderPriceLookupPageV196(resultTarget, sourceRows, nextPage);
+    });
+  });
+}
+
+async function handlePriceLookupV196() {
+  const resultTarget = document.getElementById("priceLookupResult");
+
+  if (!resultTarget) return;
+
+  const productId = document.getElementById("draftProductId")?.value || "";
+  const billingType = document.getElementById("draftBillingType")?.value || "monthly";
+  const quantity = readNumber("#draftQuantity");
+
+  if (!productId) {
+    resultTarget.innerHTML = `<div class="alert alert-error">กรุณาเลือกสินค้า/บริการก่อนค้นหาราคา</div>`;
+    return;
+  }
+
+  if (!quantity || quantity <= 0) {
+    resultTarget.innerHTML = `<div class="alert alert-error">กรุณากรอกจำนวนรถให้ถูกต้องก่อนค้นหาราคา</div>`;
+    return;
+  }
+
+  resultTarget.innerHTML = `
+    <div class="lookup-panel">
+      <div class="lookup-panel-header">
+        <div>
+          <strong>กำลังค้นหาราคาเดิม...</strong>
+          <span>ค้นหาจากใบเสนอราคาที่ Confirmed หรือ Sent แล้ว</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const { data, error } = await supabaseClient.rpc("search_price_history", {
+      p_product_id: productId,
+      p_billing_type: billingType,
+      p_quantity: quantity,
+      p_limit: 50,
+    });
+
+    if (error) throw error;
+
+    const rows = data || [];
+
+    if (!rows.length) {
+      resultTarget.innerHTML = `
+        <div class="lookup-panel">
+          <div class="lookup-panel-header">
+            <div>
+              <strong>ไม่พบราคาที่เคยเสนอ</strong>
+              <span>กรุณากรอกราคาเอง แล้วระบบจะใช้เป็นประวัติหลัง Confirm</span>
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    renderPriceLookupPageV196(resultTarget, rows, 1);
+  } catch (error) {
+    console.error(error);
+    resultTarget.innerHTML = `<div class="alert alert-error">${escapeHTML(error.message || "ไม่สามารถค้นหาราคาเดิมได้")}</div>`;
+  }
+}
+
+(function patchV196Runtime() {
+  if (window.__fiRuntimePatchedV196) return;
+  window.__fiRuntimePatchedV196 = true;
+
+  window.renderQuotationViewPage = renderQuotationViewPageV196;
+  window.handlePriceLookup = handlePriceLookupV196;
+
+  try {
+    renderQuotationViewPage = window.renderQuotationViewPage;
+    handlePriceLookup = window.handlePriceLookup;
+  } catch (_error) {}
+})();
+
+const originalDebugV196 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V196() {
+  const result = typeof originalDebugV196 === "function" ? await originalDebugV196() : {};
+  return {
+    ...result,
+    version: FI_V196_VERSION,
+    priceLookupPageSize: FI_V196_PRICE_LOOKUP_PAGE_SIZE,
+    quotationSectionSummary: true,
+    printA4Fix: true,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V196_VERSION;

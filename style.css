@@ -3610,3 +3610,150 @@ body {
     justify-content: space-between;
   }
 }
+
+/* =======================================================
+   v1.9.6 Quotation Section Summary + Print A4 Fix
+   ======================================================= */
+
+.section-summary-v196 {
+  margin-top: 14px;
+  margin-left: auto;
+  width: min(100%, 430px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.section-summary-row-v196,
+.section-summary-total-v196 {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-summary-row-v196 span {
+  color: var(--muted);
+}
+
+.section-summary-row-v196 strong,
+.section-summary-total-v196 strong {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.section-summary-total-v196 {
+  border-bottom: 0;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(24, 217, 131, 0.10));
+  font-weight: 800;
+}
+
+.section-summary-total-v196 strong {
+  font-size: 18px;
+}
+
+.lookup-panel-header-v196 {
+  align-items: flex-start;
+}
+
+.lookup-page-status-v196 {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lookup-pagination-v196 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.print-page-wrap {
+  overflow-x: auto;
+  padding-bottom: 24px;
+}
+
+.print-page {
+  width: 210mm !important;
+  min-width: 210mm !important;
+  max-width: none !important;
+  height: 297mm !important;
+  min-height: 297mm !important;
+  max-height: none !important;
+  box-sizing: border-box;
+  aspect-ratio: 210 / 297;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.print-header,
+.print-info-grid,
+.print-section,
+.print-summary-grid,
+.print-bank-box {
+  flex: 0 0 auto;
+}
+
+.print-footer-grid {
+  margin-top: auto !important;
+  flex: 0 0 auto;
+}
+
+@media print {
+  .print-page-wrap {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .print-page {
+    width: 210mm !important;
+    min-width: 210mm !important;
+    max-width: none !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: visible !important;
+  }
+
+  .print-footer-grid {
+    margin-top: auto !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .section-summary-v196 {
+    width: 100%;
+  }
+
+  .section-summary-row-v196,
+  .section-summary-total-v196 {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .section-summary-row-v196 strong,
+  .section-summary-total-v196 strong {
+    text-align: left;
+  }
+
+  .lookup-panel-header-v196,
+  .lookup-pagination-v196 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
