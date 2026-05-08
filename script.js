@@ -14912,3 +14912,232 @@ window.FI_DEBUG = async function FI_DEBUG_V197() {
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V197_VERSION;
 
+
+// =======================================================
+// v1.9.8 Dashboard Sent/Paid Business Logic Hotfix
+// - "ยอดส่งแล้ว" means total quotation value already sent to customer,
+//   therefore paid quotations are still included in sent value.
+// - Paid value is tracked separately by paid_at/status paid.
+// - Excel summary/by-sales uses the same business helpers as dashboard.
+// =======================================================
+
+const FI_V198_VERSION = "1.9.8";
+window.FI_APP_VERSION = FI_V198_VERSION;
+
+function getRawStatusV198(row) {
+  return String(row?.status || row?.effective_status || "").toLowerCase();
+}
+
+function getAmountForBusinessAnalyticsV198(row) {
+  return Number(row?.grand_total_display ?? row?.grand_total ?? 0) || 0;
+}
+
+function isPaidBusinessRowV198(row) {
+  const status = getRawStatusV198(row);
+  return status === "paid" || Boolean(row?.paid_at);
+}
+
+function isSentBusinessRowV198(row) {
+  const status = getRawStatusV198(row);
+  return status === "sent" || status === "paid" || Boolean(row?.sent_at) || Boolean(row?.paid_at);
+}
+
+function getSentBusinessDateV198(row) {
+  if (!isSentBusinessRowV198(row)) return null;
+  return parseDateOnly(row?.sent_at || row?.paid_at || row?.quote_date || row?.created_at || row?.updated_at);
+}
+
+function getPaidBusinessDateV198(row) {
+  if (!isPaidBusinessRowV198(row)) return null;
+  return parseDateOnly(row?.paid_at || row?.sent_at || row?.quote_date || row?.created_at || row?.updated_at);
+}
+
+function buildDashboardAnalytics(rows, options = {}) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const monthsBack = options.monthsBack || 6;
+  const today = startOfToday();
+  const currentKey = monthKey(today);
+  const monthStarts = [];
+
+  for (let index = monthsBack - 1; index >= 0; index -= 1) {
+    monthStarts.push(new Date(today.getFullYear(), today.getMonth() - index, 1));
+  }
+
+  const months = monthStarts.map((date) => ({
+    key: monthKey(date),
+    label: formatMonthLabel(date),
+    sentAmount: 0,
+    paidAmount: 0,
+    sentCount: 0,
+    paidCount: 0,
+  }));
+
+  const monthMap = new Map(months.map((item) => [item.key, item]));
+  const salesSentCounts = new Map();
+  const statusCounts = {
+    draft: 0,
+    confirmed: 0,
+    sent: 0,
+    paid: 0,
+    cancelled: 0,
+    expired: 0,
+  };
+
+  let currentMonthSentAmount = 0;
+  let currentMonthPaidAmount = 0;
+  let currentMonthSentCount = 0;
+  let currentMonthPaidCount = 0;
+  let openSentAmount = 0;
+
+  sourceRows.forEach((row) => {
+    const status = getEffectiveStatusForAnalytics(row);
+    if (statusCounts[status] !== undefined) statusCounts[status] += 1;
+
+    const amount = getAmountForBusinessAnalyticsV198(row);
+    const sentDate = getSentBusinessDateV198(row);
+    const sentKey = sentDate ? monthKey(sentDate) : "";
+
+    if (isSentBusinessRowV198(row)) {
+      const month = monthMap.get(sentKey);
+
+      if (month) {
+        month.sentAmount += amount;
+        month.sentCount += 1;
+      }
+
+      if (sentKey === currentKey) {
+        currentMonthSentAmount += amount;
+        currentMonthSentCount += 1;
+      }
+
+      if (!isPaidBusinessRowV198(row)) {
+        openSentAmount += amount;
+      }
+
+      const salesName = row.owner_name || row.sales_name || "ไม่ระบุฝ่ายขาย";
+      if (!salesSentCounts.has(salesName)) {
+        salesSentCounts.set(salesName, Object.fromEntries(months.map((item) => [item.key, 0])));
+      }
+      if (sentKey && salesSentCounts.get(salesName)[sentKey] !== undefined) {
+        salesSentCounts.get(salesName)[sentKey] += 1;
+      }
+    }
+
+    if (isPaidBusinessRowV198(row)) {
+      const paidDate = getPaidBusinessDateV198(row);
+      const paidKey = paidDate ? monthKey(paidDate) : "";
+      const month = monthMap.get(paidKey);
+
+      if (month) {
+        month.paidAmount += amount;
+        month.paidCount += 1;
+      }
+
+      if (paidKey === currentKey) {
+        currentMonthPaidAmount += amount;
+        currentMonthPaidCount += 1;
+      }
+    }
+  });
+
+  months.forEach((month) => {
+    month.sentAmount = roundMoney(month.sentAmount);
+    month.paidAmount = roundMoney(month.paidAmount);
+  });
+
+  currentMonthSentAmount = roundMoney(currentMonthSentAmount);
+  currentMonthPaidAmount = roundMoney(currentMonthPaidAmount);
+  openSentAmount = roundMoney(openSentAmount);
+
+  const soon = addDays(today, 7);
+  const expiringSoon = sourceRows
+    .filter((row) => ["confirmed", "sent"].includes(getRawStatus(row)))
+    .filter((row) => {
+      const validDate = parseDateOnly(row.valid_until);
+      return validDate && validDate >= today && validDate <= soon;
+    })
+    .slice(0, 8);
+
+  return {
+    months,
+    salesSentCounts,
+    statusCounts,
+    currentMonthSentAmount,
+    currentMonthPaidAmount,
+    currentMonthSentCount,
+    currentMonthPaidCount,
+    openSentAmount,
+    expiringSoon,
+    businessSentLogicV198: true,
+  };
+}
+
+function buildExcelSummaryRowsV16(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const filters = appState.quotationFilters || {};
+  const counts = countByV16(sourceRows, (row) => statusLabel(row.effective_status || row.status));
+  const sentRows = sourceRows.filter(isSentBusinessRowV198);
+  const paidRows = sourceRows.filter(isPaidBusinessRowV198);
+  const sentAmount = roundMoney(sentRows.reduce((sum, row) => sum + getAmountForBusinessAnalyticsV198(row), 0));
+  const paidAmount = roundMoney(paidRows.reduce((sum, row) => sum + getAmountForBusinessAnalyticsV198(row), 0));
+
+  const result = [
+    { หัวข้อ: "Export เมื่อ", ค่า: new Date().toLocaleString("th-TH") },
+    { หัวข้อ: "ผู้ Export", ค่า: appState.profile?.full_name || appState.profile?.email || "-" },
+    { หัวข้อ: "ช่วงวันที่เสนอราคา", ค่า: formatRangeLabel(filters.quoteFrom, filters.quoteTo) },
+    { หัวข้อ: "ช่วงวันหมดอายุ", ค่า: formatRangeLabel(filters.validFrom, filters.validTo) },
+    { หัวข้อ: "สถานะที่กรอง", ค่า: filters.status ? statusLabel(filters.status) : "ทุกสถานะ" },
+    { หัวข้อ: "ประเภทที่กรอง", ค่า: filters.billingType ? billingTypeLabel(filters.billingType) : "ทุกประเภท" },
+    { หัวข้อ: "จำนวนใบเสนอราคา", ค่า: sourceRows.length },
+    { หัวข้อ: "จำนวนที่เคยส่งแล้ว", ค่า: sentRows.length },
+    { หัวข้อ: "จำนวนที่ชำระเงินแล้ว", ค่า: paidRows.length },
+    { หัวข้อ: "ยอดส่งแล้ว", ค่า: sentAmount },
+    { หัวข้อ: "ยอดชำระเงินแล้ว", ค่า: paidAmount },
+    { หัวข้อ: "ส่วนต่างยอดส่งกับชำระ", ค่า: roundMoney(sentAmount - paidAmount) },
+    { หัวข้อ: "Conversion โดยยอด (%)", ค่า: sentAmount > 0 ? roundMoney((paidAmount / sentAmount) * 100) : 0 },
+  ];
+
+  Object.entries(counts).forEach(([status, count]) => {
+    result.push({ หัวข้อ: `จำนวนสถานะ ${status}`, ค่า: count });
+  });
+
+  return result;
+}
+
+function buildExcelBySalesRowsV16(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const groups = groupByFunctionV16(sourceRows, (row) => row.owner_name || "ไม่ระบุฝ่ายขาย");
+
+  return Array.from(groups.entries()).map(([sales, items]) => {
+    const sentRows = items.filter(isSentBusinessRowV198);
+    const paidRows = items.filter(isPaidBusinessRowV198);
+    const sentAmount = roundMoney(sentRows.reduce((sum, row) => sum + getAmountForBusinessAnalyticsV198(row), 0));
+    const paidAmount = roundMoney(paidRows.reduce((sum, row) => sum + getAmountForBusinessAnalyticsV198(row), 0));
+
+    return {
+      ฝ่ายขาย: sales,
+      "จำนวนใบเสนอราคา": items.length,
+      "จำนวนที่เคยส่งแล้ว": sentRows.length,
+      "จำนวนชำระเงินแล้ว": paidRows.length,
+      "ยอดส่งแล้ว": sentAmount,
+      "ยอดชำระเงินแล้ว": paidAmount,
+      "ส่วนต่างยอดส่งกับชำระ": roundMoney(sentAmount - paidAmount),
+      "Conversion โดยยอด (%)": sentAmount > 0 ? roundMoney((paidAmount / sentAmount) * 100) : 0,
+    };
+  }).sort((a, b) => String(a.ฝ่ายขาย).localeCompare(String(b.ฝ่ายขาย), "th"));
+}
+
+const originalDebugV198 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V198() {
+  const result = typeof originalDebugV198 === "function" ? await originalDebugV198() : {};
+  return {
+    ...result,
+    version: FI_V198_VERSION,
+    dashboardBusinessSentLogic: true,
+    sentIncludesPaidRows: true,
+    excelBusinessSentLogic: true,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V198_VERSION;

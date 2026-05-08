@@ -1,31 +1,28 @@
-# FI Quotation Web App v1.9.7
+# FI Quotation Web App v1.9.8
 
-## v1.9.7 Mobile UX Layer
+## v1.9.8 Dashboard Sent/Paid Business Logic Hotfix
 
-Release นี้ต่อยอดจาก v1.9.6 โดยเพิ่ม UX เฉพาะ Mobile Browser เพื่อให้ใช้งานบนโทรศัพท์ได้สะดวกขึ้น โดยไม่เปลี่ยน SQL / RLS และไม่รื้อ Desktop layout เดิม
+Release นี้ต่อยอดจาก v1.9.7 โดยแก้ logic Dashboard และ Excel Report ให้ความหมายของ `ยอดส่งแล้ว` ตรงตามธุรกิจจริง: ยอดส่งแล้วคือมูลค่าใบเสนอราคาที่เคยส่งให้ลูกค้าแล้วทั้งหมด ดังนั้นใบเสนอราคาที่เปลี่ยนเป็นสถานะ `paid` แล้วยังต้องถูกนับรวมในยอดส่งแล้วด้วย ส่วน `ยอดชำระเงิน` จะนับแยกจากใบที่ชำระเงินแล้ว
 
-## สิ่งที่แก้ใน v1.9.7
+## สิ่งที่แก้ใน v1.9.8
 
-- อัปเดต cache busting เป็น `style.css?v=1.9.7` และ `script.js?v=1.9.7`
-- อัปเดต `window.FI_APP_VERSION = "1.9.7"`
-- เพิ่ม Mobile bottom navigation ที่ด้านล่างหน้าจอ
-- ปรับ header บนมือถือให้กระชับขึ้น
-- เปลี่ยนตารางหลักบนมือถือให้แสดงเป็น card list:
-  - ตารางใบเสนอราคา
-  - ตารางลูกค้า
-  - ตารางสินค้า/บริการ
-  - ตารางยอดรวมตาม Sales บน Dashboard
-  - ตารางรายการสินค้าในหน้า View ใบเสนอราคา
-- Desktop ยังใช้ตารางแบบเดิม
-- ปรับฟอร์มสร้าง/แก้ไขใบเสนอราคาให้เหมาะกับมือถือ:
-  - single column layout
-  - input/select/textarea สูงขึ้นและแตะง่ายขึ้น
-  - ปุ่มบันทึก/ยกเลิกเป็น sticky action เหนือ bottom nav
-  - เพิ่มแถบสรุปยอดบนมือถือเพื่อเห็นยอดรวมได้ง่ายขึ้น
-- ปรับ filter/action/pagination ให้เรียงเต็มบรรทัดบนมือถือ
-- หน้า Preview / Print บนมือถือยังคงสัดส่วน A4 จริง และให้ scroll แทนการบีบกระดาษ
+- อัปเดต cache busting เป็น `style.css?v=1.9.8` และ `script.js?v=1.9.8`
+- อัปเดต `window.FI_APP_VERSION = "1.9.8"`
+- แก้ Dashboard:
+  - `ยอดส่งแล้ว` รวมใบที่สถานะ `sent` และ `paid`
+  - ใช้ `sent_at` เป็นวันที่หลักสำหรับ bucket ยอดส่งแล้ว
+  - ถ้าไม่มี `sent_at` แต่เป็น paid ให้ fallback เป็น `paid_at`, `quote_date`, `created_at`
+  - `ยอดชำระเงิน` ใช้ `paid_at` เป็นวันที่หลัก
+  - จำนวนใบเสนอราคาส่งแล้วแยกตาม Sales/เดือนรวมใบที่ชำระเงินแล้วด้วย
+- แก้ Excel Report:
+  - Summary ใช้ logic ยอดส่งแล้วแบบเดียวกับ Dashboard
+  - By Sales ใช้ logic ยอดส่งแล้วแบบเดียวกับ Dashboard
+  - เพิ่มส่วนต่างยอดส่งกับชำระและ Conversion โดยยอด
+- ไม่เปลี่ยน filter สถานะในหน้า List View
+  - Filter `ส่งแล้ว` ยังหมายถึงสถานะปัจจุบันเป็น sent เท่านั้น
+  - ไม่เอา paid มาปนใน filter เพื่อไม่ให้ผู้ใช้สับสน
 - ไม่เปลี่ยน SQL / RLS ในรอบนี้
-- ไม่ต้องรัน SQL patch ใหม่เพื่อใช้ v1.9.7
+- ไม่ต้องรัน SQL patch ใหม่เพื่อใช้ v1.9.8
 
 ## ไฟล์ใน package
 
@@ -49,6 +46,7 @@ supabase/
   patch_v1_9_4.sql
   patch_v1_9_5.sql
   patch_v1_9_7.sql
+  patch_v1_9_8.sql
   reset_usage_data_keep_master.sql
 ```
 
@@ -75,7 +73,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.9.7 mobile ux layer"
+git commit -m "Hotfix v1.9.8 dashboard sent paid logic"
 git push origin main
 ```
 
@@ -97,24 +95,22 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.7
+1.9.8
 ```
 
 ## จุดที่ต้องทดสอบ
 
 ```text
-1. window.FI_APP_VERSION ต้องได้ 1.9.7
-2. เปิดบนมือถือแล้วเมนูหลักต้องอยู่ด้านล่างหน้าจอ
-3. หน้าใบเสนอราคาบนมือถือแสดงเป็น card list ไม่ต้องเลื่อนตารางแนวนอน
-4. กดดูใบเสนอราคาจาก card ได้
-5. checkbox ใน card ใบเสนอราคายังใช้งานได้
-6. pagination หน้าใบเสนอราคายังทำงานบนมือถือ
-7. หน้า Customers / Products / Sales Summary แสดงเป็น card list บนมือถือ
-8. ฟอร์มสร้างใบเสนอราคาเป็น single column
-9. ปุ่มบันทึก/ยกเลิกอยู่ใกล้นิ้วและไม่โดน bottom nav บัง
-10. แถบสรุปยอดบนมือถือแสดงยอดรวมและกดพาไปดู summary ได้
-11. หน้า Preview / Print บนมือถือไม่บีบ A4 ผิดสัดส่วน และสามารถ scroll ดูได้
-12. Desktop layout เดิมยังทำงานเหมือน v1.9.6
+1. window.FI_APP_VERSION ต้องได้ 1.9.8
+2. ใบเสนอราคาสถานะ sent ต้องถูกนับในยอดส่งแล้ว
+3. ใบเสนอราคาสถานะ paid ต้องถูกนับทั้งยอดส่งแล้วและยอดชำระเงิน
+4. กราฟ 6 เดือนต้องแสดงยอดส่งแล้วรวม paid rows ด้วย
+5. กราฟจำนวนใบเสนอราคาส่งแล้วแยกตาม Sales/เดือนต้องรวม paid rows ด้วย
+6. Filter สถานะใน List View ยังต้องแยก sent และ paid ตามสถานะปัจจุบัน
+7. Export Excel Summary ต้องแสดงยอดส่งแล้วรวมใบ paid
+8. Export Excel By Sales ต้องแสดงยอดส่งแล้วรวมใบ paid
+9. Mobile UX จาก v1.9.7 ยังทำงานเหมือนเดิม
+10. ไม่ต้องรัน SQL ใหม่
 ```
 
 ## Debug helper
@@ -125,4 +121,11 @@ window.FI_APP_VERSION
 await window.FI_DEBUG()
 ```
 
-ข้อมูลที่แสดงจะมี version, route, auth state, role, session presence, formAutosave, pagination, snapshot cache และสถานะ mobile UX layer โดยไม่แสดง access token หรือ anon key
+ควรเห็นค่าประมาณนี้:
+
+```text
+version: 1.9.8
+dashboardBusinessSentLogic: true
+sentIncludesPaidRows: true
+excelBusinessSentLogic: true
+```
