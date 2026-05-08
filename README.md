@@ -1,29 +1,31 @@
-# FI Quotation Web App v1.9.6
+# FI Quotation Web App v1.9.7
 
-## v1.9.6 Quotation Section Summary + Price Lookup Pagination + Print A4 Fix
+## v1.9.7 Mobile UX Layer
 
-Release นี้ต่อยอดจาก v1.9.5 โดยปรับหน้า View ใบเสนอราคาให้แสดงสรุปยอดแยกตามตาราง, เพิ่ม pagination ให้ผลค้นหาราคาเดิม, และแก้ layout หน้า Preview / Print ให้คงสัดส่วน A4 จริงพร้อมตรึงส่วนลายเซ็นไว้ด้านล่างของหน้า
+Release นี้ต่อยอดจาก v1.9.6 โดยเพิ่ม UX เฉพาะ Mobile Browser เพื่อให้ใช้งานบนโทรศัพท์ได้สะดวกขึ้น โดยไม่เปลี่ยน SQL / RLS และไม่รื้อ Desktop layout เดิม
 
-## สิ่งที่แก้ใน v1.9.6
+## สิ่งที่แก้ใน v1.9.7
 
-- อัปเดต cache busting เป็น `style.css?v=1.9.6` และ `script.js?v=1.9.6`
-- อัปเดต `window.FI_APP_VERSION = "1.9.6"`
-- หน้า `#quotation-view`:
-  - ตัด card / ตาราง `สรุปยอด` รวมทั้งฉบับออก
-  - เพิ่มสรุปยอดท้ายตาราง `ค่าบริการชำระรายเดือน / รายปี`
-  - เพิ่มสรุปยอดท้ายตาราง `ค่าบริการชำระครั้งเดียวจบ`
-  - แต่ละส่วนแสดงมูลค่าก่อนภาษี, ส่วนลด, ฐานคำนวณภาษี, VAT, หัก ณ ที่จ่าย, ส่วนต่างปัดเศษถ้ามี และยอดรวมสุทธิ
-- เพิ่ม pagination ให้ผลลัพธ์ `พบราคาเดิม ... รายการ`
-  - default 5 รายการต่อหน้า
-  - มีปุ่มก่อนหน้า / ถัดไป
-  - ไม่กระทบ pagination ตารางหลักของ v1.9.5
-- หน้า `Preview / Print`:
-  - แก้สัดส่วน A4 ให้เป็น 210mm x 297mm จริงบนหน้าจอ preview
-  - ยกเลิกการย่อ/ยืดที่ทำให้ A4 ratio เพี้ยน
-  - ให้เลื่อนแนวนอนได้เมื่อหน้าจอแคบแทนการบีบกระดาษ
-  - ตรึงส่วน `ยืนยันรับราคา / ลูกค้า` และ `ผู้เสนอราคา` ไว้เป็น footer ด้านล่างของหน้า A4
+- อัปเดต cache busting เป็น `style.css?v=1.9.7` และ `script.js?v=1.9.7`
+- อัปเดต `window.FI_APP_VERSION = "1.9.7"`
+- เพิ่ม Mobile bottom navigation ที่ด้านล่างหน้าจอ
+- ปรับ header บนมือถือให้กระชับขึ้น
+- เปลี่ยนตารางหลักบนมือถือให้แสดงเป็น card list:
+  - ตารางใบเสนอราคา
+  - ตารางลูกค้า
+  - ตารางสินค้า/บริการ
+  - ตารางยอดรวมตาม Sales บน Dashboard
+  - ตารางรายการสินค้าในหน้า View ใบเสนอราคา
+- Desktop ยังใช้ตารางแบบเดิม
+- ปรับฟอร์มสร้าง/แก้ไขใบเสนอราคาให้เหมาะกับมือถือ:
+  - single column layout
+  - input/select/textarea สูงขึ้นและแตะง่ายขึ้น
+  - ปุ่มบันทึก/ยกเลิกเป็น sticky action เหนือ bottom nav
+  - เพิ่มแถบสรุปยอดบนมือถือเพื่อเห็นยอดรวมได้ง่ายขึ้น
+- ปรับ filter/action/pagination ให้เรียงเต็มบรรทัดบนมือถือ
+- หน้า Preview / Print บนมือถือยังคงสัดส่วน A4 จริง และให้ scroll แทนการบีบกระดาษ
 - ไม่เปลี่ยน SQL / RLS ในรอบนี้
-- ไม่ต้องรัน SQL patch ใหม่เพื่อใช้ v1.9.6
+- ไม่ต้องรัน SQL patch ใหม่เพื่อใช้ v1.9.7
 
 ## ไฟล์ใน package
 
@@ -46,6 +48,7 @@ supabase/
   patch_v1_9_3.sql
   patch_v1_9_4.sql
   patch_v1_9_5.sql
+  patch_v1_9_7.sql
   reset_usage_data_keep_master.sql
 ```
 
@@ -72,7 +75,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.9.6 quotation section summary print a4 fix"
+git commit -m "Release v1.9.7 mobile ux layer"
 git push origin main
 ```
 
@@ -94,24 +97,24 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.6
+1.9.7
 ```
 
 ## จุดที่ต้องทดสอบ
 
 ```text
-1. window.FI_APP_VERSION ต้องได้ 1.9.6
-2. หน้า #quotation-view ต้องไม่มี card สรุปยอดรวมทั้งฉบับ
-3. ตารางค่าบริการรายเดือน/รายปีต้องมีสรุปยอดของตัวเองท้ายตาราง
-4. ตารางค่าบริการครั้งเดียวจบต้องมีสรุปยอดของตัวเองท้ายตาราง
-5. สรุปแต่ละตารางต้องแสดง VAT / หัก ณ ที่จ่าย / ยอดรวมสุทธิ
-6. ค้นหาราคาเดิมแล้วต้องแสดง default 5 รายการต่อหน้า
-7. ผลค้นหาราคาเดิมต้องกดก่อนหน้า / ถัดไปได้เมื่อมีมากกว่า 5 รายการ
-8. กดใช้ราคานี้จากหน้าใดก็ต้องเอาราคาไปใส่ในช่องราคาได้
-9. หน้า Preview / Print ต้องแสดงกระดาษ A4 สัดส่วน 210:297 ไม่ถูกบีบผิดสัดส่วน
-10. ส่วนยืนยันรับราคา / ลูกค้า และผู้เสนอราคาต้องอยู่ด้านล่าง A4 เมื่อเนื้อหาไม่ล้นหน้า
-11. ปุ่มย้อนกลับ / duplicate icon จาก v1.9.5 ยังทำงาน
-12. Pagination ตารางหลัก / snapshot / autosave จากเวอร์ชันก่อนยังทำงาน
+1. window.FI_APP_VERSION ต้องได้ 1.9.7
+2. เปิดบนมือถือแล้วเมนูหลักต้องอยู่ด้านล่างหน้าจอ
+3. หน้าใบเสนอราคาบนมือถือแสดงเป็น card list ไม่ต้องเลื่อนตารางแนวนอน
+4. กดดูใบเสนอราคาจาก card ได้
+5. checkbox ใน card ใบเสนอราคายังใช้งานได้
+6. pagination หน้าใบเสนอราคายังทำงานบนมือถือ
+7. หน้า Customers / Products / Sales Summary แสดงเป็น card list บนมือถือ
+8. ฟอร์มสร้างใบเสนอราคาเป็น single column
+9. ปุ่มบันทึก/ยกเลิกอยู่ใกล้นิ้วและไม่โดน bottom nav บัง
+10. แถบสรุปยอดบนมือถือแสดงยอดรวมและกดพาไปดู summary ได้
+11. หน้า Preview / Print บนมือถือไม่บีบ A4 ผิดสัดส่วน และสามารถ scroll ดูได้
+12. Desktop layout เดิมยังทำงานเหมือน v1.9.6
 ```
 
 ## Debug helper
@@ -122,4 +125,4 @@ window.FI_APP_VERSION
 await window.FI_DEBUG()
 ```
 
-ข้อมูลที่แสดงจะมี version, route, auth state, role, session presence, formAutosave, pagination, snapshot cache และสถานะ patch v1.9.6 โดยไม่แสดง access token หรือ anon key
+ข้อมูลที่แสดงจะมี version, route, auth state, role, session presence, formAutosave, pagination, snapshot cache และสถานะ mobile UX layer โดยไม่แสดง access token หรือ anon key

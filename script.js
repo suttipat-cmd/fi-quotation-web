@@ -14456,3 +14456,459 @@ window.FI_DEBUG = async function FI_DEBUG_V196() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V196_VERSION;
+
+// =======================================================
+// v1.9.7 Mobile UX Layer
+// Scope: mobile bottom navigation, mobile card lists for key
+// screen tables, mobile-friendly quotation form/action spacing,
+// and safer mobile A4 preview behavior without changing SQL/RLS.
+// =======================================================
+
+const FI_V197_VERSION = "1.9.7";
+const FI_V197_MOBILE_QUERY = "(max-width: 768px)";
+
+window.FI_APP_VERSION = FI_V197_VERSION;
+
+function isMobileViewportV197() {
+  return window.matchMedia?.(FI_V197_MOBILE_QUERY)?.matches || window.innerWidth <= 768;
+}
+
+function getStatusValueV197(row) {
+  return row?.effective_status || row?.status || "";
+}
+
+function renderMobileInfoRowV197(label, value, extraClass = "") {
+  return `
+    <div class="mobile-info-row-v197 ${extraClass}">
+      <span>${escapeHTML(label)}</span>
+      <strong>${value}</strong>
+    </div>
+  `;
+}
+
+function renderMobileQuotationCardsV197(rows, meta = {}) {
+  if (!Array.isArray(rows) || !rows.length) return "";
+  const offset = Number(meta.offset || 0);
+  const showSales = appState.profile?.role !== "sales";
+
+  return `
+    <div class="mobile-card-list-v197 mobile-quotation-list-v197">
+      ${rows.map((row, index) => `
+        <article class="mobile-data-card-v197 quotation-card-v197">
+          <div class="mobile-card-top-v197">
+            <label class="mobile-select-v197">
+              <input type="checkbox" data-select-quotation="${row.id}" ${appState.selectedQuotationIds?.has(row.id) ? "checked" : ""} />
+              <span>#${number(offset + index + 1)}</span>
+            </label>
+            ${statusBadge(getStatusValueV197(row))}
+          </div>
+
+          <button type="button" class="mobile-card-main-v197" data-action="view" data-id="${row.id}">
+            <strong>${escapeHTML(row.customer_name || "-")}</strong>
+            <span>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</span>
+          </button>
+
+          <div class="mobile-card-grid-v197">
+            ${renderMobileInfoRowV197("ประเภท", billingTypeLabel(row.billing_type))}
+            ${showSales ? renderMobileInfoRowV197("ฝ่ายขาย", escapeHTML(row.owner_name || "-")) : ""}
+            ${renderMobileInfoRowV197("วันที่เสนอ", formatDate(row.quote_date))}
+            ${renderMobileInfoRowV197("หมดอายุ", formatDate(row.valid_until))}
+            ${renderMobileInfoRowV197("ยอดรวม", formatTHB(row.grand_total_display), "is-total")}
+          </div>
+
+          <div class="mobile-card-actions-v197">
+            <button type="button" class="btn btn-primary" data-action="view" data-id="${row.id}">ดู</button>
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderQuotationTableV195(rows, meta = {}) {
+  if (!rows.length) {
+    return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
+  }
+
+  const showSales = appState.profile.role !== "sales";
+  const offset = Number(meta.offset || 0);
+
+  return `
+    ${renderMobileQuotationCardsV197(rows, meta)}
+    <div class="table-wrap desktop-table-v197">
+      <table class="data-table quotation-table-v13">
+        <thead>
+          <tr>
+            <th class="select-col"><input id="selectAllQuotations" type="checkbox" ${areAllVisibleRowsSelected(rows) ? "checked" : ""} /></th>
+            ${sortableTh("row_no", "ลำดับ")}
+            ${sortableTh("quotation_no", "เลขที่")}
+            ${sortableTh("customer_name", "ลูกค้า")}
+            ${sortableTh("billing_type", "ประเภท")}
+            ${showSales ? sortableTh("owner_name", "ฝ่ายขาย") : ""}
+            ${sortableTh("quote_date", "วันที่เสนอราคา")}
+            ${sortableTh("valid_until", "วันหมดอายุ")}
+            ${sortableTh("grand_total_display", "ยอดรวม")}
+            ${sortableTh("effective_status", "สถานะ")}
+            ${sortableTh("created_at", "วันที่สร้าง")}
+            <th>การกระทำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr>
+              <td class="select-col"><input type="checkbox" data-select-quotation="${row.id}" ${appState.selectedQuotationIds?.has(row.id) ? "checked" : ""} /></td>
+              <td>${offset + index + 1}</td>
+              <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
+              <td>${escapeHTML(row.customer_name || "-")}</td>
+              <td>${billingTypeLabel(row.billing_type)}</td>
+              ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
+              <td>${formatDate(row.quote_date)}</td>
+              <td>${formatDate(row.valid_until)}</td>
+              <td class="num-cell">${formatTHB(row.grand_total_display)}</td>
+              <td>${statusBadge(getStatusValueV197(row))}</td>
+              <td>${formatDate(row.created_at)}</td>
+              <td><button class="btn btn-ghost" data-action="view" data-id="${row.id}">ดู</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderMobileCustomerCardsV197(rows) {
+  if (!Array.isArray(rows) || !rows.length) return "";
+  return `
+    <div class="mobile-card-list-v197">
+      ${rows.map((row) => `
+        <article class="mobile-data-card-v197">
+          <div class="mobile-card-main-static-v197">
+            <strong>${escapeHTML(row.customer_name || "-")}</strong>
+            <span>${escapeHTML(row.latest_customer_address || "-")}</span>
+          </div>
+          <div class="mobile-card-grid-v197">
+            ${renderMobileInfoRowV197("จำนวนใบเสนอราคา", number(row.quotation_count))}
+            ${renderMobileInfoRowV197("เสนอล่าสุด", formatDate(row.latest_quote_date))}
+            ${renderMobileInfoRowV197("ยอดล่าสุด", formatTHB(row.latest_grand_total), "is-total")}
+            ${renderMobileInfoRowV197("Sales ล่าสุด", escapeHTML(row.latest_sales_name || "-"))}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderCustomerTable(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "customers",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ยังไม่มีข้อมูลลูกค้า</div>`;
+      return `
+        ${renderMobileCustomerCardsV197(pagedRows)}
+        <div class="table-wrap desktop-table-v197">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ลูกค้า</th>
+                <th>ที่อยู่ล่าสุด</th>
+                <th>จำนวนใบเสนอราคา</th>
+                <th>เสนอล่าสุด</th>
+                <th>ยอดล่าสุด</th>
+                <th>Sales ล่าสุด</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td><strong>${escapeHTML(row.customer_name || "-")}</strong></td>
+                  <td>${escapeHTML(row.latest_customer_address || "-")}</td>
+                  <td>${number(row.quotation_count)}</td>
+                  <td>${formatDate(row.latest_quote_date)}</td>
+                  <td>${formatTHB(row.latest_grand_total)}</td>
+                  <td>${escapeHTML(row.latest_sales_name || "-")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+function renderMobileProductCardsV197(rows) {
+  if (!Array.isArray(rows) || !rows.length) return "";
+  return `
+    <div class="mobile-card-list-v197">
+      ${rows.map((row) => `
+        <article class="mobile-data-card-v197">
+          <div class="mobile-card-top-v197">
+            <strong>${escapeHTML(row.code || "-")}</strong>
+            ${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}
+          </div>
+          <div class="mobile-card-main-static-v197">
+            <strong>${escapeHTML(row.name || "-")}</strong>
+            <span>${escapeHTML(row.description || "-")}</span>
+          </div>
+          <div class="mobile-card-grid-v197">
+            ${renderMobileInfoRowV197("หน่วย", escapeHTML(row.default_unit || "-"))}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderProductsTable(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "products",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ยังไม่มีสินค้า/บริการ</div>`;
+      return `
+        ${renderMobileProductCardsV197(pagedRows)}
+        <div class="table-wrap desktop-table-v197">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>ชื่อสินค้า/บริการ</th>
+                <th>รายละเอียด</th>
+                <th>หน่วย</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td><strong>${escapeHTML(row.code || "-")}</strong></td>
+                  <td>${escapeHTML(row.name || "-")}</td>
+                  <td>${escapeHTML(row.description || "-")}</td>
+                  <td>${escapeHTML(row.default_unit || "-")}</td>
+                  <td>${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+function renderMobileSalesSummaryCardsV197(rows) {
+  if (!Array.isArray(rows) || !rows.length) return "";
+  return `
+    <div class="mobile-card-list-v197">
+      ${rows.map((row) => `
+        <article class="mobile-data-card-v197">
+          <div class="mobile-card-main-static-v197">
+            <strong>${escapeHTML(row.owner_name || "-")}</strong>
+            <span>ใบเสนอราคา ${number(row.total_count)} รายการ</span>
+          </div>
+          <div class="mobile-card-grid-v197">
+            ${renderMobileInfoRowV197("Draft", number(row.draft_count))}
+            ${renderMobileInfoRowV197("Confirmed", number(row.confirmed_count))}
+            ${renderMobileInfoRowV197("Sent", number(row.sent_count))}
+            ${renderMobileInfoRowV197("Paid", number(row.paid_count))}
+            ${renderMobileInfoRowV197("Expired", number(row.expired_count))}
+            ${renderMobileInfoRowV197("ยอดเดือนนี้", formatTHB(row.total_amount_this_month), "is-total")}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderSalesSummaryTable(rows) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "sales-summary",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ยังไม่มีข้อมูลใบเสนอราคา</div>`;
+      return `
+        ${renderMobileSalesSummaryCardsV197(pagedRows)}
+        <div class="table-wrap desktop-table-v197">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Sales</th>
+                <th>ทั้งหมด</th>
+                <th>Draft</th>
+                <th>Confirmed</th>
+                <th>Sent</th>
+                <th>Paid</th>
+                <th>Expired</th>
+                <th>ยอดเดือนนี้</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td>${escapeHTML(row.owner_name || "-")}</td>
+                  <td>${number(row.total_count)}</td>
+                  <td>${number(row.draft_count)}</td>
+                  <td>${number(row.confirmed_count)}</td>
+                  <td>${number(row.sent_count)}</td>
+                  <td>${number(row.paid_count)}</td>
+                  <td>${number(row.expired_count)}</td>
+                  <td>${formatTHB(row.total_amount_this_month)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+function renderMobileItemCardsV197(items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `
+    <div class="mobile-card-list-v197 mobile-items-list-v197">
+      ${items.map((item, index) => {
+        const lineSubtotal = item.line_subtotal ?? (item.section_type === "recurring" ? item.unit_price : Number(item.quantity || 0) * Number(item.unit_price || 0));
+        return `
+          <article class="mobile-data-card-v197">
+            <div class="mobile-card-top-v197">
+              <strong>#${number(index + 1)}</strong>
+              <span>${escapeHTML(item.unit || "-")}</span>
+            </div>
+            <div class="mobile-card-main-static-v197">
+              <strong>${escapeHTML(item.product_name_snapshot || "-")}</strong>
+              ${item.description ? `<span class="pre-wrap-v197">${escapeHTML(item.description)}</span>` : ""}
+            </div>
+            <div class="mobile-card-grid-v197">
+              ${renderMobileInfoRowV197("จำนวน", number(item.quantity))}
+              ${renderMobileInfoRowV197("ราคา", formatTHB(item.unit_price))}
+              ${renderMobileInfoRowV197("มูลค่าก่อนภาษี", formatTHB(lineSubtotal), "is-total")}
+            </div>
+          </article>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderQuotationItemsTable(items) {
+  if (!items.length) {
+    return `<div class="empty-state">ไม่มีรายการในส่วนนี้</div>`;
+  }
+
+  return `
+    ${renderMobileItemCardsV197(items)}
+    <div class="table-wrap desktop-table-v197">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ลำดับ</th>
+            <th>รายละเอียด</th>
+            <th>จำนวน</th>
+            <th>หน่วย</th>
+            <th>ราคา</th>
+            <th>มูลค่าก่อนภาษี</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item, index) => {
+            const lineSubtotal = item.line_subtotal ?? (item.section_type === "recurring" ? item.unit_price : Number(item.quantity || 0) * Number(item.unit_price || 0));
+            return `
+              <tr>
+                <td>${index + 1}</td>
+                <td>
+                  <strong>${escapeHTML(item.product_name_snapshot || "-")}</strong>
+                  ${item.description ? `<div class="inline-note">${escapeHTML(item.description)}</div>` : ""}
+                </td>
+                <td>${number(item.quantity)}</td>
+                <td>${escapeHTML(item.unit || "-")}</td>
+                <td>${formatTHB(item.unit_price)}</td>
+                <td>${formatTHB(lineSubtotal)}</td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function syncMobileSummaryHintV197() {
+  const total = document.getElementById("summaryGrandTotal")?.textContent || "";
+  const form = document.getElementById("quotationDraftForm");
+  let bar = document.getElementById("mobileSummaryHintV197");
+
+  if (!form || !total) {
+    bar?.remove();
+    return;
+  }
+
+  if (!bar) {
+    bar = document.createElement("button");
+    bar.type = "button";
+    bar.id = "mobileSummaryHintV197";
+    bar.className = "mobile-summary-hint-v197";
+    bar.addEventListener("click", () => {
+      document.querySelector(".summary-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    document.body.appendChild(bar);
+  }
+
+  bar.innerHTML = `<span>สรุปยอด</span><strong>${escapeHTML(total)}</strong>`;
+}
+
+const originalUpdateDraftSummaryV197 = window.updateDraftSummary || updateDraftSummary;
+window.updateDraftSummary = function updateDraftSummaryV197Wrapper(...args) {
+  const result = originalUpdateDraftSummaryV197.apply(this, args);
+  syncMobileSummaryHintV197();
+  return result;
+};
+try { updateDraftSummary = window.updateDraftSummary; } catch (_error) {}
+
+function applyMobileBodyStateV197() {
+  document.body.classList.toggle("is-mobile-v197", isMobileViewportV197());
+  const isQuotationForm = Boolean(document.getElementById("quotationDraftForm"));
+  document.body.classList.toggle("has-mobile-summary-v197", isMobileViewportV197() && isQuotationForm);
+  if (!isQuotationForm) document.getElementById("mobileSummaryHintV197")?.remove();
+}
+
+const originalRenderCurrentPageV197 = window.renderCurrentPage || renderCurrentPage;
+window.renderCurrentPage = async function renderCurrentPageV197Wrapper(...args) {
+  const result = await originalRenderCurrentPageV197.apply(this, args);
+  applyMobileBodyStateV197();
+  syncMobileSummaryHintV197();
+  return result;
+};
+try { renderCurrentPage = window.renderCurrentPage; } catch (_error) {}
+
+window.addEventListener("resize", applyMobileBodyStateV197);
+window.addEventListener("orientationchange", () => setTimeout(applyMobileBodyStateV197, 250));
+document.addEventListener("DOMContentLoaded", () => setTimeout(applyMobileBodyStateV197, 0));
+
+document.addEventListener("click", (event) => {
+  const menuButton = event.target?.closest?.(".menu-item");
+  if (menuButton && isMobileViewportV197()) {
+    document.body.classList.remove("nav-open");
+  }
+}, true);
+
+const originalDebugV197 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V197() {
+  const result = typeof originalDebugV197 === "function" ? await originalDebugV197() : {};
+  return {
+    ...result,
+    version: FI_V197_VERSION,
+    mobileUxLayer: true,
+    mobileViewport: isMobileViewportV197(),
+    mobileBottomNavigation: true,
+    mobileCardLists: true,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V197_VERSION;
+
