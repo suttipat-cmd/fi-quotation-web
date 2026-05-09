@@ -19147,3 +19147,310 @@ window.FI_DEBUG = async function FI_DEBUG_V1111() {
 };
 
 window.FI_APP_VERSION = FI_V1111_VERSION;
+
+// =======================================================
+// v1.11.2 Dashboard Pagination + Journey Duplicate Guard
+// - Prevent duplicated Quotation Journey cards after re-render/resume
+// - Add 5-row pagination to every Dashboard list/table section
+// - Frontend-only release; no SQL or Apps Script changes
+// =======================================================
+
+const FI_V1112_VERSION = "1.11.2";
+const DASHBOARD_TABLE_PAGE_SIZE_V1112 = 5;
+window.FI_APP_VERSION = FI_V1112_VERSION;
+
+function ensureDashboardPagesV1112() {
+  if (!appState.dashboardPagesV1112) appState.dashboardPagesV1112 = {};
+  return appState.dashboardPagesV1112;
+}
+
+function getDashboardPageRowsV1112(key, rows, pageSize = DASHBOARD_TABLE_PAGE_SIZE_V1112) {
+  const source = Array.isArray(rows) ? rows : [];
+  const pages = ensureDashboardPagesV1112();
+  const total = source.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.max(0, Number(pages[key] || 0)), pageCount - 1);
+  pages[key] = current;
+  return {
+    rows: source.slice(current * pageSize, current * pageSize + pageSize),
+    page: current,
+    pageCount,
+    total,
+    pageSize,
+  };
+}
+
+function renderDashboardPaginationV1112(key, pageInfo) {
+  if (!pageInfo || pageInfo.total <= pageInfo.pageSize) return "";
+
+  return `
+    <div class="dashboard-pagination-v1112" data-dashboard-page-key-v1112="${escapeHTML(key)}">
+      <div class="dashboard-pagination-summary-v1112">
+        แสดง ${number(pageInfo.rows.length)} จาก ${number(pageInfo.total)} รายการ · หน้า ${number(pageInfo.page + 1)} / ${number(pageInfo.pageCount)}
+      </div>
+      <div class="dashboard-pagination-controls-v1112">
+        <button type="button" class="btn btn-ghost btn-compact-v1105" data-dashboard-page-action-v1112="prev" ${pageInfo.page <= 0 ? "disabled" : ""}>ก่อนหน้า</button>
+        <button type="button" class="btn btn-ghost btn-compact-v1105" data-dashboard-page-action-v1112="next" ${pageInfo.page >= pageInfo.pageCount - 1 ? "disabled" : ""}>ถัดไป</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboardCompactQuotationListV1112(rows, emptyText, pageKey) {
+  const source = Array.isArray(rows) ? rows : [];
+  if (!source.length) return `<div class="empty-state compact">${escapeHTML(emptyText)}</div>`;
+
+  const pageInfo = getDashboardPageRowsV1112(pageKey, source);
+  return `
+    ${renderCompactQuotationList(pageInfo.rows, emptyText)}
+    ${renderDashboardPaginationV1112(pageKey, pageInfo)}
+  `;
+}
+
+function renderSalesSummaryTableV1112(rows) {
+  const source = Array.isArray(rows) ? rows : [];
+  if (!source.length) return `<div class="empty-state">ยังไม่มีข้อมูลใบเสนอราคา</div>`;
+
+  const pageInfo = getDashboardPageRowsV1112("salesSummary", source);
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ฝ่ายขาย</th>
+            <th>ทั้งหมด</th>
+            <th>ร่าง</th>
+            <th>ยืนยันแล้ว</th>
+            <th>ส่งแล้ว</th>
+            <th>หมดอายุ</th>
+            <th>ยอดเดือนนี้</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageInfo.rows.map((row) => `
+            <tr>
+              <td>${escapeHTML(row.owner_name || "-")}</td>
+              <td>${number(row.total_count)}</td>
+              <td>${number(row.draft_count)}</td>
+              <td>${number(row.confirmed_count)}</td>
+              <td>${number(row.sent_count)}</td>
+              <td>${number(row.expired_count)}</td>
+              <td>${formatTHB(row.total_amount_this_month)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${renderDashboardPaginationV1112("salesSummary", pageInfo)}
+  `;
+}
+
+function bindDashboardPaginationV1112() {
+  document.querySelectorAll("[data-dashboard-page-key-v1112]").forEach((group) => {
+    const key = group.dataset.dashboardPageKeyV1112;
+    group.querySelectorAll("[data-dashboard-page-action-v1112]").forEach((button) => {
+      if (button.dataset.boundV1112 === "1") return;
+      button.dataset.boundV1112 = "1";
+      button.addEventListener("click", async () => {
+        const pages = ensureDashboardPagesV1112();
+        const dir = button.dataset.dashboardPageActionV1112;
+        pages[key] = Math.max(0, Number(pages[key] || 0) + (dir === "next" ? 1 : -1));
+        await renderDashboardPage();
+      });
+    });
+  });
+}
+
+async function renderDashboardPage() {
+  setPageHeader("แดชบอร์ด", "งานที่ต้องทำต่อและข้อมูลสำคัญของใบเสนอราคา");
+  renderLoading();
+
+  const isSales = appState.profile.role === "sales";
+  const [dashboardResult, quotationsResult] = await Promise.all([
+    isSales
+      ? supabaseClient.from("v_dashboard_sales").select("*").eq("owner_id", appState.user.id).maybeSingle()
+      : supabaseClient.from("v_dashboard_manager").select("*").order("owner_name", { ascending: true }),
+    supabaseClient.from("v_quotations_list").select("*").order("updated_at", { ascending: false }).limit(200),
+  ]);
+
+  if (dashboardResult.error) throw dashboardResult.error;
+  if (quotationsResult.error) throw quotationsResult.error;
+
+  const quotations = quotationsResult.data || [];
+  const metrics = isSales
+    ? dashboardResult.data || emptyDashboardMetrics()
+    : summarizeManagerDashboard(dashboardResult.data || []);
+
+  const driveMap = await loadDriveLogsMapV1110(quotations.map((row) => row.id));
+  const insights = calculateDashboardInsightsV1111(quotations, driveMap);
+  const today = startOfToday();
+  const next7 = addDays(today, 7);
+
+  const draftRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "draft");
+  const needsDriveRows = quotations
+    .filter((row) => row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed")
+    .filter((row) => !driveMap.has(row.id));
+  const readyToSendRows = quotations
+    .filter((row) => (row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed") && driveMap.has(row.id));
+  const sentRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "sent");
+  const expiringSoonRows = quotations
+    .filter((row) => ["confirmed", "sent"].includes(normalizeQuotationStatusV1110(row)))
+    .filter((row) => row.valid_until && new Date(row.valid_until) >= today && new Date(row.valid_until) <= next7);
+  const recentDocs = quotations;
+
+  elements.pageContent.innerHTML = `
+    ${renderDashboardMetrics(metrics)}
+    ${renderDashboardInsightsV1111(insights)}
+
+    <section class="journey-workspace-v1110 journey-workspace-v1111">
+      <div class="journey-workspace-head-v1110">
+        <div>
+          <span class="journey-eyebrow-v1110">งานที่ต้องทำต่อ</span>
+          <h3>งานที่ต้องทำต่อ</h3>
+          <p>แสดงสถานะละ ${number(DASHBOARD_WORKSPACE_PAGE_SIZE_V1111)} รายการ เพื่อให้ scan งานได้ง่าย</p>
+        </div>
+        ${appState.profile.role !== "manager" ? `<button type="button" id="dashboardNewQuotationButtonV1110" class="btn btn-primary">+ สร้างใบเสนอราคา</button>` : ""}
+      </div>
+      <div class="journey-workspace-grid-v1110">
+        <div class="journey-workspace-column-v1110"><h4>ร่างที่ยังไม่เสร็จ</h4>${renderJourneyTaskListV1111(draftRows, driveMap, "ไม่มีร่างที่ต้องทำต่อ", "draft")}</div>
+        <div class="journey-workspace-column-v1110"><h4>รอบันทึก PDF</h4>${renderJourneyTaskListV1111(needsDriveRows, driveMap, "ไม่มีใบที่รอบันทึก PDF", "needsDrive")}</div>
+        <div class="journey-workspace-column-v1110"><h4>พร้อมส่งแล้ว</h4>${renderJourneyTaskListV1111(readyToSendRows, driveMap, "ไม่มีใบที่พร้อมส่ง", "readyToSend")}</div>
+        <div class="journey-workspace-column-v1110"><h4>ส่งแล้วล่าสุด</h4>${renderJourneyTaskListV1111(sentRows, driveMap, "ยังไม่มีใบที่ส่งแล้ว", "sent")}</div>
+      </div>
+    </section>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header"><div><h3>เอกสารใกล้หมดอายุ</h3><p>ใบที่ยืนยันแล้วหรือส่งแล้ว และจะหมดอายุภายใน 7 วัน</p></div></div>
+        ${renderDashboardCompactQuotationListV1112(expiringSoonRows, "ยังไม่มีเอกสารใกล้หมดอายุ", "expiringSoon")}
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h3>อัปเดตล่าสุด</h3><p>ใบเสนอราคาที่มีการแก้ไขหรือสร้างล่าสุด</p></div></div>
+        ${renderDashboardCompactQuotationListV1112(recentDocs, "ยังไม่มีใบเสนอราคา", "recentDocs")}
+      </div>
+    </div>
+
+    ${!isSales ? `
+      <div class="card">
+        <div class="card-header"><div><h3>ยอดรวมตามฝ่ายขาย</h3><p>ภาพรวมสำหรับผู้ดูแลระบบและผู้จัดการ</p></div></div>
+        ${renderSalesSummaryTableV1112(dashboardResult.data || [])}
+      </div>
+    ` : ""}
+  `;
+
+  document.getElementById("dashboardNewQuotationButtonV1110")?.addEventListener("click", () => {
+    location.hash = "#quotation-new";
+  });
+  bindJourneyTaskLinksV1110();
+  bindWorkspacePaginationV1111();
+  bindDashboardPaginationV1112();
+  bindCompactQuotationLinks();
+  translateVisibleLabelsV1111();
+}
+
+function removeExtraQuotationJourneyCardsV1112() {
+  const pageContent = document.getElementById("pageContent");
+  if (!pageContent || !String(location.hash || "").startsWith("#quotation-view/")) return;
+
+  const cards = Array.from(pageContent.querySelectorAll(".quotation-journey-card-v1110"))
+    .filter((card) => card.id !== "quotationFormJourneyV1110")
+    .filter((card) => !card.closest("#quotationPrintJourneyV1110"));
+
+  if (cards.length <= 1) return;
+
+  cards.forEach((card, index) => {
+    if (index === 0) return;
+    const parent = card.parentElement;
+    if (parent && parent !== pageContent && parent.childElementCount === 1 && !parent.classList.contains("card")) {
+      parent.remove();
+      return;
+    }
+    card.remove();
+  });
+}
+
+function scheduleJourneyDedupeV1112() {
+  window.clearTimeout(appState.journeyDedupeTimerV1112);
+  appState.journeyDedupeTimerV1112 = window.setTimeout(removeExtraQuotationJourneyCardsV1112, 0);
+}
+
+function installJourneyDuplicateObserverV1112() {
+  const pageContent = document.getElementById("pageContent");
+  if (!pageContent) return;
+
+  if (appState.journeyObserverV1112) {
+    try { appState.journeyObserverV1112.disconnect(); } catch (_error) {}
+  }
+
+  appState.journeyObserverV1112 = new MutationObserver(() => {
+    if (String(location.hash || "").startsWith("#quotation-view/")) {
+      scheduleJourneyDedupeV1112();
+    }
+  });
+  appState.journeyObserverV1112.observe(pageContent, { childList: true, subtree: true });
+}
+
+async function injectJourneyIntoQuotationViewV1110(quotationId) {
+  if (!quotationId || !supabaseClient) return;
+
+  try {
+    const expectedPage = `quotation-view/${quotationId}`;
+    if (getPageFromHash() !== expectedPage) return;
+
+    removeExtraQuotationJourneyCardsV1112();
+    const existingCards = Array.from(document.querySelectorAll("#pageContent .quotation-journey-card-v1110"))
+      .filter((card) => card.id !== "quotationFormJourneyV1110")
+      .filter((card) => !card.closest("#quotationPrintJourneyV1110"));
+    if (existingCards.length) return;
+
+    const { data: quotation, error } = await supabaseClient
+      .from("quotations")
+      .select("id, owner_id, status, quotation_no, customer_name, valid_until, sent_at, sent_recipient_email, sent_recipient_name, sent_recipient_position")
+      .eq("id", quotationId)
+      .maybeSingle();
+
+    if (error || !quotation || getPageFromHash() !== expectedPage) return;
+
+    const driveLog = await loadDriveFileLogV1102(quotationId);
+    if (getPageFromHash() !== expectedPage) return;
+
+    const html = renderQuotationJourneyCardV1110(quotation, driveLog);
+    elements.pageContent.insertAdjacentHTML("afterbegin", html);
+    const card = document.getElementById("quotationJourneyCardV1110");
+    if (card) bindJourneyActionsV1110(card, quotation, driveLog);
+    removeExtraQuotationJourneyCardsV1112();
+  } catch (error) {
+    console.warn("Cannot inject journey card.", error);
+  }
+}
+
+const originalRenderQuotationViewPageV1112 = window.renderQuotationViewPage || (typeof renderQuotationViewPage === "function" ? renderQuotationViewPage : null);
+if (typeof originalRenderQuotationViewPageV1112 === "function") {
+  window.renderQuotationViewPage = async function renderQuotationViewPageV1112(quotationId) {
+    const result = await originalRenderQuotationViewPageV1112.call(this, quotationId);
+    installJourneyDuplicateObserverV1112();
+    removeExtraQuotationJourneyCardsV1112();
+    window.setTimeout(removeExtraQuotationJourneyCardsV1112, 50);
+    window.setTimeout(removeExtraQuotationJourneyCardsV1112, 250);
+    return result;
+  };
+  try { renderQuotationViewPage = window.renderQuotationViewPage; } catch (_error) {}
+}
+
+installJourneyDuplicateObserverV1112();
+
+const originalDebugV1112 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1112() {
+  const result = typeof originalDebugV1112 === "function" ? await originalDebugV1112() : {};
+  return {
+    ...result,
+    version: FI_V1112_VERSION,
+    quotationJourneyDuplicateGuard: true,
+    dashboardAllSectionsPagination: true,
+    dashboardTablePageSize: DASHBOARD_TABLE_PAGE_SIZE_V1112,
+    sqlChanged: false,
+    appsScriptChanged: false,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1112_VERSION;

@@ -5647,3 +5647,46 @@ body {
     display: none !important;
   }
 }
+
+/* =======================================================
+   v1.11.2 Dashboard Pagination + Journey Duplicate Guard
+   ======================================================= */
+
+.dashboard-pagination-v1112 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.dashboard-pagination-summary-v1112 {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dashboard-pagination-controls-v1112 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#pageContent .quotation-journey-card-v1110 + .quotation-journey-card-v1110 {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .dashboard-pagination-v1112 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-pagination-controls-v1112,
+  .dashboard-pagination-controls-v1112 .btn {
+    width: 100%;
+  }
+}
