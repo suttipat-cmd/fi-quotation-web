@@ -17205,10 +17205,11 @@ function formatSentDateForInputV1104(value) {
 
 function renderSentInfoHtmlV1104(quotation) {
   if (!isQuotationSentV1104(quotation)) return "";
-  const sentAt = quotation?.sent_at ? formatDate(quotation.sent_at) : "-";
-  const email = quotation?.sent_recipient_email || "-";
-  const name = quotation?.sent_recipient_name || "-";
-  const position = quotation?.sent_recipient_position || "-";
+  const rawSentDate = quotation?.sent_at || quotation?.delivery_planned_sent_at;
+  const sentAt = rawSentDate ? formatDate(rawSentDate) : "-";
+  const email = quotation?.sent_recipient_email || quotation?.delivery_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || quotation?.delivery_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || quotation?.delivery_recipient_position || "-";
   return `
     <div class="sent-info-panel-v1104">
       <strong>ข้อมูลการส่งใบเสนอราคา</strong>
@@ -17269,10 +17270,10 @@ function openMarkSentModalV1104(model, driveLog) {
   closeMarkSentModalV1104();
 
   const quotation = model?.quotation || {};
-  const todayValue = formatSentDateForInputV1104(quotation.sent_at);
-  const defaultName = quotation.sent_recipient_name || "";
-  const defaultEmail = quotation.sent_recipient_email || "";
-  const defaultPosition = quotation.sent_recipient_position || "";
+  const todayValue = formatSentDateForInputV1104(quotation.sent_at || quotation.delivery_planned_sent_at);
+  const defaultName = quotation.sent_recipient_name || quotation.delivery_recipient_name || "";
+  const defaultEmail = quotation.sent_recipient_email || quotation.delivery_recipient_email || "";
+  const defaultPosition = quotation.sent_recipient_position || quotation.delivery_recipient_position || "";
 
   const modal = document.createElement("div");
   modal.id = "markSentModalV1104";
@@ -17786,10 +17787,11 @@ window.FI_APP_VERSION = FI_V1105_VERSION;
 function renderSentInfoHtmlV1104(quotation) {
   if (!isQuotationSentV1104(quotation)) return "";
 
-  const sentAt = quotation?.sent_at ? formatDate(quotation.sent_at) : "-";
-  const email = quotation?.sent_recipient_email || "-";
-  const name = quotation?.sent_recipient_name || "-";
-  const position = quotation?.sent_recipient_position || "-";
+  const rawSentDate = quotation?.sent_at || quotation?.delivery_planned_sent_at;
+  const sentAt = rawSentDate ? formatDate(rawSentDate) : "-";
+  const email = quotation?.sent_recipient_email || quotation?.delivery_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || quotation?.delivery_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || quotation?.delivery_recipient_position || "-";
 
   return `
     <div class="sent-info-card-v1105">
@@ -18962,10 +18964,11 @@ async function renderDashboardPage() {
 
 function renderSentInfoHtmlV1104(quotation) {
   if (!isQuotationSentV1104(quotation)) return "";
-  const sentAt = quotation?.sent_at ? formatDate(quotation.sent_at) : "-";
-  const email = quotation?.sent_recipient_email || "-";
-  const name = quotation?.sent_recipient_name || "-";
-  const position = quotation?.sent_recipient_position || "-";
+  const rawSentDate = quotation?.sent_at || quotation?.delivery_planned_sent_at;
+  const sentAt = rawSentDate ? formatDate(rawSentDate) : "-";
+  const email = quotation?.sent_recipient_email || quotation?.delivery_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || quotation?.delivery_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || quotation?.delivery_recipient_position || "-";
 
   return `
     <div class="sent-summary-v1111">
@@ -19454,3 +19457,584 @@ window.FI_DEBUG = async function FI_DEBUG_V1112() {
 };
 
 window.FI_APP_VERSION = FI_V1112_VERSION;
+
+// =======================================================
+// v1.11.3 Email Sending Workflow
+// Scope:
+// - Split delivery modal into Save only and Save + Send Email.
+// - Send quotation email through Google Apps Script using the
+//   PDF already saved in Google Drive.
+// - Add fixed CC settings and support multiple recipient emails.
+// Requires supabase/patch_v1_11_3.sql and Apps Script v1.11.3.
+// =======================================================
+
+const FI_V1113_VERSION = "1.11.3";
+window.FI_APP_VERSION = FI_V1113_VERSION;
+
+const FI_EMAIL_SETTING_KEYS_V1113 = {
+  fixedCc: "quotation_email_fixed_cc",
+};
+
+function splitEmailListV1113(value) {
+  return String(value || "")
+    .split(/[;,\n\r]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.indexOf(item) === index);
+}
+
+function joinEmailListV1113(value) {
+  return splitEmailListV1113(value).join(", ");
+}
+
+function validateEmailListV1113(value, label, required = false) {
+  const emails = splitEmailListV1113(value);
+  if (required && !emails.length) throw new Error(`กรุณากรอก${label}`);
+  const invalid = emails.find((email) => !isValidEmailV1104(email));
+  if (invalid) throw new Error(`${label}ไม่ถูกต้อง: ${invalid}`);
+  return emails;
+}
+
+async function loadEmailSettingsV1113() {
+  const empty = { fixedCc: "" };
+  if (!supabaseClient) return empty;
+
+  const { data, error } = await supabaseClient
+    .from("app_settings")
+    .select("key, value")
+    .in("key", Object.values(FI_EMAIL_SETTING_KEYS_V1113));
+
+  if (error) {
+    console.warn("Cannot load email settings. Run supabase/patch_v1_11_3.sql first.", error);
+    return { ...empty, loadError: error.message || String(error) };
+  }
+
+  const settings = { ...empty };
+  (data || []).forEach((row) => {
+    if (row.key === FI_EMAIL_SETTING_KEYS_V1113.fixedCc) settings.fixedCc = row.value || "";
+  });
+  return settings;
+}
+
+async function saveEmailSettingsV1113(settings) {
+  const fixedCc = joinEmailListV1113(settings?.fixedCc || "");
+  validateEmailListV1113(fixedCc, "อีเมล CC", false);
+  await saveAppSetting(FI_EMAIL_SETTING_KEYS_V1113.fixedCc, fixedCc);
+  return { fixedCc };
+}
+
+async function loadCurrentProfilePhoneV1113() {
+  if (!appState.user?.id) return "";
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("phone")
+    .eq("id", appState.user.id)
+    .maybeSingle();
+  if (error) return "";
+  return data?.phone || "";
+}
+
+async function saveCurrentProfilePhoneV1113(phone) {
+  const cleanPhone = String(phone || "").trim();
+  const { error } = await supabaseClient.rpc("update_profile_phone_v1113", {
+    p_user_id: appState.user.id,
+    p_phone: cleanPhone || null,
+  });
+  if (error) throw error;
+  if (appState.profile) appState.profile.phone = cleanPhone;
+  return cleanPhone;
+}
+
+function renderEmailSettingsSectionV1113(emailSettings, profilePhone) {
+  return `
+    <section class="card form-card email-settings-card-v1113" id="emailSettingsCardV1113">
+      <div class="card-header">
+        <div>
+          <h3>การส่งอีเมลใบเสนอราคา</h3>
+          <p>ตั้งค่า CC กลางและข้อมูลติดต่อฝ่ายขายสำหรับอีเมลใบเสนอราคา</p>
+        </div>
+      </div>
+
+      ${emailSettings?.loadError ? `<div class="alert alert-warning">ยังโหลดการตั้งค่าอีเมลไม่ได้: ${escapeHTML(emailSettings.loadError)}<br />กรุณารัน <strong>supabase/patch_v1_11_3.sql</strong> ก่อนใช้งาน</div>` : ""}
+
+      <div class="form-grid">
+        <div class="field full">
+          <label for="emailFixedCcInputV1113">Fixed CC Email</label>
+          <textarea id="emailFixedCcInputV1113" rows="3" placeholder="cc1@company.com, cc2@company.com">${escapeHTML(emailSettings?.fixedCc || "")}</textarea>
+          <small class="field-hint">รองรับหลายอีเมล โดยคั่นด้วย comma, semicolon หรือขึ้นบรรทัดใหม่ ระบบจะ CC อีเมลฝ่ายขายเจ้าของใบเสนอราคาเพิ่มให้อัตโนมัติ</small>
+        </div>
+
+        <div class="field full">
+          <label for="currentUserPhoneInputV1113">เบอร์โทรศัพท์ผู้ใช้งานปัจจุบัน</label>
+          <input id="currentUserPhoneInputV1113" type="text" value="${escapeHTML(profilePhone || "")}" placeholder="เช่น 08x-xxx-xxxx" />
+          <small class="field-hint">ใช้ในข้อความอีเมลเมื่อใบเสนอราคาเป็นของผู้ใช้งานคนนี้ หากส่งแทนฝ่ายขายคนอื่น กรุณาให้ Admin ตรวจสอบค่า phone ในตาราง profiles ของฝ่ายขายคนนั้น</small>
+        </div>
+      </div>
+
+      <div class="form-actions normal-flow email-actions-v1113">
+        <button type="button" id="saveEmailSettingsButtonV1113" class="btn btn-primary">บันทึกการตั้งค่าอีเมล</button>
+      </div>
+      <div id="emailSettingsResultV1113"></div>
+    </section>
+  `;
+}
+
+function setEmailSettingsResultV1113(message, type = "info") {
+  const target = document.getElementById("emailSettingsResultV1113");
+  if (!target) return;
+  const className = type === "error" ? "alert alert-error" : type === "success" ? "alert alert-success-v1102" : "alert alert-warning";
+  target.innerHTML = message ? `<div class="${className}">${escapeHTML(message)}</div>` : "";
+}
+
+function bindEmailSettingsActionsV1113() {
+  document.getElementById("saveEmailSettingsButtonV1113")?.addEventListener("click", async () => {
+    const button = document.getElementById("saveEmailSettingsButtonV1113");
+    try {
+      button.disabled = true;
+      button.textContent = "กำลังบันทึก...";
+      const emailSettings = await saveEmailSettingsV1113({
+        fixedCc: document.getElementById("emailFixedCcInputV1113")?.value || "",
+      });
+      const phone = await saveCurrentProfilePhoneV1113(document.getElementById("currentUserPhoneInputV1113")?.value || "");
+      appState.emailSettingsV1113 = emailSettings;
+      setEmailSettingsResultV1113("บันทึกการตั้งค่าอีเมลสำเร็จ", "success");
+      showToast("บันทึกการตั้งค่าอีเมลสำเร็จ");
+      document.getElementById("currentUserPhoneInputV1113").value = phone || "";
+      document.getElementById("emailFixedCcInputV1113").value = emailSettings.fixedCc || "";
+    } catch (error) {
+      console.error(error);
+      setEmailSettingsResultV1113(error.message || "ไม่สามารถบันทึกการตั้งค่าอีเมลได้", "error");
+      showToast(error.message || "ไม่สามารถบันทึกการตั้งค่าอีเมลได้");
+    } finally {
+      button.disabled = false;
+      button.textContent = "บันทึกการตั้งค่าอีเมล";
+    }
+  });
+}
+
+const originalRenderSettingsPageV1113 = window.renderSettingsPage || (typeof renderSettingsPage === "function" ? renderSettingsPage : null);
+if (typeof originalRenderSettingsPageV1113 === "function") {
+  window.renderSettingsPage = async function renderSettingsPageV1113(...args) {
+    const result = await originalRenderSettingsPageV1113.apply(this, args);
+    if (appState.profile?.role !== "admin") return result;
+
+    const [emailSettings, profilePhone] = await Promise.all([
+      loadEmailSettingsV1113(),
+      loadCurrentProfilePhoneV1113(),
+    ]);
+    appState.emailSettingsV1113 = emailSettings;
+
+    if (!document.getElementById("emailSettingsCardV1113")) {
+      const grid = document.querySelector(".settings-grid-v14, .settings-grid-v1102") || elements.pageContent;
+      grid?.insertAdjacentHTML("beforeend", renderEmailSettingsSectionV1113(emailSettings, profilePhone));
+      bindEmailSettingsActionsV1113();
+    }
+    setPageHeader("ตั้งค่า", "ตั้งค่าระบบ Google Drive และการส่งอีเมล");
+    return result;
+  };
+  try { renderSettingsPage = window.renderSettingsPage; } catch (_error) {}
+}
+
+function renderSentInfoHtmlV1104(quotation) {
+  const hasDeliveryInfo = Boolean(
+    quotation?.sent_at ||
+    quotation?.sent_recipient_email ||
+    quotation?.sent_recipient_name ||
+    quotation?.sent_recipient_position ||
+    quotation?.delivery_planned_sent_at ||
+    quotation?.delivery_recipient_email ||
+    quotation?.delivery_recipient_name ||
+    quotation?.delivery_recipient_position
+  );
+  if (!hasDeliveryInfo) return "";
+
+  const isSent = isQuotationSentV1104(quotation);
+  const rawSentDate = quotation?.sent_at || quotation?.delivery_planned_sent_at;
+  const sentAt = rawSentDate ? formatDate(rawSentDate) : "-";
+  const email = quotation?.sent_recipient_email || quotation?.delivery_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || quotation?.delivery_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || quotation?.delivery_recipient_position || "-";
+  const emailSentAt = quotation?.sent_email_sent_at ? formatDate(quotation.sent_email_sent_at) : "-";
+
+  return `
+    <div class="sent-summary-v1111 sent-summary-v1113 ${isSent ? "is-sent" : "is-draft"}">
+      <div class="sent-summary-head-v1111">
+        <span class="sent-summary-icon-v1111">${isSent ? "✓" : "•"}</span>
+        <div>
+          <strong>ข้อมูลการส่งใบเสนอราคา</strong>
+          <small>${isSent ? "ส่งอีเมลและเปลี่ยนสถานะเป็นส่งแล้ว" : "บันทึกข้อมูลผู้รับแล้ว แต่ยังไม่ได้ส่งอีเมล"}</small>
+        </div>
+      </div>
+      <div class="sent-summary-grid-v1111">
+        <div><span>วันที่ส่ง</span><b>${escapeHTML(sentAt)}</b></div>
+        <div><span>อีเมลผู้รับ</span><b>${escapeHTML(email)}</b></div>
+        <div><span>ผู้รับ</span><b>${escapeHTML(name)}</b></div>
+        <div><span>ตำแหน่ง</span><b>${escapeHTML(position)}</b></div>
+        ${isSent ? `<div><span>ส่งอีเมลเมื่อ</span><b>${escapeHTML(emailSentAt)}</b></div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderSentWorkflowInlineV1104(model, driveLog) {
+  const quotation = model?.quotation || {};
+  if (isQuotationSentV1104(quotation)) return renderSentInfoHtmlV1104(quotation);
+  if (!canMarkQuotationSentV1104(quotation)) return renderSentInfoHtmlV1104(quotation) || `<div class="workflow-muted-v1111">ยังไม่มีข้อมูลการส่งใบเสนอราคา</div>`;
+
+  const hasDrivePdf = Boolean(driveLog?.file_url);
+  return `
+    <div class="sent-action-v1111 sent-action-v1113 ${hasDrivePdf ? "is-ready" : "is-disabled"}">
+      ${renderSentInfoHtmlV1104(quotation)}
+      <button id="markSentAfterDriveButtonV1104" type="button" class="btn ${hasDrivePdf ? "btn-primary" : "btn-ghost"} btn-compact-v1105" ${hasDrivePdf ? "" : "disabled"}>ส่งแล้ว</button>
+      <span class="sent-action-hint-v1105">${hasDrivePdf ? "บันทึกข้อมูลผู้รับ หรือบันทึกและส่งอีเมล" : "ต้องบันทึก PDF ลง Google Drive ก่อน"}</span>
+    </div>
+  `;
+}
+
+function getPrimaryRecurringProductNameV1113(itemsOrModel) {
+  const items = Array.isArray(itemsOrModel)
+    ? itemsOrModel
+    : (itemsOrModel?.sections || []).flatMap((section) => section.items || []);
+  const recurring = items.find((item) => item.section_type === "recurring") || items[0] || {};
+  return recurring.product_name_snapshot || recurring.name || "ซอฟต์แวร์ระบบ";
+}
+
+async function loadQuotationEmailContextV1113(model, driveLog) {
+  const quotationId = model?.quotation?.id;
+  if (!quotationId) throw new Error("ไม่พบรหัสใบเสนอราคา");
+
+  const [quotationResult, itemsResult, driveResult, emailSettings] = await Promise.all([
+    supabaseClient
+      .from("quotations")
+      .select("id, owner_id, status, quotation_no, customer_name, sent_at, sent_recipient_email, sent_recipient_name, sent_recipient_position, delivery_planned_sent_at, delivery_recipient_email, delivery_recipient_name, delivery_recipient_position, sent_email_sent_at")
+      .eq("id", quotationId)
+      .maybeSingle(),
+    supabaseClient
+      .from("quotation_items")
+      .select("section_type, product_name_snapshot")
+      .eq("quotation_id", quotationId)
+      .order("section_type", { ascending: false })
+      .order("sort_order", { ascending: true }),
+    driveLog?.file_url ? Promise.resolve({ data: driveLog, error: null }) : supabaseClient
+      .from("quotation_drive_files")
+      .select("*")
+      .eq("quotation_id", quotationId)
+      .maybeSingle(),
+    loadEmailSettingsV1113(),
+  ]);
+
+  if (quotationResult.error) throw quotationResult.error;
+  if (itemsResult.error) throw itemsResult.error;
+  if (driveResult.error) throw driveResult.error;
+  if (!quotationResult.data) throw new Error("ไม่พบใบเสนอราคา");
+
+  const ownerProfile = await loadQuotationOwnerProfileForEmailV1113(quotationResult.data.owner_id);
+
+  return {
+    quotation: quotationResult.data,
+    items: itemsResult.data || [],
+    driveLog: driveResult.data || null,
+    emailSettings,
+    ownerProfile,
+    productName: getPrimaryRecurringProductNameV1113(itemsResult.data || []),
+  };
+}
+
+async function loadQuotationOwnerProfileForEmailV1113(ownerId) {
+  if (!ownerId) return { full_name: "-", email: "", phone: "" };
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("full_name, email, phone")
+    .eq("id", ownerId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || { full_name: "-", email: "", phone: "" };
+}
+
+function buildQuotationEmailSubjectV1113(context) {
+  return `ใบเสนอราคาสำหรับ ${context.productName || "ซอฟต์แวร์ระบบ"} จาก Forward Insight Co., Ltd.`;
+}
+
+function buildQuotationEmailBodyV1113(context, delivery) {
+  const recipientName = delivery.name || "-";
+  const position = delivery.position ? ` / ${delivery.position}` : "";
+  const customer = context.quotation.customer_name || "-";
+  const productName = context.productName || "ซอฟต์แวร์ระบบ";
+  const salesName = context.ownerProfile.full_name || context.ownerProfile.email || "-";
+  const salesPhone = context.ownerProfile.phone || "-";
+
+  return `เรียน ${recipientName}${position}
+${customer}
+
+สวัสดีครับ
+ในนามของบริษัท ฟอร์เวิร์ด อินไซท์ จำกัด ขอเรียนเสนอใบเสนอราคาสำหรับค่าบริการระบบตามรายละเอียดด้านล่างนี้
+
+1. ระบบ ${productName}
+
+ทั้งนี้ ทางบริษัทฯ ได้แนบไฟล์ใบเสนอราคาในรูปแบบ PDF มาพร้อมกับอีเมลฉบับนี้ เพื่อประกอบการพิจารณา หากมีข้อสงสัยเพิ่มเติม หรือต้องการข้อมูลประกอบอื่นใด ทางเรายินดีให้ข้อมูลเพิ่มเติมอย่างเต็มที่
+สามารถติดต่อกลับได้ที่คุณ${salesName} (Sale System) โทร. ${salesPhone}
+
+ขอขอบพระคุณเป็นอย่างยิ่งที่ให้ความสนใจในบริการของเรา และหวังเป็นอย่างยิ่งว่าจะมีโอกาสได้ให้บริการแก่ท่านในอนาคตอันใกล้นี้
+
+ขอแสดงความนับถือ
+
+ทีม Customer Service
+บริษัท ฟอร์เวิร์ด อินไซท์ จำกัด`;
+}
+
+function buildCcEmailsV1113(context) {
+  const fixed = splitEmailListV1113(context.emailSettings?.fixedCc || "");
+  const salesEmail = String(context.ownerProfile?.email || "").trim().toLowerCase();
+  const combined = salesEmail ? [...fixed, salesEmail] : fixed;
+  return combined.filter((email, index, arr) => email && arr.indexOf(email) === index);
+}
+
+function readDeliveryFormV1113() {
+  return {
+    sentDate: document.getElementById("sentDateInputV1104")?.value || "",
+    emails: validateEmailListV1113(document.getElementById("sentRecipientEmailInputV1104")?.value || "", "อีเมลผู้รับ", true),
+    name: String(document.getElementById("sentRecipientNameInputV1104")?.value || "").trim(),
+    position: String(document.getElementById("sentRecipientPositionInputV1104")?.value || "").trim(),
+  };
+}
+
+function validateDeliveryFormV1113(delivery) {
+  if (!delivery.sentDate) throw new Error("กรุณาเลือกวันที่ส่งใบเสนอราคา");
+  if (!delivery.emails?.length) throw new Error("กรุณากรอกอีเมลผู้รับ");
+  if (!delivery.name) throw new Error("กรุณากรอกชื่อผู้รับ");
+}
+
+function openMarkSentModalV1104(model, driveLog) {
+  closeMarkSentModalV1104();
+
+  const quotation = model?.quotation || {};
+  const todayValue = formatSentDateForInputV1104(quotation.sent_at || quotation.delivery_planned_sent_at);
+  const defaultName = quotation.sent_recipient_name || quotation.delivery_recipient_name || "";
+  const defaultEmail = quotation.sent_recipient_email || quotation.delivery_recipient_email || "";
+  const defaultPosition = quotation.sent_recipient_position || quotation.delivery_recipient_position || "";
+
+  const modal = document.createElement("div");
+  modal.id = "markSentModalV1104";
+  modal.className = "modal-backdrop-v1104";
+  modal.innerHTML = `
+    <div class="modal-card-v1104 email-modal-v1113" role="dialog" aria-modal="true">
+      <div class="modal-header-v1104">
+        <div>
+          <h3>ข้อมูลการส่งใบเสนอราคา</h3>
+          <p>บันทึกข้อมูลผู้รับไว้ก่อน หรือบันทึกพร้อมส่งอีเมลแนบ PDF จาก Google Drive</p>
+        </div>
+        <button id="closeSentModalButtonV1104" type="button" class="icon-button">×</button>
+      </div>
+
+      <form id="markSentFormV1104" class="form-stack">
+        <div class="field">
+          <label for="sentDateInputV1104">วันที่ส่งใบเสนอราคา <span class="required-star">*</span></label>
+          <input id="sentDateInputV1104" type="date" value="${escapeHTML(todayValue)}" required />
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="sentRecipientEmailInputV1104">อีเมลผู้รับ <span class="required-star">*</span></label>
+            <textarea id="sentRecipientEmailInputV1104" rows="3" placeholder="customer1@company.com, customer2@company.com" required>${escapeHTML(defaultEmail)}</textarea>
+            <small class="field-hint">รองรับหลายอีเมล คั่นด้วย comma, semicolon หรือขึ้นบรรทัดใหม่</small>
+          </div>
+          <div class="field">
+            <label for="sentRecipientNameInputV1104">ผู้รับ <span class="required-star">*</span></label>
+            <input id="sentRecipientNameInputV1104" type="text" value="${escapeHTML(defaultName)}" placeholder="ชื่อผู้รับปลายทาง" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="sentRecipientPositionInputV1104">ตำแหน่ง</label>
+          <input id="sentRecipientPositionInputV1104" type="text" value="${escapeHTML(defaultPosition)}" placeholder="เช่น ผู้จัดการฝ่ายขนส่ง" />
+        </div>
+
+        <div class="drive-file-confirm-v1104">
+          <span>ไฟล์ PDF ใน Google Drive</span>
+          <a href="${escapeHTML(driveLog?.file_url || "#")}" target="_blank" rel="noopener">${escapeHTML(driveLog?.file_name || "เปิดไฟล์")}</a>
+        </div>
+
+        <div class="email-note-v1113">
+          <strong>การส่งอีเมล</strong>
+          <span>ระบบจะส่งถึงอีเมลผู้รับ, CC fixed email จากเมนูตั้งค่า และ CC อีเมลฝ่ายขายเจ้าของใบเสนอราคา</span>
+        </div>
+
+        <div id="markSentErrorV1104" class="alert alert-error hidden"></div>
+
+        <div class="form-actions normal-flow modal-actions-v1104 modal-actions-v1113">
+          <button type="button" id="cancelSentModalButtonV1104" class="btn btn-ghost">ยกเลิก</button>
+          <button type="button" id="saveDeliveryOnlyButtonV1113" class="btn btn-ghost">บันทึก</button>
+          <button type="submit" id="submitSentButtonV1104" class="btn btn-primary">บันทึกและส่งอีเมล</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.getElementById("closeSentModalButtonV1104")?.addEventListener("click", closeMarkSentModalV1104);
+  document.getElementById("cancelSentModalButtonV1104")?.addEventListener("click", closeMarkSentModalV1104);
+  document.getElementById("saveDeliveryOnlyButtonV1113")?.addEventListener("click", async () => {
+    await saveDeliveryInfoOnlyV1113(model);
+  });
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeMarkSentModalV1104();
+  });
+  document.getElementById("markSentFormV1104")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await submitMarkSentWithRecipientV1104(model);
+  });
+
+  document.getElementById("sentRecipientEmailInputV1104")?.focus();
+}
+
+async function saveDeliveryInfoOnlyV1113(model) {
+  const button = document.getElementById("saveDeliveryOnlyButtonV1113");
+  setMarkSentErrorV1104("");
+
+  try {
+    const delivery = readDeliveryFormV1113();
+    validateDeliveryFormV1113(delivery);
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "กำลังบันทึก...";
+    }
+
+    const driveLog = await loadDriveFileLogV1102(model.quotation.id);
+    if (!driveLog?.file_url) throw new Error("กรุณาบันทึก PDF ลง Google Drive ก่อนบันทึกข้อมูลการส่ง");
+
+    const { error } = await supabaseClient.rpc("save_quotation_delivery_info_v1113", {
+      p_quotation_id: model.quotation.id,
+      p_sent_at: delivery.sentDate,
+      p_recipient_email: delivery.emails.join(", "),
+      p_recipient_name: delivery.name,
+      p_recipient_position: delivery.position || null,
+    });
+
+    if (error) throw error;
+
+    closeMarkSentModalV1104();
+    showToast("บันทึกข้อมูลการส่งเรียบร้อยแล้ว");
+    await renderCurrentPage();
+  } catch (error) {
+    console.error(error);
+    const message = error.message || "ไม่สามารถบันทึกข้อมูลการส่งได้";
+    setMarkSentErrorV1104(message);
+    showToast(message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "บันทึก";
+    }
+  }
+}
+
+async function submitMarkSentWithRecipientV1104(model) {
+  const button = document.getElementById("submitSentButtonV1104");
+  setMarkSentErrorV1104("");
+
+  try {
+    const delivery = readDeliveryFormV1113();
+    validateDeliveryFormV1113(delivery);
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "กำลังส่งอีเมล...";
+    }
+
+    const context = await loadQuotationEmailContextV1113(model, null);
+    if (!context.driveLog?.file_url || !context.driveLog?.file_id) {
+      throw new Error("กรุณาบันทึก PDF ลง Google Drive ก่อนส่งอีเมล");
+    }
+
+    const settings = validateDriveArchiveSettingsV1102(appState.driveArchiveSettingsV1102 || await loadDriveArchiveSettingsV1102());
+    const ccEmails = buildCcEmailsV1113(context);
+    validateEmailListV1113(ccEmails.join(", "), "อีเมล CC", false);
+
+    if (!String(context.ownerProfile?.phone || "").trim()) {
+      throw new Error("ยังไม่มีเบอร์โทรศัพท์ของฝ่ายขายเจ้าของใบเสนอราคา กรุณาเพิ่มค่า phone ใน profiles ก่อนส่งอีเมล");
+    }
+
+    const subject = buildQuotationEmailSubjectV1113(context);
+    const body = buildQuotationEmailBodyV1113(context, delivery);
+
+    const response = await postToAppsScriptIframeV1102(settings.webAppUrl, {
+      action: "sendEmail",
+      secret: settings.uploadSecret,
+      quotationId: context.quotation.id,
+      quotationNo: context.quotation.quotation_no || "",
+      toEmails: delivery.emails,
+      ccEmails,
+      subject,
+      body,
+      driveFileId: context.driveLog.file_id,
+      driveFileName: context.driveLog.file_name || "ใบเสนอราคา.pdf",
+      clientVersion: FI_V1113_VERSION,
+    }, 120000);
+
+    if (!response.ok) throw new Error(response.error || "Apps Script ไม่สามารถส่งอีเมลได้");
+
+    const { error } = await supabaseClient.rpc("mark_quotation_sent_after_email_v1113", {
+      p_quotation_id: context.quotation.id,
+      p_sent_at: delivery.sentDate,
+      p_recipient_email: delivery.emails.join(", "),
+      p_recipient_name: delivery.name,
+      p_recipient_position: delivery.position || null,
+      p_email_to: delivery.emails.join(", "),
+      p_email_cc: ccEmails.join(", "),
+      p_email_subject: subject,
+      p_drive_file_id: context.driveLog.file_id,
+    });
+
+    if (error) throw error;
+
+    closeMarkSentModalV1104();
+    showToast("บันทึกข้อมูลและส่งอีเมลสำเร็จ");
+    location.hash = `#quotation-view/${context.quotation.id}`;
+    await renderQuotationViewPage(context.quotation.id);
+  } catch (error) {
+    console.error(error);
+    const message = error.message || "ไม่สามารถส่งอีเมลได้";
+    setMarkSentErrorV1104(message);
+    showToast(message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "บันทึกและส่งอีเมล";
+    }
+  }
+}
+
+const originalDebugV1113 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1113() {
+  const result = typeof originalDebugV1113 === "function" ? await originalDebugV1113() : {};
+  return {
+    ...result,
+    version: FI_V1113_VERSION,
+    deliverySaveOnly: true,
+    deliverySendEmail: true,
+    multipleRecipientEmails: true,
+    emailFixedCcSetting: true,
+    appsScriptEmailSend: true,
+    sqlChanged: true,
+    appsScriptChanged: true,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1113_VERSION;
+
+// v1.11.3 compatibility override: include saved delivery draft fields when opening sent modal from #quotation-view.
+async function loadQuotationForSentActionV1105(quotationId) {
+  const { data, error } = await supabaseClient
+    .from("quotations")
+    .select("id, owner_id, status, sent_at, sent_recipient_email, sent_recipient_name, sent_recipient_position, delivery_planned_sent_at, delivery_recipient_email, delivery_recipient_name, delivery_recipient_position, sent_email_sent_at")
+    .eq("id", quotationId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("ไม่พบใบเสนอราคา");
+  return data;
+}
+
+window.FI_APP_VERSION = FI_V1113_VERSION;

@@ -1,26 +1,30 @@
-# FI Quotation Web App v1.11.2
+# FI Quotation Web App v1.11.3
 
-## v1.11.2 Dashboard Pagination + Journey Duplicate Guard
+## v1.11.3 Email Sending Workflow
 
-Release นี้ต่อยอดจาก v1.11.1 โดยแก้ปัญหา “เส้นทางใบเสนอราคา” แสดงซ้ำในหน้า `#quotation-view` และเพิ่ม pagination ให้ทุกส่วนรายการ/ตารางใน Dashboard โดยกำหนดค่าเริ่มต้นหน้าละ 5 รายการเหมือนกันทั้งหมด
+Release นี้ต่อยอดจาก v1.11.2 โดยเพิ่ม workflow ส่งอีเมลใบเสนอราคาผ่าน Google Apps Script หลังจากบันทึก PDF ลง Google Drive แล้ว พร้อมแยกปุ่มในหน้าข้อมูลการส่งเป็น “บันทึก” และ “บันทึกและส่งอีเมล”
 
-## สิ่งที่เปลี่ยนใน v1.11.2
+## สิ่งที่เปลี่ยนใน v1.11.3
 
-- อัปเดต cache busting เป็น `style.css?v=1.11.2` และ `script.js?v=1.11.2`
-- อัปเดต `window.FI_APP_VERSION = "1.11.2"`
-- แก้ bug Quotation Journey แสดงซ้ำ/เบิ้ลในหน้า `#quotation-view`
-  - เพิ่ม duplicate guard หลัง render
-  - เพิ่ม observer ป้องกัน async render หรือ stale render ทำให้ card ถูก inject ซ้ำ
-  - ตรวจ hash ปัจจุบันก่อน inject Journey card
-- เพิ่ม pagination ให้ทุกส่วนรายการ/ตารางบน Dashboard
-  - งานที่ต้องทำต่อยังแสดงสถานะละ 5 รายการเหมือนเดิม
-  - เอกสารใกล้หมดอายุแสดงหน้าละ 5 รายการ
-  - อัปเดตล่าสุดแสดงหน้าละ 5 รายการ
-  - ยอดรวมตามฝ่ายขายแสดงหน้าละ 5 รายการ
-- เพิ่ม component pagination กลางสำหรับ Dashboard
-  - ปุ่ม “ก่อนหน้า / ถัดไป”
-  - แสดงจำนวนรายการและเลขหน้า เช่น `หน้า 1 / 3`
-- ไม่เปลี่ยน SQL, RLS, Apps Script payload หรือ business logic เดิม
+- อัปเดต cache busting เป็น `style.css?v=1.11.3` และ `script.js?v=1.11.3`
+- อัปเดต `window.FI_APP_VERSION = "1.11.3"`
+- ปรับ Modal “ข้อมูลการส่งใบเสนอราคา”
+  - ปุ่ม `บันทึก` = บันทึกข้อมูลผู้รับ แต่ยังไม่ส่งอีเมล และยังไม่เปลี่ยนสถานะเป็นส่งแล้ว
+  - ปุ่ม `บันทึกและส่งอีเมล` = บันทึกข้อมูลผู้รับ ส่งอีเมลแนบ PDF และเปลี่ยนสถานะเป็นส่งแล้วเมื่อส่งสำเร็จ
+- รองรับการกรอกอีเมลผู้รับหลายรายการ
+  - คั่นด้วย comma, semicolon หรือขึ้นบรรทัดใหม่
+- เพิ่มการตั้งค่า Email ในเมนู `ตั้งค่า`
+  - Fixed CC Email
+  - เบอร์โทรศัพท์ผู้ใช้งานปัจจุบัน
+- ตอนส่งอีเมล ระบบจะใช้ CC = Fixed CC + อีเมลฝ่ายขายเจ้าของใบเสนอราคา
+- เพิ่ม Google Apps Script action `sendEmail`
+  - ใช้ PDF ที่บันทึกใน Google Drive เป็น attachment
+  - ส่งอีเมลด้วย GmailApp
+- เพิ่ม SQL patch `supabase/patch_v1_11_3.sql`
+  - เพิ่ม `profiles.phone`
+  - เพิ่ม email audit fields ใน `quotations`
+  - เพิ่ม RPC สำหรับบันทึกข้อมูลการส่งโดยไม่เปลี่ยนสถานะ
+  - เพิ่ม RPC สำหรับบันทึกหลังส่งอีเมลสำเร็จและเปลี่ยนสถานะเป็น `sent`
 
 ## ไฟล์ใน package
 
@@ -36,6 +40,7 @@ scripts/
 google-apps-script/
   Code.gs
 supabase/
+  patch_v1_11_3.sql
   patch_v1_10_2.sql
   patch_v1_10_4.sql
   reset_usage_data_keep_master.sql
@@ -43,7 +48,7 @@ supabase/
   ...patch เก่าที่ใช้ตั้งค่าระบบ
 ```
 
-## ขั้นตอนติดตั้ง v1.11.2
+## ขั้นตอนติดตั้ง v1.11.3
 
 ### 1) ติดตั้งไฟล์เว็บ
 
@@ -58,7 +63,11 @@ Windows: Ctrl + Shift + R
 
 ### 2) SQL
 
-ไม่ต้องรัน SQL ใหม่สำหรับ v1.11.2
+ต้องรัน SQL ใหม่สำหรับ v1.11.3:
+
+```text
+supabase/patch_v1_11_3.sql
+```
 
 ต้องเคยรัน SQL เหล่านี้สำเร็จแล้ว:
 
@@ -67,11 +76,34 @@ supabase/patch_v1_10_2.sql
 supabase/patch_v1_10_4.sql
 ```
 
-เพราะ v1.11.2 ยังใช้ table `quotation_drive_files` และ RPC `mark_quotation_as_sent_v1104` จาก release ก่อนหน้า
-
 ### 3) Google Apps Script
 
-ไม่จำเป็นต้องเปลี่ยน Apps Script ถ้าใช้อยู่บน v1.10.3 หรือใหม่กว่าแล้ว เพราะ v1.11.2 ไม่เปลี่ยน payload การบันทึก PDF ไป Drive
+ต้องอัปเดต Apps Script เพราะ v1.11.3 เพิ่ม action สำหรับส่งอีเมล
+
+1. เปิด Google Apps Script Project เดิม
+2. เปิด `Code.gs`
+3. Copy โค้ดจาก `google-apps-script/Code.gs` ไปวางทับ
+4. ตรวจว่า Script Property ยังมี `UPLOAD_SECRET` ตรงกับค่าในหน้า Settings ของเว็บ
+5. Deploy > Manage deployments > Edit deployment
+6. เลือก New version แล้วกด Deploy
+7. ใช้ Web App URL เดิมได้ถ้า deploy ทับ deployment เดิม
+
+### 4) ตั้งค่าอีเมลในระบบ
+
+Login ด้วย Admin แล้วเข้า:
+
+```text
+ตั้งค่า > การส่งอีเมลใบเสนอราคา
+```
+
+กรอก:
+
+```text
+Fixed CC Email
+เบอร์โทรศัพท์ผู้ใช้งานปัจจุบัน
+```
+
+หมายเหตุ: ถ้าใบเสนอราคาเป็นของฝ่ายขายคนอื่น ระบบจะใช้เบอร์จาก `profiles.phone` ของเจ้าของใบเสนอราคา กรุณาตรวจสอบให้มีข้อมูลก่อนส่งอีเมล
 
 ## ตรวจ release ก่อน push
 
@@ -87,7 +119,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.11.2 dashboard pagination journey duplicate guard"
+git commit -m "Release v1.11.3 email sending workflow"
 git push origin main
 ```
 
@@ -109,35 +141,22 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.11.2
-```
-
-## Debug helper
-
-```js
-await window.FI_DEBUG()
-```
-
-ควรเห็นค่าประมาณนี้:
-
-```text
-version: 1.11.2
-quotationJourneyDuplicateGuard: true
-dashboardAllSectionsPagination: true
-dashboardTablePageSize: 5
-sqlChanged: false
-appsScriptChanged: false
+1.11.3
 ```
 
 ## จุดที่ต้องทดสอบทันที
 
 ```text
-1. หน้า #quotation-view ต้องมี “เส้นทางใบเสนอราคา” เพียงชุดเดียวเสมอ
-2. เข้าออกหน้า View หลายครั้ง / กด refresh / กลับจาก Print แล้วต้องไม่เกิด Journey ซ้ำ
-3. Dashboard > งานที่ต้องทำต่อ ต้องยังแสดงสถานะละ 5 รายการและ pagination ต้องทำงาน
-4. Dashboard > เอกสารใกล้หมดอายุ ต้องแสดงหน้าละ 5 รายการและ pagination ต้องทำงาน
-5. Dashboard > อัปเดตล่าสุด ต้องแสดงหน้าละ 5 รายการและ pagination ต้องทำงาน
-6. Dashboard > ยอดรวมตามฝ่ายขาย ต้องแสดงหน้าละ 5 รายการและ pagination ต้องทำงาน
-7. ปุ่มในรายการ Dashboard ต้องยังเปิดหน้าใบเสนอราคาได้ตามเดิม
-8. หน้า #quotation-print และ flow Google Drive / ส่งแล้ว ต้องยังทำงานเหมือน v1.11.1
+1. รัน patch_v1_11_3.sql สำเร็จ
+2. อัปเดตและ deploy Google Apps Script สำเร็จ
+3. Settings ต้องมี section การส่งอีเมลใบเสนอราคา
+4. Fixed CC รองรับหลายอีเมล
+5. ข้อมูลการส่งใบเสนอราคาต้องรองรับอีเมลผู้รับหลายรายการ
+6. กด “บันทึก” แล้วต้องบันทึกข้อมูลผู้รับแต่ยังไม่เปลี่ยนสถานะเป็นส่งแล้ว
+7. กด “บันทึกและส่งอีเมล” แล้วต้องส่งอีเมลพร้อมแนบ PDF จาก Google Drive
+8. Email To ต้องมาจาก field อีเมลผู้รับ
+9. Email CC ต้องเป็น Fixed CC + email ฝ่ายขายเจ้าของใบเสนอราคา
+10. ส่งอีเมลสำเร็จแล้วสถานะต้องเป็น “ส่งแล้ว”
+11. PDF ที่แนบต้องเป็นไฟล์เดียวกับที่บันทึกไว้ใน Google Drive
+12. ถ้าไม่มี profiles.phone ของฝ่ายขาย ต้องแจ้งเตือนก่อนส่งอีเมล
 ```

@@ -5690,3 +5690,57 @@ body {
     width: 100%;
   }
 }
+
+/* =======================================================
+   v1.11.3 Email Sending Workflow
+   ======================================================= */
+.email-settings-card-v1113 textarea,
+.email-modal-v1113 textarea {
+  min-height: 86px;
+}
+
+.email-actions-v1113,
+.modal-actions-v1113 {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.email-note-v1113 {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.email-note-v1113 strong {
+  color: #1d4ed8;
+}
+
+.sent-summary-v1113.is-draft {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.sent-summary-v1113.is-draft .sent-summary-icon-v1111 {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.sent-action-v1113 {
+  display: grid;
+  gap: 10px;
+}
+
+.sent-action-v1113 .sent-summary-v1111 {
+  margin-bottom: 0;
+}
+
+@media (max-width: 720px) {
+  .modal-actions-v1113 .btn {
+    width: 100%;
+  }
+}
