@@ -1,36 +1,32 @@
-# FI Quotation Web App v1.10.0
+# FI Quotation Web App v1.10.1
 
-## v1.10.0 Mobile UX Audit + Clean Quotation Print Layout
+## v1.10.1 Mobile Menu Cleanup + Suggested PDF Filename
 
-Release นี้ต่อยอดจาก v1.9.9 โดยโฟกัสเฉพาะ Mobile UX และรูปแบบใบเสนอราคา ไม่เปลี่ยน SQL/RLS และไม่เปลี่ยน business logic เดิม
+Release นี้ต่อยอดจาก v1.10.0 โดยโฟกัสเฉพาะการลดความแออัดของเมนูบนมือถือ และปรับชื่อไฟล์เริ่มต้นตอนบันทึกใบเสนอราคาเป็น PDF ไม่เปลี่ยน SQL/RLS และไม่เปลี่ยน business logic เดิม
 
-## สิ่งที่แก้ใน v1.10.0
+## สิ่งที่แก้ใน v1.10.1
 
-- อัปเดต cache busting เป็น `style.css?v=1.10.0` และ `script.js?v=1.10.0`
-- อัปเดต `window.FI_APP_VERSION = "1.10.0"`
-- ตรวจและปรับ Mobile UX เพิ่มเติม โดยเฉพาะหน้า `สินค้า/บริการ`
-- หน้า `สินค้า/บริการ` บนมือถือแสดงเป็น Product Card View ที่อ่านง่ายขึ้น
-  - แสดงรหัสสินค้า/บริการ
-  - ชื่อสินค้า/บริการ
-  - รายละเอียด
-  - หน่วย
-  - สถานะ
-  - ปุ่มแก้ไขสำหรับ Admin
-- เพิ่มช่องค้นหาและกรองสถานะในหน้า `สินค้า/บริการ`
-- เพิ่มปุ่ม `บัญชี` บนมือถือ ทั้งที่ header และ bottom navigation
-- เพิ่ม Mobile Account Sheet สำหรับมือถือ
-  - แสดงชื่อผู้ใช้
-  - แสดง role
-  - ไปหน้า Settings
-  - ไปหน้า Company Profile
-  - ออกจากระบบ
-- ปรับ pagination/filter/action บนมือถือให้อ่านและกดง่ายขึ้น
-- ปรับรูปแบบใบเสนอราคาเป็น Clean Corporate Layout
-  - ลดกรอบที่ไม่จำเป็น
-  - คงเส้นตารางหลักไว้เพื่ออ่านรายการสินค้า/บริการ
-  - เปลี่ยนหมายเหตุ/เงื่อนไข/บัญชีธนาคารเป็น block พื้นหลังอ่อนพร้อมเส้นซ้าย
-  - ลายเซ็นใช้เส้นเซ็น ไม่เน้นกรอบกล่อง
-- ไม่ต้องรัน SQL ใหม่
+- อัปเดต cache busting เป็น `style.css?v=1.10.1` และ `script.js?v=1.10.1`
+- อัปเดต `window.FI_APP_VERSION = "1.10.1"`
+- บนมือถือซ่อนเมนูรองจากแถบเมนูหลัก:
+  - `ข้อมูลบริษัท / Company Profile`
+  - `ตั้งค่า / Settings`
+- ยังสามารถเข้า `ข้อมูลบริษัท` และ `ตั้งค่า` ได้จากเมนู `บัญชี` เหมือนเดิม
+- Desktop ยังแสดงเมนู `ข้อมูลบริษัท` และ `ตั้งค่า` ตามเดิม
+- ปุ่ม `พิมพ์ / บันทึกเป็น PDF` จะตั้งชื่อเอกสารชั่วคราวก่อนเปิด print dialog เพื่อให้ Chrome/Edge ใช้เป็นชื่อไฟล์เริ่มต้นตอน Save as PDF
+- รูปแบบชื่อไฟล์ที่แนะนำ:
+
+```text
+เลขที่ใบเสนอราคา (สินค้า/บริการ)
+```
+
+ตัวอย่าง:
+
+```text
+QT-2026-0001 (ค่าบริการระบบ GPS)
+```
+
+หมายเหตุ: ระบบใช้ browser print / Save as PDF ดังนั้นไม่สามารถบังคับชื่อไฟล์ได้ 100% ทุก browser แต่การตั้ง `document.title` ก่อน `window.print()` จะช่วยให้ browser หลักใช้ชื่อไฟล์ที่ต้องการเป็นค่าเริ่มต้น
 
 ## ไฟล์ใน package
 
@@ -57,6 +53,7 @@ supabase/
   patch_v1_9_8.sql
   patch_v1_9_9.sql
   patch_v1_10_0.sql
+  patch_v1_10_1.sql
   reset_usage_data_keep_master.sql
 ```
 
@@ -83,7 +80,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.10.0 mobile ux clean print layout"
+git commit -m "Release v1.10.1 mobile menu pdf filename"
 git push origin main
 ```
 
@@ -105,7 +102,7 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.10.0
+1.10.1
 ```
 
 ## Debug helper
@@ -117,10 +114,8 @@ await window.FI_DEBUG()
 ควรเห็นค่าประมาณนี้:
 
 ```text
-version: 1.10.0
-mobileUxAudit: true
-mobileAccountMenu: true
-mobileProductsCardView: true
-cleanCorporatePrintLayout: true
+version: 1.10.1
+mobileSecondaryMenuHidden: true
+suggestedPdfFilename: true
 sqlChanged: false
 ```

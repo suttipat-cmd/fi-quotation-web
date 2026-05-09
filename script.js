@@ -16194,3 +16194,102 @@ window.FI_DEBUG = async function FI_DEBUG_V1100() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V1100_VERSION;
+
+
+// =======================================================
+// v1.10.1 Mobile Menu Cleanup + Suggested PDF Filename
+// Scope: keep mobile navigation focused by hiding secondary
+// admin pages from the mobile tab bar and set a suggested
+// filename for browser Save as PDF flows.
+// No SQL/RLS/business logic changes.
+// =======================================================
+
+const FI_V1101_VERSION = "1.10.1";
+window.FI_APP_VERSION = FI_V1101_VERSION;
+
+function sanitizeFilenamePartV1101(value, fallback = "-") {
+  const text = String(value || "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.\s]+$/g, "");
+
+  return (text || fallback).slice(0, 90);
+}
+
+function getPrimaryPrintProductNameV1101(model) {
+  const sections = Array.isArray(model?.sections) ? model.sections : [];
+  const recurringSection = sections.find((section) => section?.type === "recurring");
+  const firstSection = sections.find((section) => Array.isArray(section?.items) && section.items.length);
+  const item =
+    (recurringSection?.items || []).find(Boolean) ||
+    (firstSection?.items || []).find(Boolean) ||
+    null;
+
+  return sanitizeFilenamePartV1101(
+    item?.product_name_snapshot || item?.name || "สินค้า-บริการ",
+    "สินค้า-บริการ"
+  );
+}
+
+function buildSuggestedPdfTitleV1101(model) {
+  const quotationNo = sanitizeFilenamePartV1101(
+    model?.quotation?.quotation_no || "ใบเสนอราคา",
+    "ใบเสนอราคา"
+  );
+  const productName = getPrimaryPrintProductNameV1101(model);
+  return `${quotationNo} (${productName})`;
+}
+
+function printWithSuggestedFilenameV1101(model) {
+  const previousTitle = document.title;
+  const suggestedTitle = buildSuggestedPdfTitleV1101(model);
+  let restored = false;
+
+  const restoreTitle = () => {
+    if (restored) return;
+    restored = true;
+    document.title = previousTitle;
+    window.removeEventListener("afterprint", restoreTitle);
+  };
+
+  document.title = suggestedTitle;
+  window.addEventListener("afterprint", restoreTitle, { once: true });
+
+  try {
+    window.print();
+  } finally {
+    // Fallback for browsers that do not fire afterprint reliably.
+    window.setTimeout(restoreTitle, 60000);
+  }
+}
+
+function bindPrintV15Actions(model) {
+  const printButton = $("#printButton");
+  const backButton = $("#backFromPrintButton");
+
+  if (printButton) {
+    printButton.addEventListener("click", () => printWithSuggestedFilenameV1101(model));
+  }
+
+  if (backButton) {
+    backButton.addEventListener("click", () => {
+      location.hash = `#quotation-view/${model.quotation.id}`;
+    });
+  }
+}
+
+const originalDebugV1101 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1101() {
+  const result = typeof originalDebugV1101 === "function" ? await originalDebugV1101() : {};
+  return {
+    ...result,
+    version: FI_V1101_VERSION,
+    mobileSecondaryMenuHidden: true,
+    suggestedPdfFilename: true,
+    sqlChanged: false,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V1101_VERSION;

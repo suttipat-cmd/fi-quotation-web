@@ -4552,3 +4552,21 @@ body {
     -webkit-print-color-adjust: exact;
   }
 }
+
+
+/* =======================================================
+   v1.10.1 Mobile Menu Cleanup
+   Keep secondary admin pages accessible from Account Sheet
+   but remove them from the cramped mobile navigation bar.
+   ======================================================= */
+
+@media (max-width: 768px) {
+  .sidebar-menu.app-nav .menu-item[data-page="company"],
+  .sidebar-menu.app-nav .menu-item[data-page="settings"] {
+    display: none !important;
+  }
+
+  .mobile-account-tab-v1100 {
+    flex: 1 0 minmax(64px, 1fr);
+  }
+}
