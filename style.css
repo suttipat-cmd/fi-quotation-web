@@ -4247,3 +4247,308 @@ body {
     padding: 10px;
   }
 }
+
+
+/* =======================================================
+   v1.10.0 Mobile UX Audit + Clean Quotation Print Layout
+   ======================================================= */
+
+.mobile-account-header-v1100,
+.mobile-account-tab-v1100,
+.mobile-account-sheet-v1100 {
+  display: none;
+}
+
+.mobile-helper-v1100 {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-account-header-v1100 {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    border: 1px solid #dbeafe;
+    border-radius: 999px;
+    padding: 7px 12px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .mobile-account-tab-v1100 {
+    display: inline-flex;
+    height: 58px;
+    min-width: 64px;
+    border: 0;
+    border-radius: 16px;
+    padding: 4px 6px;
+    background: transparent;
+    color: #64748b;
+    font-weight: 750;
+    font-size: 11px;
+    line-height: 1.15;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    text-align: center;
+  }
+
+  .mobile-account-tab-v1100 span:first-child {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .mobile-account-tab-v1100:active,
+  .mobile-account-tab-v1100:hover,
+  .mobile-account-header-v1100:active,
+  .mobile-account-header-v1100:hover {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .mobile-account-sheet-v1100:not(.hidden) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+  }
+
+  .mobile-account-backdrop-v1100 {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.38);
+  }
+
+  .mobile-account-panel-v1100 {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+    border-radius: 24px 24px 0 0;
+    background: #ffffff;
+    box-shadow: 0 -18px 45px rgba(15, 23, 42, 0.20);
+  }
+
+  .mobile-account-grip-v1100 {
+    width: 42px;
+    height: 4px;
+    border-radius: 999px;
+    margin: 4px auto 14px;
+    background: #cbd5e1;
+  }
+
+  .mobile-account-user-v1100 {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .mobile-account-user-v1100 strong,
+  .mobile-account-user-v1100 span {
+    display: block;
+  }
+
+  .mobile-account-user-v1100 span {
+    color: #64748b;
+    font-size: 13px;
+  }
+
+  .mobile-account-actions-v1100 {
+    display: grid;
+    gap: 10px;
+    padding-top: 14px;
+  }
+
+  .mobile-account-actions-v1100 .btn {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .danger-mobile-v1100 {
+    background: #dc2626;
+    color: #ffffff;
+  }
+
+  .danger-mobile-v1100:hover {
+    background: #b91c1c;
+  }
+
+  .products-page-card-v1100 .card-header,
+  .mobile-stack-header-v1100 {
+    gap: 10px;
+  }
+
+  .products-page-card-v1100 #addProductButton {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .mobile-filter-bar-v1100 {
+    margin-bottom: 10px;
+    background: #f8fafc;
+    border: 1px solid #eef2f7;
+    border-radius: 16px;
+  }
+
+  .mobile-helper-v1100 {
+    display: block;
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .mobile-product-list-v1100 {
+    gap: 12px;
+  }
+
+  .mobile-product-card-v1100 {
+    border-color: #dbeafe;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+  }
+
+  .mobile-product-code-v1100 {
+    max-width: 58%;
+    overflow-wrap: anywhere;
+    color: #1d4ed8;
+  }
+
+  .mobile-product-description-v1100 {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .pagination-v195 {
+    padding: 10px 0 0;
+  }
+
+  .pagination-summary-v195 {
+    text-align: center;
+  }
+
+  .pagination-controls-v195 .btn {
+    min-height: 44px;
+  }
+
+  .print-v2-toolbar {
+    margin-bottom: 12px;
+  }
+}
+
+/* Clean Corporate Quotation Layout - reduces excessive boxes while keeping A4 structure */
+.print-v2-page {
+  border: 0;
+  background: #ffffff;
+}
+
+.print-v2-header {
+  border-bottom: 2px solid #111827;
+}
+
+.print-v2-customer {
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 7px 0 8px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.print-v2-section-heading {
+  background: transparent !important;
+  color: #0f172a !important;
+  border-radius: 0 !important;
+  padding: 7px 0 5px !important;
+  border-bottom: 2px solid #0f172a !important;
+}
+
+.print-v2-section-heading h3 {
+  font-size: 12.5px !important;
+  letter-spacing: 0.01em;
+}
+
+.print-v2-service-table {
+  border: 0 !important;
+}
+
+.print-v2-service-table th {
+  background: #f8fafc !important;
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+
+.print-v2-service-table td {
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.print-v2-section-summary {
+  border: 0 !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  padding: 6px 0 7px !important;
+  grid-template-columns: 1fr 60mm;
+}
+
+.print-v2-amount-text {
+  border: 0 !important;
+  border-radius: 0 !important;
+  min-height: 16mm !important;
+  padding: 4px 8px !important;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.print-v2-summary-table .is-net td {
+  border-top: 2px solid #111827 !important;
+  border-bottom: 2px solid #111827 !important;
+}
+
+.print-v2-note-box,
+.print-v2-bank-box {
+  border: 0 !important;
+  border-left: 3px solid #dbeafe !important;
+  border-radius: 0 !important;
+  background: #f8fafc;
+  padding: 7px 9px !important;
+}
+
+.print-v2-bottom-grid {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.print-v2-signatures > div {
+  border: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.print-v2-signatures .sign-line {
+  width: 78%;
+  border-bottom: 1px solid #111827;
+}
+
+@media print {
+  .print-v2-customer,
+  .print-v2-section-heading,
+  .print-v2-section-summary,
+  .print-v2-note-box,
+  .print-v2-bank-box,
+  .print-v2-bottom-grid,
+  .print-v2-signatures {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

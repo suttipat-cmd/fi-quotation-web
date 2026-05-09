@@ -15861,3 +15861,336 @@ window.FI_DEBUG = async function FI_DEBUG_V199() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V199_VERSION;
+
+
+// =======================================================
+// v1.10.0 Mobile UX Audit + Clean Quotation Print Layout
+// Scope: improve mobile usability across products/actions,
+// add discoverable mobile logout/account sheet, and reduce
+// excessive borders in quotation print/PDF layout.
+// No SQL/RLS/business logic changes.
+// =======================================================
+
+const FI_V1100_VERSION = "1.10.0";
+window.FI_APP_VERSION = FI_V1100_VERSION;
+
+function isMobileViewportV1100() {
+  return window.matchMedia?.("(max-width: 768px)")?.matches || window.innerWidth <= 768;
+}
+
+function getProductSearchTextV1100(row) {
+  return `${row?.code || ""} ${row?.name || ""} ${row?.description || ""} ${row?.default_unit || ""}`.toLowerCase();
+}
+
+function getProductFilteredRowsV1100() {
+  const rows = Array.isArray(appState.productRowsV1100) ? appState.productRowsV1100 : [];
+  const keyword = String(document.getElementById("productSearchV1100")?.value || "").trim().toLowerCase();
+  const status = String(document.getElementById("productStatusFilterV1100")?.value || "");
+
+  return rows.filter((row) => {
+    const matchText = !keyword || getProductSearchTextV1100(row).includes(keyword);
+    const matchStatus = !status || (status === "active" ? Boolean(row.is_active) : !row.is_active);
+    return matchText && matchStatus;
+  });
+}
+
+function renderMobileProductCardsV1100(rows, canEdit) {
+  if (!Array.isArray(rows) || !rows.length) return "";
+  return `
+    <div class="mobile-card-list-v197 mobile-product-list-v1100">
+      ${rows.map((row) => `
+        <article class="mobile-data-card-v197 mobile-product-card-v1100">
+          <div class="mobile-card-top-v197">
+            <strong class="mobile-product-code-v1100">${escapeHTML(row.code || "ไม่ระบุรหัส")}</strong>
+            ${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}
+          </div>
+
+          <div class="mobile-card-main-static-v197">
+            <strong>${escapeHTML(row.name || "-")}</strong>
+            <span class="mobile-product-description-v1100">${escapeHTML(row.description || "ไม่มีรายละเอียด")}</span>
+          </div>
+
+          <div class="mobile-card-grid-v197">
+            ${renderMobileInfoRowV197("หน่วย", escapeHTML(row.default_unit || "-"))}
+            ${renderMobileInfoRowV197("อัปเดตล่าสุด", formatDate(row.updated_at || row.created_at))}
+          </div>
+
+          ${canEdit ? `
+            <div class="mobile-card-actions-v197">
+              <button type="button" class="btn btn-primary" data-product-edit="${row.id}">แก้ไขสินค้า/บริการ</button>
+            </div>
+          ` : ""}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderProductsTableV1100(rows, canEdit) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  return renderTableWithPaginationV195({
+    key: "products-v1100",
+    rows: sourceRows,
+    renderTable: (pagedRows) => {
+      if (!pagedRows.length) return `<div class="empty-state">ไม่พบสินค้า/บริการตามเงื่อนไขที่เลือก</div>`;
+      return `
+        ${renderMobileProductCardsV1100(pagedRows, canEdit)}
+        <div class="table-wrap desktop-table-v197 product-table-wrap-v1100">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>ชื่อสินค้า/บริการ</th>
+                <th>รายละเอียด</th>
+                <th>หน่วย</th>
+                <th>สถานะ</th>
+                ${canEdit ? "<th>การกระทำ</th>" : ""}
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedRows.map((row) => `
+                <tr>
+                  <td><strong>${escapeHTML(row.code || "-")}</strong></td>
+                  <td>${escapeHTML(row.name || "-")}</td>
+                  <td>${escapeHTML(row.description || "-")}</td>
+                  <td>${escapeHTML(row.default_unit || "-")}</td>
+                  <td>${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}</td>
+                  ${canEdit ? `<td><button class="btn btn-ghost" data-product-edit="${row.id}">แก้ไข</button></td>` : ""}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+  });
+}
+
+function bindProductActionsV1100() {
+  document.querySelectorAll("[data-product-edit]").forEach((button) => {
+    if (button.dataset.v1100Bound) return;
+    button.dataset.v1100Bound = "true";
+    button.addEventListener("click", () => {
+      location.hash = `#product-edit/${button.dataset.productEdit}`;
+    });
+  });
+}
+
+function renderProductsListV1100(canEdit) {
+  const target = document.getElementById("productsTableV1100");
+  if (!target) return;
+  const rows = getProductFilteredRowsV1100();
+  target.innerHTML = renderProductsTableV1100(rows, canEdit);
+  bindPaginationV195("products-v1100", () => renderProductsListV1100(canEdit));
+  bindProductActionsV1100();
+}
+
+async function renderProductsPage() {
+  setPageHeader("สินค้า/บริการ", "Master Data สำหรับใช้ในใบเสนอราคา");
+  renderLoading();
+
+  const { data, error } = await supabaseClient
+    .from("products")
+    .select("id, code, name, description, default_unit, is_active, created_at, updated_at")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  const canEdit = appState.profile?.role === "admin";
+  appState.productRowsV1100 = data || [];
+
+  elements.pageContent.innerHTML = `
+    <div class="card products-page-card-v1100">
+      <div class="card-header mobile-stack-header-v1100">
+        <div>
+          <h3>สินค้า/บริการ</h3>
+          <p>${canEdit ? "Admin สามารถเพิ่ม แก้ไข และเปิด/ปิดสินค้าได้" : "หน้านี้เป็น read-only สำหรับ role ของคุณ"}</p>
+        </div>
+        ${canEdit ? `<button id="addProductButton" class="btn btn-primary">+ เพิ่มสินค้า</button>` : ""}
+      </div>
+
+      <div class="filter-bar mobile-filter-bar-v1100">
+        <input id="productSearchV1100" type="search" placeholder="ค้นหารหัส / ชื่อ / รายละเอียด" />
+        <select id="productStatusFilterV1100">
+          <option value="">ทุกสถานะ</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
+      <div class="mobile-helper-v1100">บนมือถือระบบจะแสดงข้อมูลเป็นการ์ด เพื่อให้อ่านและกดใช้งานง่ายขึ้น</div>
+      <div id="productsTableV1100"></div>
+    </div>
+  `;
+
+  document.getElementById("addProductButton")?.addEventListener("click", () => {
+    location.hash = "#product-new";
+  });
+
+  ["productSearchV1100", "productStatusFilterV1100"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => renderProductsListV1100(canEdit));
+    document.getElementById(id)?.addEventListener("change", () => renderProductsListV1100(canEdit));
+  });
+
+  renderProductsListV1100(canEdit);
+}
+
+function ensureMobileAccountSheetV1100() {
+  if (document.getElementById("mobileAccountSheetV1100")) return;
+
+  const sheet = document.createElement("div");
+  sheet.id = "mobileAccountSheetV1100";
+  sheet.className = "mobile-account-sheet-v1100 hidden";
+  sheet.innerHTML = `
+    <div class="mobile-account-backdrop-v1100" data-account-action-v1100="close"></div>
+    <section class="mobile-account-panel-v1100">
+      <div class="mobile-account-grip-v1100"></div>
+      <div class="mobile-account-user-v1100">
+        <div class="brand-mark small">FI</div>
+        <div>
+          <strong id="mobileAccountNameV1100">-</strong>
+          <span id="mobileAccountRoleV1100">-</span>
+        </div>
+      </div>
+      <div class="mobile-account-actions-v1100">
+        <button type="button" class="btn btn-ghost" data-account-action-v1100="settings">ตั้งค่า</button>
+        <button type="button" class="btn btn-ghost" data-account-action-v1100="company">ข้อมูลบริษัท</button>
+        <button type="button" class="btn btn-primary danger-mobile-v1100" data-account-action-v1100="logout">ออกจากระบบ</button>
+        <button type="button" class="btn btn-ghost" data-account-action-v1100="close">ปิด</button>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(sheet);
+}
+
+function updateMobileAccountLabelsV1100() {
+  const name = appState.profile?.full_name || appState.profile?.email || "-";
+  const role = roleLabel(appState.profile?.role || "-");
+  const nameTarget = document.getElementById("mobileAccountNameV1100");
+  const roleTarget = document.getElementById("mobileAccountRoleV1100");
+  if (nameTarget) nameTarget.textContent = name;
+  if (roleTarget) roleTarget.textContent = role;
+}
+
+function openMobileAccountSheetV1100() {
+  ensureMobileAccountSheetV1100();
+  updateMobileAccountLabelsV1100();
+  document.getElementById("mobileAccountSheetV1100")?.classList.remove("hidden");
+  document.body.classList.add("mobile-account-open-v1100");
+}
+
+function closeMobileAccountSheetV1100() {
+  document.getElementById("mobileAccountSheetV1100")?.classList.add("hidden");
+  document.body.classList.remove("mobile-account-open-v1100");
+}
+
+function ensureMobileAccountEntrypointsV1100() {
+  const header = document.querySelector(".sidebar.app-header");
+  const nav = elements.sidebarMenu || document.getElementById("sidebarMenu");
+
+  if (header && !document.getElementById("mobileAccountHeaderButtonV1100")) {
+    const headerButton = document.createElement("button");
+    headerButton.id = "mobileAccountHeaderButtonV1100";
+    headerButton.type = "button";
+    headerButton.className = "mobile-account-header-v1100";
+    headerButton.dataset.mobileAccountV1100 = "true";
+    headerButton.textContent = "บัญชี";
+    header.appendChild(headerButton);
+  }
+
+  if (nav && !document.getElementById("mobileAccountNavButtonV1100")) {
+    const navButton = document.createElement("button");
+    navButton.id = "mobileAccountNavButtonV1100";
+    navButton.type = "button";
+    navButton.className = "mobile-account-tab-v1100";
+    navButton.dataset.mobileAccountV1100 = "true";
+    navButton.innerHTML = `<span>👤</span><span>บัญชี</span>`;
+    nav.appendChild(navButton);
+  }
+}
+
+const originalRenderMenuV1100 = window.renderMenu || renderMenu;
+window.renderMenu = function renderMenuV1100(...args) {
+  const result = originalRenderMenuV1100.apply(this, args);
+  window.setTimeout(() => {
+    ensureMobileAccountSheetV1100();
+    ensureMobileAccountEntrypointsV1100();
+    updateMobileAccountLabelsV1100();
+  }, 0);
+  return result;
+};
+try { renderMenu = window.renderMenu; } catch (_error) {}
+
+const originalRenderCurrentPageV1100 = window.renderCurrentPage || renderCurrentPage;
+window.renderCurrentPage = async function renderCurrentPageV1100(...args) {
+  const result = await originalRenderCurrentPageV1100.apply(this, args);
+  ensureMobileAccountSheetV1100();
+  ensureMobileAccountEntrypointsV1100();
+  updateMobileAccountLabelsV1100();
+  document.body.classList.toggle("is-mobile-v1100", isMobileViewportV1100());
+  return result;
+};
+try { renderCurrentPage = window.renderCurrentPage; } catch (_error) {}
+
+(function bindMobileAccountActionsV1100() {
+  if (window.__fiMobileAccountBoundV1100) return;
+  window.__fiMobileAccountBoundV1100 = true;
+
+  document.addEventListener("click", async (event) => {
+    if (event.target.closest?.("[data-mobile-account-v1100]")) {
+      event.preventDefault();
+      openMobileAccountSheetV1100();
+      return;
+    }
+
+    const actionTarget = event.target.closest?.("[data-account-action-v1100]");
+    if (!actionTarget) return;
+
+    const action = actionTarget.dataset.accountActionV1100;
+    if (action === "close") {
+      closeMobileAccountSheetV1100();
+      return;
+    }
+
+    if (action === "settings") {
+      closeMobileAccountSheetV1100();
+      location.hash = "#settings";
+      return;
+    }
+
+    if (action === "company") {
+      closeMobileAccountSheetV1100();
+      location.hash = "#company";
+      return;
+    }
+
+    if (action === "logout") {
+      closeMobileAccountSheetV1100();
+      await handleLogout();
+    }
+  }, true);
+
+  window.addEventListener("resize", () => document.body.classList.toggle("is-mobile-v1100", isMobileViewportV1100()));
+  document.addEventListener("DOMContentLoaded", () => window.setTimeout(() => {
+    ensureMobileAccountSheetV1100();
+    ensureMobileAccountEntrypointsV1100();
+    document.body.classList.toggle("is-mobile-v1100", isMobileViewportV1100());
+  }, 0));
+})();
+
+const originalDebugV1100 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1100() {
+  const result = typeof originalDebugV1100 === "function" ? await originalDebugV1100() : {};
+  return {
+    ...result,
+    version: FI_V1100_VERSION,
+    mobileUxAudit: true,
+    mobileAccountMenu: true,
+    mobileProductsCardView: true,
+    cleanCorporatePrintLayout: true,
+    sqlChanged: false,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V1100_VERSION;

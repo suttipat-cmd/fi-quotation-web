@@ -1,23 +1,36 @@
-# FI Quotation Web App v1.9.9
+# FI Quotation Web App v1.10.0
 
-## v1.9.9 Owner Assignment + Sales Name Normalization
+## v1.10.0 Mobile UX Audit + Clean Quotation Print Layout
 
-Release นี้ต่อยอดจาก v1.9.8 โดยเพิ่มให้ Admin สามารถสร้างหรือแก้ไข Draft ใบเสนอราคาแทน Sales ได้ และยังสามารถสร้างใบเสนอราคาเป็นของ Admin เองได้ด้วย ระบบจะยึด `owner_id` เป็นตัวตนจริงของผู้เสนอราคา และใช้ชื่อปัจจุบันจาก `profiles` เพื่อแสดงผลแทนการยึดชื่อ snapshot
+Release นี้ต่อยอดจาก v1.9.9 โดยโฟกัสเฉพาะ Mobile UX และรูปแบบใบเสนอราคา ไม่เปลี่ยน SQL/RLS และไม่เปลี่ยน business logic เดิม
 
-## สิ่งที่แก้ใน v1.9.9
+## สิ่งที่แก้ใน v1.10.0
 
-- อัปเดต cache busting เป็น `style.css?v=1.9.9` และ `script.js?v=1.9.9`
-- อัปเดต `window.FI_APP_VERSION = "1.9.9"`
-- เพิ่ม field `เจ้าของใบเสนอราคา / Sales` ในฟอร์มสร้าง/แก้ไข Draft สำหรับ Admin
-  - Admin เลือกได้ทั้งตัวเองและ Sales ที่ active
-  - Sales ยังสร้าง/แก้ไขใบของตัวเองตามเดิม
-  - Manager ยังสร้าง/แก้ไขไม่ได้ตามเดิม
-- ตอนบันทึก Draft จะใช้ `owner_id` จาก dropdown ที่ Admin เลือก
-- ปรับ Dashboard / Heatmap / Excel Report ให้ group ตาม `owner_id` และแสดงชื่อปัจจุบันจาก `profiles`
-- หน้า View / Preview / Print ใช้ชื่อผู้เสนอราคาปัจจุบันจาก `profiles` ตาม `owner_id`
-- เพิ่ม auto-grow textarea ให้ field รายละเอียดเพิ่มเติมขยายสูงตามจำนวนบรรทัดอัตโนมัติ
-- เพิ่ม `supabase/patch_v1_9_9.sql` เป็น release marker
-- ไม่ต้องรัน SQL ใหม่ถ้าเคยรัน `supabase/patch_v1_9_1.sql` สำเร็จแล้ว
+- อัปเดต cache busting เป็น `style.css?v=1.10.0` และ `script.js?v=1.10.0`
+- อัปเดต `window.FI_APP_VERSION = "1.10.0"`
+- ตรวจและปรับ Mobile UX เพิ่มเติม โดยเฉพาะหน้า `สินค้า/บริการ`
+- หน้า `สินค้า/บริการ` บนมือถือแสดงเป็น Product Card View ที่อ่านง่ายขึ้น
+  - แสดงรหัสสินค้า/บริการ
+  - ชื่อสินค้า/บริการ
+  - รายละเอียด
+  - หน่วย
+  - สถานะ
+  - ปุ่มแก้ไขสำหรับ Admin
+- เพิ่มช่องค้นหาและกรองสถานะในหน้า `สินค้า/บริการ`
+- เพิ่มปุ่ม `บัญชี` บนมือถือ ทั้งที่ header และ bottom navigation
+- เพิ่ม Mobile Account Sheet สำหรับมือถือ
+  - แสดงชื่อผู้ใช้
+  - แสดง role
+  - ไปหน้า Settings
+  - ไปหน้า Company Profile
+  - ออกจากระบบ
+- ปรับ pagination/filter/action บนมือถือให้อ่านและกดง่ายขึ้น
+- ปรับรูปแบบใบเสนอราคาเป็น Clean Corporate Layout
+  - ลดกรอบที่ไม่จำเป็น
+  - คงเส้นตารางหลักไว้เพื่ออ่านรายการสินค้า/บริการ
+  - เปลี่ยนหมายเหตุ/เงื่อนไข/บัญชีธนาคารเป็น block พื้นหลังอ่อนพร้อมเส้นซ้าย
+  - ลายเซ็นใช้เส้นเซ็น ไม่เน้นกรอบกล่อง
+- ไม่ต้องรัน SQL ใหม่
 
 ## ไฟล์ใน package
 
@@ -43,6 +56,7 @@ supabase/
   patch_v1_9_7.sql
   patch_v1_9_8.sql
   patch_v1_9_9.sql
+  patch_v1_10_0.sql
   reset_usage_data_keep_master.sql
 ```
 
@@ -50,7 +64,7 @@ supabase/
 
 1. แตก ZIP
 2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
-3. รอบนี้ไม่ต้องรัน SQL ใหม่ ถ้าเคยรัน `supabase/patch_v1_9_1.sql` สำเร็จแล้ว
+3. รอบนี้ไม่ต้องรัน SQL ใหม่
 4. เปิด Live Server หรือ GitHub Pages แล้วทำ hard refresh
 
 ## ตรวจ release ก่อน push
@@ -69,7 +83,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.9.9 owner assignment sales normalization"
+git commit -m "Release v1.10.0 mobile ux clean print layout"
 git push origin main
 ```
 
@@ -91,7 +105,7 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.9.9
+1.10.0
 ```
 
 ## Debug helper
@@ -103,9 +117,10 @@ await window.FI_DEBUG()
 ควรเห็นค่าประมาณนี้:
 
 ```text
-version: 1.9.9
-ownerAssignment: true
-adminCanCreateOwnQuotation: true
-ownerIdSourceOfTruth: true
-autoGrowTextarea: true
+version: 1.10.0
+mobileUxAudit: true
+mobileAccountMenu: true
+mobileProductsCardView: true
+cleanCorporatePrintLayout: true
+sqlChanged: false
 ```
