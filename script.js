@@ -16867,3 +16867,298 @@ window.FI_DEBUG = async function FI_DEBUG_V1102() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V1102_VERSION;
+
+// =======================================================
+// v1.10.3 Drive PDF Rendering Fix
+// Scope: render PDF in the user's browser and upload the
+// finished PDF to Apps Script as base64. Apps Script no longer
+// performs HTML-to-PDF conversion for new uploads.
+// =======================================================
+
+const FI_V1103_VERSION = "1.10.3";
+
+function ensureDrivePdfLibrariesV1103() {
+  if (typeof window.html2canvas !== "function") {
+    throw new Error("ไม่พบ html2canvas library กรุณาตรวจการโหลด CDN หรืออินเทอร์เน็ต");
+  }
+  if (!window.jspdf?.jsPDF) {
+    throw new Error("ไม่พบ jsPDF library กรุณาตรวจการโหลด CDN หรืออินเทอร์เน็ต");
+  }
+}
+
+async function waitForPrintAssetsV1103(root) {
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch (_error) {
+      // Continue with fallback fonts if the browser cannot confirm font readiness.
+    }
+  }
+
+  const images = Array.from(root.querySelectorAll("img"));
+  await Promise.all(images.map((image) => new Promise((resolve) => {
+    if (image.complete && image.naturalWidth > 0) {
+      resolve();
+      return;
+    }
+    image.addEventListener("load", resolve, { once: true });
+    image.addEventListener("error", resolve, { once: true });
+    setTimeout(resolve, 2500);
+  })));
+}
+
+async function fetchImageAsDataUrlV1103(src) {
+  const url = String(src || "").trim();
+  if (!url || url.startsWith("data:")) return url;
+
+  try {
+    const response = await fetch(url, { mode: "cors", credentials: "omit", cache: "force-cache" });
+    if (!response.ok) throw new Error(`Cannot fetch image: ${response.status}`);
+    const blob = await response.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Cannot read image"));
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn("Drive PDF image inline skipped; html2canvas will try to load original image.", error);
+    return url;
+  }
+}
+
+async function inlineImagesForDriveCaptureV1103(root) {
+  const images = Array.from(root.querySelectorAll("img"));
+  await Promise.all(images.map(async (image) => {
+    const originalSrc = image.getAttribute("src") || image.currentSrc || "";
+    const dataUrl = await fetchImageAsDataUrlV1103(originalSrc);
+    if (dataUrl && dataUrl !== originalSrc) {
+      image.setAttribute("src", dataUrl);
+      image.removeAttribute("srcset");
+      image.crossOrigin = "anonymous";
+    }
+  }));
+}
+
+function getPrintPageForDriveCaptureV1103() {
+  return document.getElementById("quotationPrintPage") || document.querySelector(".print-v2-page") || document.querySelector(".print-page");
+}
+
+async function createDriveCaptureCloneV1103() {
+  const page = getPrintPageForDriveCaptureV1103();
+  if (!page) throw new Error("ไม่พบพื้นที่เอกสารสำหรับสร้าง PDF");
+
+  const container = document.createElement("div");
+  container.className = "drive-capture-root-v1103";
+
+  const clone = page.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.style.boxShadow = "none";
+  clone.style.border = "0";
+  clone.style.margin = "0";
+  clone.style.background = "#ffffff";
+  clone.style.maxWidth = "none";
+  clone.style.width = "210mm";
+
+  container.appendChild(clone);
+  document.body.appendChild(container);
+
+  await inlineImagesForDriveCaptureV1103(clone);
+  await waitForPrintAssetsV1103(clone);
+
+  // Let layout settle after image/font changes.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  return { container, clone };
+}
+
+function canvasToPdfBase64V1103(canvas) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+  const pageWidthMm = 210;
+  const pageHeightMm = 297;
+  const sourceWidth = canvas.width;
+  const maxSourcePageHeight = Math.floor(sourceWidth * pageHeightMm / pageWidthMm);
+
+  let sourceY = 0;
+  let pageIndex = 0;
+
+  while (sourceY < canvas.height) {
+    const sliceHeight = Math.min(maxSourcePageHeight, canvas.height - sourceY);
+    const pageCanvas = document.createElement("canvas");
+    pageCanvas.width = sourceWidth;
+    pageCanvas.height = sliceHeight;
+    const ctx = pageCanvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+    ctx.drawImage(canvas, 0, sourceY, sourceWidth, sliceHeight, 0, 0, sourceWidth, sliceHeight);
+
+    const imgData = pageCanvas.toDataURL("image/png");
+    const sliceHeightMm = sliceHeight * pageWidthMm / sourceWidth;
+    if (pageIndex > 0) pdf.addPage("a4", "portrait");
+    pdf.addImage(imgData, "PNG", 0, 0, pageWidthMm, sliceHeightMm, undefined, "FAST");
+
+    sourceY += sliceHeight;
+    pageIndex += 1;
+  }
+
+  const dataUri = pdf.output("datauristring");
+  return dataUri.split(",")[1] || "";
+}
+
+async function buildDrivePdfBase64V1103() {
+  ensureDrivePdfLibrariesV1103();
+
+  const { container, clone } = await createDriveCaptureCloneV1103();
+  try {
+    const canvas = await window.html2canvas(clone, {
+      backgroundColor: "#ffffff",
+      scale: Math.min(2, Math.max(1.5, window.devicePixelRatio || 1.5)),
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: Math.max(document.documentElement.clientWidth, 1200),
+      windowHeight: Math.max(document.documentElement.clientHeight, 1600),
+    });
+
+    const base64 = canvasToPdfBase64V1103(canvas);
+    if (!base64) throw new Error("ไม่สามารถสร้าง PDF สำหรับบันทึก Google Drive ได้");
+    return base64;
+  } finally {
+    container.remove();
+  }
+}
+
+async function handleSaveQuotationPdfToDriveV1102(model) {
+  const button = document.getElementById("saveDrivePdfButtonV1102");
+  const target = document.getElementById("driveArchiveStatusV1102");
+
+  try {
+    if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+      throw new Error("คุณไม่มีสิทธิ์บันทึกใบเสนอราคานี้ไป Google Drive");
+    }
+
+    const existing = await loadDriveFileLogV1102(model.quotation.id);
+    if (existing && !existing.loadError) {
+      renderDriveArchiveStatusV1102(model, existing, appState.driveArchiveSettingsV1102 || {});
+      showToast("ใบเสนอราคานี้ถูกบันทึกไป Google Drive แล้ว");
+      return;
+    }
+
+    const settings = validateDriveArchiveSettingsV1102(appState.driveArchiveSettingsV1102 || await loadDriveArchiveSettingsV1102());
+    const ownerProfile = await loadQuotationOwnerProfileV1102(model.quotation.owner_id);
+    const salesFolderName = buildDriveFolderNameV1102(ownerProfile, model.ownerName);
+    const fileName = buildDrivePdfFileNameV1102(model);
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "กำลังสร้าง PDF...";
+    }
+    if (target) {
+      target.innerHTML = `<div class="alert alert-warning">กำลังสร้าง PDF จากหน้าเอกสารจริงใน Browser...</div>`;
+    }
+
+    const pdfBase64 = await buildDrivePdfBase64V1103();
+
+    if (button) button.textContent = "กำลังบันทึกไป Drive...";
+    if (target) {
+      target.innerHTML = `<div class="alert alert-warning">กำลังบันทึก PDF ไป Google Drive...</div>`;
+    }
+
+    const response = await postToAppsScriptIframeV1102(settings.webAppUrl, {
+      action: "upload",
+      secret: settings.uploadSecret,
+      parentFolderId: settings.parentFolderId,
+      quotationId: model.quotation.id,
+      quotationNo: model.quotation.quotation_no || "",
+      salesFolderName,
+      fileName,
+      pdfBase64,
+      renderMode: "browser-pdf-base64",
+      clientVersion: FI_V1103_VERSION,
+    });
+
+    if (!response.ok) throw new Error(response.error || "Apps Script ไม่สามารถบันทึกไฟล์ได้");
+
+    const savedLog = await insertDriveFileLogV1102({
+      model,
+      fileName,
+      response,
+      folderId: settings.parentFolderId,
+    });
+
+    renderDriveArchiveStatusV1102(model, savedLog, settings);
+    showToast(response.existing ? "พบไฟล์เดิมใน Google Drive และบันทึก log แล้ว" : "บันทึก PDF ไป Google Drive สำเร็จ");
+  } catch (error) {
+    console.error(error);
+    if (target) target.innerHTML = `<div class="alert alert-error">${escapeHTML(error.message || "ไม่สามารถบันทึกไป Google Drive ได้")}</div>`;
+    showToast(error.message || "ไม่สามารถบันทึกไป Google Drive ได้");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "บันทึกไป Google Drive";
+    }
+  }
+}
+
+function renderDriveArchiveStatusV1102(model, driveLog, settings) {
+  const target = document.getElementById("driveArchiveStatusV1102");
+  if (!target) return;
+
+  if (driveLog && driveLog.loadError) {
+    target.innerHTML = `<div class="alert alert-warning">ยังตรวจประวัติ Google Drive ไม่ได้ กรุณารัน <strong>supabase/patch_v1_10_2.sql</strong></div>`;
+    return;
+  }
+
+  if (driveLog?.file_url) {
+    target.innerHTML = `
+      <a class="btn btn-ghost drive-open-button-v1102" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">
+        เปิดไฟล์ใน Google Drive
+      </a>
+      <span class="drive-status-text-v1102">บันทึกแล้ว: ${escapeHTML(driveLog.file_name || "PDF")}</span>
+    `;
+    return;
+  }
+
+  if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+    target.innerHTML = `<div class="alert alert-warning">คุณมีสิทธิ์ดูเอกสาร แต่ไม่มีสิทธิ์บันทึก PDF ไป Google Drive</div>`;
+    return;
+  }
+
+  if (!isDriveArchiveConfiguredV1102(settings)) {
+    target.innerHTML = `
+      <div class="alert alert-warning">
+        ยังไม่ได้ตั้งค่า Google Drive Archive กรุณาให้ Admin ตั้งค่า Web App URL, Folder ID และ Shared Secret ในเมนูตั้งค่า
+      </div>
+    `;
+    return;
+  }
+
+  target.innerHTML = `
+    <button id="saveDrivePdfButtonV1102" type="button" class="btn btn-ghost">บันทึกไป Google Drive</button>
+    <span class="drive-status-text-v1102">ระบบจะสร้าง PDF จากหน้าเอกสารที่ Browser แสดงอยู่ เพื่อให้ใกล้เคียงกับการกดบันทึก PDF เองมากที่สุด</span>
+  `;
+  document.getElementById("saveDrivePdfButtonV1102")?.addEventListener("click", async () => {
+    await handleSaveQuotationPdfToDriveV1102(model);
+  });
+}
+
+const originalDebugV1103 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1103() {
+  const result = typeof originalDebugV1103 === "function" ? await originalDebugV1103() : {};
+  return {
+    ...result,
+    version: FI_V1103_VERSION,
+    googleDriveArchive: true,
+    onePdfPerQuotation: true,
+    drivePdfRenderMode: "browser-pdf-base64",
+    appsScriptSavesPdfBlobOnly: true,
+    htmlToPdfInAppsScriptDisabledForNewUploads: true,
+    sqlChanged: false,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V1103_VERSION;

@@ -4629,3 +4629,42 @@ body {
     display: none !important;
   }
 }
+
+
+/* =======================================================
+   v1.10.3 Drive PDF Rendering Fix
+   Capture clean A4 page in browser before upload to Drive
+   ======================================================= */
+
+.drive-capture-root-v1103 {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  width: 210mm;
+  min-height: 297mm;
+  background: #ffffff;
+  color: #111827;
+  z-index: -1;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.drive-capture-root-v1103 .print-v2-page,
+.drive-capture-root-v1103 .print-page {
+  width: 210mm !important;
+  max-width: none !important;
+  min-height: 297mm;
+  height: auto !important;
+  margin: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: #ffffff !important;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.drive-capture-status-v1103 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

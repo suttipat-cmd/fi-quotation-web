@@ -1,32 +1,37 @@
-# FI Quotation Web App v1.10.2
+# FI Quotation Web App v1.10.3
 
-## v1.10.2 Google Drive PDF Archive
+## v1.10.3 Drive PDF Rendering Fix
 
-Release นี้ต่อยอดจาก v1.10.1 โดยเพิ่มความสามารถบันทึก PDF ใบเสนอราคาไปยัง Google Drive ผ่าน Google Apps Script Web App พร้อมบันทึก log ลง Supabase และป้องกันการบันทึกซ้ำ 1 ใบเสนอราคา = 1 ไฟล์ PDF
+Release นี้ต่อยอดจาก v1.10.2 เพื่อแก้ปัญหา PDF ที่บันทึกลง Google Drive แล้วหน้าตาไม่เหมือน PDF ที่ผู้ใช้กดพิมพ์/บันทึกจากหน้าเว็บเอง
 
-## สิ่งที่เพิ่มใน v1.10.2
+## สาเหตุที่แก้ใน v1.10.3
 
-- อัปเดต cache busting เป็น `style.css?v=1.10.2` และ `script.js?v=1.10.2`
-- อัปเดต `window.FI_APP_VERSION = "1.10.2"`
-- เพิ่ม section `Google Drive Archive` ในเมนู `ตั้งค่า`
-  - Google Apps Script Web App URL
-  - Google Drive Parent Folder ID
-  - Shared Secret / Upload Token
-  - ปุ่มบันทึกการตั้งค่า
-  - ปุ่มทดสอบการเชื่อมต่อ
-- เพิ่มปุ่ม `บันทึกไป Google Drive` ในหน้า Preview / Print
-- ถ้าใบเสนอราคาถูกบันทึก Drive แล้ว จะแสดงปุ่ม `เปิดไฟล์ใน Google Drive` แทน
-- บังคับระดับ DB ด้วย `quotation_id UNIQUE` เพื่อให้ 1 ใบเสนอราคาบันทึก Drive ได้ 1 ครั้ง
-- Apps Script จะสร้าง folder ย่อยของ Sales ภายใต้ Parent Folder:
+ใน v1.10.2 ระบบส่ง HTML ไปให้ Google Apps Script แปลงเป็น PDF ทำให้ผลลัพธ์ต่างจาก Chrome Save as PDF เช่น ฟอนต์ไทย, โลโก้, spacing, line-height และ page layout
+
+v1.10.3 เปลี่ยน flow เป็น:
 
 ```text
-Parent Folder
-└── ชื่อ Sales - email
-    └── เลขที่ใบเสนอราคา (สินค้า/บริการ).pdf
+Browser สร้าง PDF จากหน้าเอกสารจริง
+↓
+ส่ง PDF base64 ไป Google Apps Script
+↓
+Apps Script บันทึก PDF blob ลง Google Drive
 ```
 
-- เพิ่มไฟล์ `google-apps-script/Code.gs`
-- เพิ่ม SQL patch `supabase/patch_v1_10_2.sql`
+ดังนั้น Apps Script จะไม่แปลง HTML เป็น PDF สำหรับ upload ใหม่แล้ว
+
+## สิ่งที่เปลี่ยนใน v1.10.3
+
+- อัปเดต cache busting เป็น `style.css?v=1.10.3` และ `script.js?v=1.10.3`
+- อัปเดต `window.FI_APP_VERSION = "1.10.3"`
+- เพิ่ม CDN library สำหรับสร้าง PDF ฝั่ง Browser:
+  - `html2canvas@1.4.1`
+  - `jsPDF@2.5.1`
+- ปรับปุ่ม `บันทึกไป Google Drive` ให้สร้าง PDF จากหน้าเอกสารจริงใน Browser ก่อน upload
+- ปรับ `google-apps-script/Code.gs` ให้รับ `pdfBase64` แล้วบันทึกเป็น PDF blob ลง Google Drive โดยตรง
+- คงหลักการเดิม: 1 ใบเสนอราคา = 1 ไฟล์ PDF ใน Google Drive
+- คงชื่อไฟล์เดิม: `เลขที่ใบเสนอราคา (สินค้า/บริการ).pdf`
+- ไม่มี SQL ใหม่ใน v1.10.3
 
 ## ไฟล์ใน package
 
@@ -43,92 +48,49 @@ google-apps-script/
   Code.gs
 supabase/
   README_SQL.md
-  patch_v1_7_2.sql
-  patch_v1_8_0.sql
-  patch_v1_9_0.sql
-  patch_v1_9_1.sql
-  patch_v1_9_2.sql
-  patch_v1_9_3.sql
-  patch_v1_9_4.sql
-  patch_v1_9_5.sql
-  patch_v1_9_7.sql
-  patch_v1_9_8.sql
-  patch_v1_9_9.sql
-  patch_v1_10_0.sql
-  patch_v1_10_1.sql
   patch_v1_10_2.sql
   reset_usage_data_keep_master.sql
+  ...patch เก่าที่ใช้ตั้งค่าระบบ
 ```
 
-## ขั้นตอนติดตั้ง v1.10.2
+## ขั้นตอนติดตั้ง v1.10.3
 
-### 1) รัน SQL ใน Supabase
-
-เปิด Supabase SQL Editor แล้วรัน:
-
-```text
-supabase/patch_v1_10_2.sql
-```
-
-Patch นี้จะสร้าง/เตรียม:
-
-```text
-app_settings
-quotation_drive_files
-RLS policies
-quotation_id UNIQUE
-```
-
-### 2) สร้าง Google Apps Script Web App
-
-1. ไปที่ Google Apps Script
-2. สร้าง Project ใหม่
-3. สร้าง/เปิดไฟล์ `Code.gs`
-4. Copy เนื้อหาจาก `google-apps-script/Code.gs` ไปวาง
-5. ตั้งค่า Script Property:
-
-```text
-UPLOAD_SECRET = ค่าเดียวกับที่จะกรอกในหน้า Settings ของเว็บ
-```
-
-6. Deploy > New deployment > Web app
-7. ตั้งค่า:
-
-```text
-Execute as: Me
-Who has access: Anyone with the link
-```
-
-8. Copy Web App URL ที่ลงท้าย `/exec`
-
-### 3) ตั้งค่าในเว็บ
-
-Login ด้วย Admin แล้วเข้า:
-
-```text
-ตั้งค่า > Google Drive Archive
-```
-
-กรอก:
-
-```text
-Google Apps Script Web App URL
-Google Drive Parent Folder ID
-Shared Secret / Upload Token
-```
-
-จากนั้นกด:
-
-```text
-บันทึกการตั้งค่า Drive
-ทดสอบการเชื่อมต่อ
-```
-
-### 4) ติดตั้งไฟล์เว็บ
+### 1) ติดตั้งไฟล์เว็บ
 
 1. แตก ZIP
 2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
 3. เปิด Live Server หรือ GitHub Pages แล้วทำ hard refresh
+
+```text
+Mac: Command + Shift + R
+Windows: Ctrl + Shift + R
+```
+
+### 2) ไม่ต้องรัน SQL ใหม่
+
+ถ้าเคยรัน `supabase/patch_v1_10_2.sql` สำเร็จแล้ว รอบนี้ไม่ต้องรัน SQL เพิ่ม
+
+### 3) อัปเดต Google Apps Script
+
+ต้องอัปเดต Apps Script เป็น v1.10.3 เพราะ payload เปลี่ยนจาก HTML เป็น PDF base64
+
+1. เปิด Google Apps Script Project เดิมที่ใช้กับระบบนี้
+2. เปิดไฟล์ `Code.gs`
+3. Copy เนื้อหาจากไฟล์นี้ไปวางทับ:
+
+```text
+google-apps-script/Code.gs
+```
+
+4. ตรวจ Script Property ว่ายังมีค่า:
+
+```text
+UPLOAD_SECRET = ค่าเดียวกับในหน้า Settings ของเว็บ
+```
+
+5. Deploy > Manage deployments > Edit deployment
+6. เลือก version ใหม่ แล้วกด Deploy
+7. ใช้ Web App URL เดิมได้ ถ้า deploy เป็น deployment เดิม
 
 ## ตรวจ release ก่อน push
 
@@ -139,14 +101,12 @@ node scripts/check-release.js
 node --check script.js
 ```
 
-ถ้ายังไม่ได้ติดตั้ง Node.js สามารถข้าม local check แล้วตรวจบน GitHub Pages ด้วย Console แทนได้
-
 ## Push ผ่าน VS Code Terminal
 
 ```bash
 git status
 git add .
-git commit -m "Release v1.10.2 google drive pdf archive"
+git commit -m "Release v1.10.3 drive pdf rendering fix"
 git push origin main
 ```
 
@@ -168,7 +128,7 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.10.2
+1.10.3
 ```
 
 ## Debug helper
@@ -180,16 +140,28 @@ await window.FI_DEBUG()
 ควรเห็นค่าประมาณนี้:
 
 ```text
-version: 1.10.2
-googleDriveArchive: true
-googleDriveSettingsInSettingsPage: true
-onePdfPerQuotation: true
-appsScriptIframePost: true
-sqlChanged: true
+version: 1.10.3
+drivePdfRenderMode: browser-pdf-base64
+appsScriptSavesPdfBlobOnly: true
+sqlChanged: false
+```
+
+## จุดที่ต้องทดสอบทันที
+
+```text
+1. เปิดหน้า Preview / Print ของใบเสนอราคาที่ยืนยันแล้ว
+2. กด พิมพ์ / บันทึกเป็น PDF แล้วบันทึกไฟล์เองไว้ 1 ไฟล์
+3. กด บันทึกไป Google Drive
+4. เปิดไฟล์จากปุ่ม เปิดไฟล์ใน Google Drive
+5. เทียบไฟล์จากข้อ 2 กับข้อ 4 ว่า layout ใกล้เคียงกันมากขึ้น
+6. ตรวจว่าโลโก้แสดงถูกต้อง
+7. ตรวจว่าฟอนต์ไทย/ระยะบรรทัด/ตารางไม่เพี้ยนแบบ v1.10.2
+8. ตรวจว่าใบเดิมบันทึกซ้ำไม่ได้เหมือนเดิม
 ```
 
 ## ข้อควรทราบ
 
-- การ upload ไป Apps Script ใช้ hidden iframe form post เพื่อหลีกเลี่ยงปัญหา CORS ของ Google Apps Script
-- Shared Secret ใน GitHub Pages ไม่ใช่ secret ระดับ backend ใช้ป้องกัน request มั่วระดับพื้นฐาน
-- หากบันทึก Drive สำเร็จแล้ว ระบบจะไม่ให้บันทึกซ้ำ แต่จะแสดงปุ่ม `เปิดไฟล์ใน Google Drive`
+- PDF ที่ upload ไป Drive ใน v1.10.3 เป็น PDF ที่สร้างจากการ capture หน้าเอกสารใน Browser เป็นภาพลง PDF จึงเน้นความเหมือนด้านหน้าตาเป็นหลัก
+- Text ใน PDF ที่บันทึกเข้า Drive อาจไม่ selectable 100% เหมือน PDF ที่ Chrome Save as PDF สร้างเอง
+- หากต้องการให้เหมือน Chrome Save as PDF แบบเกือบ 100% และ text selectable ควรใช้ backend ที่รัน Headless Chrome เช่น Puppeteer/Playwright ในอนาคต
+- ไม่มี `supabase/patch_v1_10_3.sql`
