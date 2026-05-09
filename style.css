@@ -4855,3 +4855,210 @@ body {
   }
 }
 
+
+/* =======================================================
+   v1.10.5 Sent Action UI Polish + View Sent Action
+   ======================================================= */
+
+.btn-compact-v1105 {
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: 11px;
+  font-size: 13px;
+  line-height: 1.25;
+  box-shadow: none;
+}
+
+.print-v2-toolbar .print-toolbar-actions,
+.print-toolbar .print-toolbar-actions {
+  align-items: center;
+}
+
+.print-v2-toolbar .print-toolbar-actions > .btn,
+.print-toolbar .print-toolbar-actions > .btn {
+  min-height: 38px;
+  padding: 8px 13px;
+  border-radius: 11px;
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+.drive-archive-status-v1102 {
+  display: block;
+  min-width: 0;
+}
+
+.drive-panel-v1105 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.drive-line-v1105,
+.sent-action-v1105,
+.view-sent-action-wrap-v1105 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.drive-saved-text-v1105,
+.sent-action-hint-v1105 {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 260px;
+}
+
+.drive-alert-compact-v1105 {
+  margin: 0;
+  padding: 9px 11px;
+  font-size: 12px;
+  max-width: 460px;
+}
+
+.sent-info-card-v1105 {
+  width: min(100%, 560px);
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+  padding: 12px 14px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+}
+
+#sentInfoInViewV1104 .sent-info-card-v1105 {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.sent-info-head-v1105 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sent-info-head-v1105 strong,
+.sent-info-head-v1105 small {
+  display: block;
+}
+
+.sent-info-head-v1105 strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.sent-info-head-v1105 small {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.sent-info-icon-v1105 {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.sent-info-grid-v1105 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sent-info-item-v1105 {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.sent-info-item-v1105 span,
+.sent-info-item-v1105 b {
+  display: block;
+  min-width: 0;
+}
+
+.sent-info-item-v1105 span {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.sent-info-item-v1105 b {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.sent-action-v1105.is-disabled .btn,
+.view-sent-action-wrap-v1105 .btn:disabled {
+  opacity: 0.58;
+}
+
+@media (max-width: 900px) {
+  .print-v2-toolbar .print-toolbar-actions,
+  .print-toolbar .print-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .drive-panel-v1105 {
+    align-items: flex-start;
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .print-v2-toolbar .print-toolbar-actions > .btn,
+  .print-toolbar .print-toolbar-actions > .btn,
+  .drive-line-v1105 .btn,
+  .sent-action-v1105 .btn,
+  .view-sent-action-wrap-v1105 .btn {
+    width: auto;
+    min-width: 112px;
+  }
+
+  .drive-line-v1105,
+  .sent-action-v1105,
+  .view-sent-action-wrap-v1105 {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .drive-saved-text-v1105,
+  .sent-action-hint-v1105 {
+    max-width: none;
+  }
+
+  .sent-info-grid-v1105 {
+    grid-template-columns: 1fr;
+  }
+
+  .sent-info-card-v1105 {
+    width: 100%;
+  }
+}
+
+@media print {
+  .drive-panel-v1105,
+  .sent-info-card-v1105,
+  .view-sent-action-wrap-v1105 {
+    display: none !important;
+  }
+}

@@ -1,27 +1,20 @@
-# FI Quotation Web App v1.10.4
+# FI Quotation Web App v1.10.5
 
-## v1.10.4 Drive PDF Single Page Fix + Sent Workflow Gate
+## v1.10.5 Sent Action UI Polish + View Sent Action
 
-Release นี้ต่อยอดจาก v1.10.3 เพื่อแก้ปัญหา PDF ที่บันทึกลง Google Drive แล้วเกิดหน้าว่างเพิ่ม และปรับ workflow การเปลี่ยนสถานะเป็น “ส่งแล้ว” ให้รัดกุมขึ้น
+Release นี้ต่อยอดจาก v1.10.4 เพื่อปรับ UI และ wording ของ workflow การส่งใบเสนอราคาให้กระชับขึ้น โดยยังคงเงื่อนไขเดิมคือ ต้องบันทึก PDF ลง Google Drive ก่อนจึงจะเปลี่ยนสถานะเป็น “ส่งแล้ว” ได้
 
-## สิ่งที่เปลี่ยนใน v1.10.4
+## สิ่งที่เปลี่ยนใน v1.10.5
 
-- อัปเดต cache busting เป็น `style.css?v=1.10.4` และ `script.js?v=1.10.4`
-- อัปเดต `window.FI_APP_VERSION = "1.10.4"`
-- แก้การสร้าง PDF สำหรับ Google Drive เพื่อลดโอกาสเกิดหน้าว่างท้ายไฟล์
-  - lock capture กรณีเอกสารพอดี 1 หน้า A4
-  - trim white space ด้านล่างของ canvas
-  - skip trailing page ที่เกิดจาก rounding / blank area
-- ตัดข้อความ technical ออกจาก UI ตอนบันทึก Drive
-- เปลี่ยน workflow ส่งใบเสนอราคา
-  - ต้องบันทึก PDF ลง Google Drive ก่อน
-  - จากนั้นจึงกด “บันทึกข้อมูลการส่ง / ส่งแล้ว” ได้ในหน้า Preview / Print
-- เพิ่มข้อมูลผู้รับปลายทางตอนเปลี่ยนสถานะเป็นส่งแล้ว
-  - วันที่ส่งใบเสนอราคา
-  - อีเมลผู้รับ (required)
-  - ผู้รับ (required)
-  - ตำแหน่งผู้รับ
-- เพิ่ม SQL patch `supabase/patch_v1_10_4.sql`
+- อัปเดต cache busting เป็น `style.css?v=1.10.5` และ `script.js?v=1.10.5`
+- อัปเดต `window.FI_APP_VERSION = "1.10.5"`
+- ปรับปุ่ม action บนหน้า Preview / Print ให้กระชับขึ้น ไม่กินพื้นที่มากเกินไป
+- เปลี่ยน wording ปุ่มสถานะจากข้อความยาวให้เหลือเพียง `ส่งแล้ว`
+- ปุ่ม `ส่งแล้ว` ยังถูก disable ถ้ายังไม่มี PDF ที่บันทึกลง Google Drive
+- เมื่อมี PDF ใน Google Drive แล้ว ผู้ใช้สามารถกด `ส่งแล้ว` ได้จากหน้า `#quotation-view` ด้วย
+- ปุ่ม `ส่งแล้ว` ในหน้า View และ Print ใช้ action เดียวกัน เปิด modal กรอกข้อมูลการส่งเหมือนกัน
+- ปรับ UI “ข้อมูลการส่งใบเสนอราคา” ให้เป็น card ขนาดพอดี อ่านง่าย และไม่ทำให้ toolbar ดูแน่นเกินไป
+- ไม่มี SQL patch ใหม่ใน release นี้
 
 ## ไฟล์ใน package
 
@@ -44,7 +37,7 @@ supabase/
   ...patch เก่าที่ใช้ตั้งค่าระบบ
 ```
 
-## ขั้นตอนติดตั้ง v1.10.4
+## ขั้นตอนติดตั้ง v1.10.5
 
 ### 1) ติดตั้งไฟล์เว็บ
 
@@ -57,27 +50,22 @@ Mac: Command + Shift + R
 Windows: Ctrl + Shift + R
 ```
 
-### 2) รัน SQL ใหม่
+### 2) SQL
 
-ต้องรัน SQL นี้ใน Supabase SQL Editor:
+ไม่ต้องรัน SQL ใหม่สำหรับ v1.10.5
+
+ต้องเคยรัน SQL เหล่านี้สำเร็จแล้ว:
 
 ```text
+supabase/patch_v1_10_2.sql
 supabase/patch_v1_10_4.sql
 ```
 
-Patch นี้จะเพิ่ม field ข้อมูลผู้รับปลายทางและ RPC:
-
-```text
-mark_quotation_as_sent_v1104
-```
-
-> ต้องเคยรัน `supabase/patch_v1_10_2.sql` มาก่อน เพราะ v1.10.4 ใช้ table `quotation_drive_files` เป็นเงื่อนไขว่าต้องมี PDF ใน Drive ก่อน
+เพราะ v1.10.5 ยังใช้ table `quotation_drive_files` และ RPC `mark_quotation_as_sent_v1104` จาก release ก่อนหน้า
 
 ### 3) Google Apps Script
 
-ไม่จำเป็นต้องเปลี่ยน Apps Script ถ้าใช้อยู่บน v1.10.3 แล้ว เพราะ v1.10.4 ยังส่ง `pdfBase64` ให้ Apps Script บันทึกเป็น PDF blob เหมือนเดิม
-
-ถ้าต้องการให้ version ใน Apps Script ตรงกัน สามารถเปลี่ยน `FI_ARCHIVE_VERSION` ใน `google-apps-script/Code.gs` เป็น `1.10.4` แล้ว Deploy ใหม่ได้
+ไม่จำเป็นต้องเปลี่ยน Apps Script ถ้าใช้อยู่บน v1.10.3 หรือ v1.10.4 แล้ว เพราะ v1.10.5 ไม่เปลี่ยน payload การบันทึก PDF ไป Drive
 
 ## ตรวจ release ก่อน push
 
@@ -93,7 +81,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.10.4 drive pdf single page sent workflow"
+git commit -m "Release v1.10.5 sent action ui polish"
 git push origin main
 ```
 
@@ -115,7 +103,7 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.10.4
+1.10.5
 ```
 
 ## Debug helper
@@ -127,24 +115,24 @@ await window.FI_DEBUG()
 ควรเห็นค่าประมาณนี้:
 
 ```text
-version: 1.10.4
-drivePdfBlankPageFix: true
-sentRequiresDrivePdf: true
-sentRecipientFields: true
-sqlChanged: true
+version: 1.10.5
+sentActionWording: "ส่งแล้ว"
+sentViewActionEnabledAfterDrive: true
+compactSentDeliveryUI: true
+sqlChanged: false
 ```
 
 ## จุดที่ต้องทดสอบทันที
 
 ```text
-1. รัน patch_v1_10_4.sql สำเร็จ
-2. เปิดหน้า Preview / Print ของใบเสนอราคาสถานะยืนยันแล้ว
-3. กด บันทึกไป Google Drive
-4. เปิดไฟล์ใน Google Drive แล้วตรวจว่าไม่มีหน้าว่างท้ายไฟล์
-5. หลังบันทึก Drive แล้วต้องเห็นปุ่ม บันทึกข้อมูลการส่ง / ส่งแล้ว
-6. กดปุ่มแล้วต้องมี modal ให้กรอก วันที่ส่ง, อีเมลผู้รับ, ผู้รับ, ตำแหน่ง
-7. อีเมลผู้รับและผู้รับต้อง required
-8. บันทึกสำเร็จแล้ว status ต้องเป็น ส่งแล้ว
-9. หน้า View ต้องแสดงข้อมูลการส่งใบเสนอราคา
-10. ถ้ายังไม่ได้บันทึก Drive ต้องยังเปลี่ยนสถานะเป็นส่งแล้วไม่ได้
+1. เปิดหน้า Preview / Print แล้วปุ่ม action ต้องไม่ใหญ่ผิดปกติ
+2. ปุ่มเปลี่ยนสถานะต้องแสดง wording เป็น “ส่งแล้ว” เท่านั้น
+3. ถ้ายังไม่มี PDF ใน Google Drive ปุ่ม “ส่งแล้ว” ต้อง disabled
+4. หลังบันทึก PDF ลง Google Drive แล้ว ปุ่ม “ส่งแล้ว” ต้องกดได้จากหน้า Preview / Print
+5. หลังบันทึก PDF ลง Google Drive แล้ว ปุ่ม “ส่งแล้ว” ต้องกดได้จากหน้า View
+6. ทั้งสองปุ่มต้องเปิด modal กรอกวันที่ส่ง, อีเมลผู้รับ, ผู้รับ, ตำแหน่ง เหมือนกัน
+7. บันทึกสำเร็จแล้ว status ต้องเป็น sent
+8. ข้อมูลการส่งใบเสนอราคาต้องแสดงเป็น card ที่อ่านง่ายและไม่กินพื้นที่ toolbar มากเกินไป
+9. ปุ่มเปิดไฟล์ใน Google Drive ยังทำงาน
+10. ปุ่มพิมพ์ / บันทึกเป็น PDF เดิมยังทำงาน
 ```

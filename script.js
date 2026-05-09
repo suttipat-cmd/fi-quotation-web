@@ -17244,7 +17244,7 @@ function renderSentWorkflowInlineV1104(model, driveLog) {
 
   return `
     <div class="sent-gate-v1104 ready">
-      <button id="markSentAfterDriveButtonV1104" type="button" class="btn btn-primary">บันทึกข้อมูลการส่ง / ส่งแล้ว</button>
+      <button id="markSentAfterDriveButtonV1104" type="button" class="btn btn-primary">ส่งแล้ว</button>
     </div>
   `;
 }
@@ -17432,7 +17432,7 @@ function renderQuotationActionButtons(quotation, effectiveStatus) {
   if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
     buttons.push(`
       <button type="button" class="btn btn-ghost" disabled>
-        ส่งแล้ว: บันทึก Drive ก่อน
+        ส่งแล้ว
       </button>
     `);
   }
@@ -17769,3 +17769,281 @@ window.FI_DEBUG = async function FI_DEBUG_V1104() {
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V1104_VERSION;
 
+
+// =======================================================
+// v1.10.5 Sent Action UI Polish + View Sent Action
+// Scope:
+// - Keep button wording as "ส่งแล้ว" only.
+// - Keep sent button disabled until Drive PDF exists.
+// - Allow marking sent from both #quotation-view and #quotation-print.
+// - Compact Drive / Sent delivery UI so toolbar buttons do not become oversized.
+// No SQL changes. Uses supabase/patch_v1_10_4.sql from v1.10.4.
+// =======================================================
+
+const FI_V1105_VERSION = "1.10.5";
+window.FI_APP_VERSION = FI_V1105_VERSION;
+
+function renderSentInfoHtmlV1104(quotation) {
+  if (!isQuotationSentV1104(quotation)) return "";
+
+  const sentAt = quotation?.sent_at ? formatDate(quotation.sent_at) : "-";
+  const email = quotation?.sent_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || "-";
+
+  return `
+    <div class="sent-info-card-v1105">
+      <div class="sent-info-head-v1105">
+        <span class="sent-info-icon-v1105">✓</span>
+        <div>
+          <strong>ข้อมูลการส่งใบเสนอราคา</strong>
+          <small>ส่งเมื่อ ${escapeHTML(sentAt)}</small>
+        </div>
+      </div>
+      <div class="sent-info-grid-v1105">
+        <div class="sent-info-item-v1105">
+          <span>อีเมลผู้รับ</span>
+          <b>${escapeHTML(email)}</b>
+        </div>
+        <div class="sent-info-item-v1105">
+          <span>ผู้รับ</span>
+          <b>${escapeHTML(name)}</b>
+        </div>
+        <div class="sent-info-item-v1105">
+          <span>ตำแหน่ง</span>
+          <b>${escapeHTML(position)}</b>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSentWorkflowInlineV1104(model, driveLog) {
+  const quotation = model?.quotation || {};
+
+  if (isQuotationSentV1104(quotation)) {
+    return renderSentInfoHtmlV1104(quotation);
+  }
+
+  if (!canMarkQuotationSentV1104(quotation)) {
+    return "";
+  }
+
+  const hasDrivePdf = Boolean(driveLog?.file_url);
+
+  return `
+    <div class="sent-action-v1105 ${hasDrivePdf ? "is-ready" : "is-disabled"}">
+      <button
+        id="markSentAfterDriveButtonV1104"
+        type="button"
+        class="btn ${hasDrivePdf ? "btn-primary" : "btn-ghost"} btn-compact-v1105"
+        ${hasDrivePdf ? "" : "disabled"}
+      >ส่งแล้ว</button>
+      ${hasDrivePdf ? "" : `<span class="sent-action-hint-v1105">ต้องบันทึก PDF ลง Google Drive ก่อน</span>`}
+    </div>
+  `;
+}
+
+function bindSentWorkflowInlineV1104(model, driveLog) {
+  document.getElementById("markSentAfterDriveButtonV1104")?.addEventListener("click", async () => {
+    const freshLog = driveLog?.file_url ? driveLog : await loadDriveFileLogV1102(model.quotation.id);
+    if (!freshLog?.file_url) {
+      showToast("กรุณาบันทึก PDF ลง Google Drive ก่อน");
+      renderDriveArchiveStatusV1102(model, freshLog, appState.driveArchiveSettingsV1102 || {});
+      return;
+    }
+    openMarkSentModalV1104(model, freshLog);
+  });
+}
+
+function renderDriveArchiveStatusV1102(model, driveLog, settings) {
+  const target = document.getElementById("driveArchiveStatusV1102");
+  if (!target) return;
+
+  if (driveLog && driveLog.loadError) {
+    target.innerHTML = `<div class="alert alert-warning drive-alert-compact-v1105">ยังตรวจประวัติ Google Drive ไม่ได้ กรุณารัน <strong>supabase/patch_v1_10_2.sql</strong></div>`;
+    return;
+  }
+
+  if (driveLog?.file_url) {
+    target.innerHTML = `
+      <div class="drive-panel-v1105">
+        <div class="drive-line-v1105">
+          <a class="btn btn-ghost btn-compact-v1105 drive-open-button-v1102" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">
+            เปิดไฟล์ใน Google Drive
+          </a>
+          <span class="drive-saved-text-v1105">บันทึกแล้ว: ${escapeHTML(driveLog.file_name || "PDF")}</span>
+        </div>
+        ${renderSentWorkflowInlineV1104(model, driveLog)}
+      </div>
+    `;
+    bindSentWorkflowInlineV1104(model, driveLog);
+    return;
+  }
+
+  if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+    target.innerHTML = `<div class="alert alert-warning drive-alert-compact-v1105">คุณมีสิทธิ์ดูเอกสาร แต่ไม่มีสิทธิ์บันทึก PDF ไป Google Drive</div>`;
+    return;
+  }
+
+  if (!isDriveArchiveConfiguredV1102(settings)) {
+    target.innerHTML = `
+      <div class="alert alert-warning drive-alert-compact-v1105">
+        ยังไม่ได้ตั้งค่า Google Drive Archive กรุณาให้ Admin ตั้งค่า Web App URL, Folder ID และ Shared Secret ในเมนูตั้งค่า
+      </div>
+    `;
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="drive-panel-v1105">
+      <div class="drive-line-v1105">
+        <button id="saveDrivePdfButtonV1102" type="button" class="btn btn-ghost btn-compact-v1105">บันทึกไป Google Drive</button>
+      </div>
+      ${renderSentWorkflowInlineV1104(model, null)}
+    </div>
+  `;
+  document.getElementById("saveDrivePdfButtonV1102")?.addEventListener("click", async () => {
+    await handleSaveQuotationPdfToDriveV1102(model);
+  });
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+
+  if (!canModify) return "";
+
+  const buttons = [];
+
+  if (quotation.status === "draft") {
+    buttons.push(`
+      <button id="editDraftButton" class="btn btn-ghost">
+        แก้ไข Draft
+      </button>
+    `);
+    buttons.push(`
+      <button id="confirmQuotationButton" class="btn btn-primary">
+        Confirm และสร้างเลข
+      </button>
+    `);
+  }
+
+  if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`
+      <span class="view-sent-action-wrap-v1105">
+        <button id="markSentButton" type="button" class="btn btn-ghost btn-compact-v1105" disabled>ส่งแล้ว</button>
+        <span id="viewSentHintV1105" class="sent-action-hint-v1105">กำลังตรวจสถานะ Drive...</span>
+      </span>
+    `);
+  }
+
+  if (quotation.status !== "draft") {
+    buttons.push(`
+      <button id="printPreviewButton" class="btn btn-primary">
+        Preview / Print
+      </button>
+    `);
+    buttons.push(`
+      <button id="duplicateQuotationButton" class="btn btn-ghost">
+        สร้างสำเนา
+      </button>
+    `);
+  }
+
+  return buttons.join("");
+}
+
+async function loadQuotationForSentActionV1105(quotationId) {
+  const { data, error } = await supabaseClient
+    .from("quotations")
+    .select("id, owner_id, status, sent_at, sent_recipient_email, sent_recipient_name, sent_recipient_position")
+    .eq("id", quotationId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("ไม่พบใบเสนอราคา");
+  return data;
+}
+
+async function setupSentActionInViewV1105(quotationId) {
+  const button = document.getElementById("markSentButton");
+  if (!button || !quotationId || !supabaseClient) return;
+
+  const hint = document.getElementById("viewSentHintV1105");
+
+  try {
+    const quotation = await loadQuotationForSentActionV1105(quotationId);
+    if (!canMarkQuotationSentV1104(quotation)) {
+      button.remove();
+      if (hint) hint.remove();
+      return;
+    }
+
+    const driveLog = await loadDriveFileLogV1102(quotationId);
+    const hasDrivePdf = Boolean(driveLog?.file_url);
+
+    button.textContent = "ส่งแล้ว";
+    button.disabled = !hasDrivePdf;
+    button.classList.toggle("btn-primary", hasDrivePdf);
+    button.classList.toggle("btn-ghost", !hasDrivePdf);
+    button.classList.add("btn-compact-v1105");
+
+    if (hint) {
+      hint.textContent = hasDrivePdf ? "" : "ต้องบันทึก PDF ลง Google Drive ก่อน";
+      hint.classList.toggle("hidden", hasDrivePdf);
+    }
+  } catch (error) {
+    console.warn("Cannot prepare sent action in quotation view.", error);
+    button.textContent = "ส่งแล้ว";
+    button.disabled = true;
+    if (hint) hint.textContent = "ยังตรวจสถานะ Drive ไม่ได้";
+  }
+}
+
+async function markQuotationAsSent(quotationId) {
+  try {
+    const quotation = await loadQuotationForSentActionV1105(quotationId);
+
+    if (!canMarkQuotationSentV1104(quotation)) {
+      showToast("คุณไม่มีสิทธิ์เปลี่ยนสถานะใบเสนอราคานี้เป็นส่งแล้ว");
+      return;
+    }
+
+    const driveLog = await loadDriveFileLogV1102(quotationId);
+    if (!driveLog?.file_url) {
+      showToast("กรุณาบันทึก PDF ลง Google Drive ก่อน");
+      return;
+    }
+
+    openMarkSentModalV1104({ quotation }, driveLog);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "ไม่สามารถเปิดหน้าบันทึกข้อมูลการส่งได้");
+  }
+}
+
+const originalRenderQuotationViewPageV1105 = window.renderQuotationViewPage || renderQuotationViewPage;
+window.renderQuotationViewPage = async function renderQuotationViewPageV1105(quotationId) {
+  const result = await originalRenderQuotationViewPageV1105.call(this, quotationId);
+  await setupSentActionInViewV1105(quotationId);
+  return result;
+};
+try { renderQuotationViewPage = window.renderQuotationViewPage; } catch (_error) {}
+
+const originalDebugV1105 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1105() {
+  const result = typeof originalDebugV1105 === "function" ? await originalDebugV1105() : {};
+  return {
+    ...result,
+    version: FI_V1105_VERSION,
+    sentActionWording: "ส่งแล้ว",
+    sentViewActionEnabledAfterDrive: true,
+    compactSentDeliveryUI: true,
+    sqlChanged: false,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V1105_VERSION;
