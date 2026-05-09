@@ -4555,7 +4555,7 @@ body {
 
 
 /* =======================================================
-   v1.10.1 Mobile Menu Cleanup
+   v1.10.2 Mobile Menu Cleanup
    Keep secondary admin pages accessible from Account Sheet
    but remove them from the cramped mobile navigation bar.
    ======================================================= */
@@ -4568,5 +4568,64 @@ body {
 
   .mobile-account-tab-v1100 {
     flex: 1 0 minmax(64px, 1fr);
+  }
+}
+
+
+/* =======================================================
+   v1.10.2 Google Drive PDF Archive
+   ======================================================= */
+
+.settings-grid-v1102 {
+  align-items: start;
+}
+
+.drive-settings-card-v1102 .field-hint,
+.drive-status-text-v1102 {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.drive-settings-result-v1102 {
+  display: grid;
+  gap: 10px;
+}
+
+.drive-actions-v1102 {
+  flex-wrap: wrap;
+}
+
+.alert-success-v1102 {
+  background: var(--success-bg);
+  color: var(--success-text);
+  border: 1px solid #bbf7d0;
+}
+
+.drive-archive-status-v1102 {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.drive-open-button-v1102 {
+  color: var(--primary);
+}
+
+@media (max-width: 720px) {
+  .drive-actions-v1102,
+  .drive-archive-status-v1102,
+  .drive-archive-status-v1102 .btn {
+    width: 100%;
+  }
+
+  .drive-archive-status-v1102 {
+    display: grid;
+  }
+}
+
+@media print {
+  .drive-archive-status-v1102 {
+    display: none !important;
   }
 }

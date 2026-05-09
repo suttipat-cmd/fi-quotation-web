@@ -16293,3 +16293,577 @@ window.FI_DEBUG = async function FI_DEBUG_V1101() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V1101_VERSION;
+
+
+// =======================================================
+// v1.10.2 Google Drive PDF Archive
+// Scope: add Google Apps Script archive settings, one-time
+// Drive PDF save per quotation, Sales subfolders, and Drive
+// file log. Requires supabase/patch_v1_10_2.sql and Apps Script.
+// =======================================================
+
+const FI_V1102_VERSION = "1.10.2";
+window.FI_APP_VERSION = FI_V1102_VERSION;
+
+const FI_DRIVE_SETTING_KEYS_V1102 = {
+  webAppUrl: "google_drive_web_app_url",
+  parentFolderId: "google_drive_parent_folder_id",
+  uploadSecret: "google_drive_upload_secret",
+};
+
+function sanitizeDriveNameV1102(value, fallback = "-") {
+  const text = String(value || "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.\s]+$/g, "");
+  return (text || fallback).slice(0, 120);
+}
+
+function normalizeDriveWebAppUrlV1102(value) {
+  return String(value || "").trim();
+}
+
+async function loadDriveArchiveSettingsV1102() {
+  const empty = { webAppUrl: "", parentFolderId: "", uploadSecret: "" };
+  if (!supabaseClient) return empty;
+
+  const keys = Object.values(FI_DRIVE_SETTING_KEYS_V1102);
+  const { data, error } = await supabaseClient
+    .from("app_settings")
+    .select("key, value")
+    .in("key", keys);
+
+  if (error) {
+    console.warn("Cannot load Google Drive Archive settings. Run supabase/patch_v1_10_2.sql first.", error);
+    return { ...empty, loadError: error.message || String(error) };
+  }
+
+  const settings = { ...empty };
+  (data || []).forEach((row) => {
+    if (row.key === FI_DRIVE_SETTING_KEYS_V1102.webAppUrl) settings.webAppUrl = row.value || "";
+    if (row.key === FI_DRIVE_SETTING_KEYS_V1102.parentFolderId) settings.parentFolderId = row.value || "";
+    if (row.key === FI_DRIVE_SETTING_KEYS_V1102.uploadSecret) settings.uploadSecret = row.value || "";
+  });
+  return settings;
+}
+
+function isDriveArchiveConfiguredV1102(settings) {
+  return Boolean(
+    normalizeDriveWebAppUrlV1102(settings?.webAppUrl) &&
+    String(settings?.parentFolderId || "").trim() &&
+    String(settings?.uploadSecret || "").trim()
+  );
+}
+
+function validateDriveArchiveSettingsV1102(settings) {
+  const webAppUrl = normalizeDriveWebAppUrlV1102(settings.webAppUrl);
+  const parentFolderId = String(settings.parentFolderId || "").trim();
+  const uploadSecret = String(settings.uploadSecret || "").trim();
+
+  if (!webAppUrl) throw new Error("กรุณากรอก Google Apps Script Web App URL");
+  if (!/^https:\/\/script\.google\.com\//.test(webAppUrl)) {
+    throw new Error("Web App URL ควรเป็น URL จาก script.google.com");
+  }
+  if (!parentFolderId) throw new Error("กรุณากรอก Google Drive Parent Folder ID");
+  if (!uploadSecret) throw new Error("กรุณากรอก Shared Secret / Upload Token");
+
+  return { webAppUrl, parentFolderId, uploadSecret };
+}
+
+async function saveDriveArchiveSettingsV1102(settings) {
+  const clean = validateDriveArchiveSettingsV1102(settings);
+  await saveAppSetting(FI_DRIVE_SETTING_KEYS_V1102.webAppUrl, clean.webAppUrl);
+  await saveAppSetting(FI_DRIVE_SETTING_KEYS_V1102.parentFolderId, clean.parentFolderId);
+  await saveAppSetting(FI_DRIVE_SETTING_KEYS_V1102.uploadSecret, clean.uploadSecret);
+  return clean;
+}
+
+async function renderSettingsPage() {
+  if (appState.profile.role !== "admin") {
+    renderError("คุณไม่มีสิทธิ์เข้าถึงหน้านี้");
+    return;
+  }
+
+  setPageHeader("ตั้งค่า", "ตั้งค่าระบบ โลโก้ และ Google Drive Archive");
+  renderLoading();
+
+  const [branding, driveSettings] = await Promise.all([
+    typeof loadAppBranding === "function" ? loadAppBranding() : Promise.resolve({ login_logo_url: "", favicon_url: "" }),
+    loadDriveArchiveSettingsV1102(),
+  ]);
+
+  appState.appBranding = branding;
+  appState.driveArchiveSettingsV1102 = driveSettings;
+
+  elements.pageContent.innerHTML = `
+    <div class="settings-grid-v14 settings-grid-v1102">
+      <section class="card form-card">
+        <div class="card-header">
+          <div>
+            <h3>โลโก้ระบบ</h3>
+            <p>โลโก้หน้า Login, แถบเมนู และ Icon เว็บไซต์</p>
+          </div>
+        </div>
+
+        <div class="branding-preview-grid">
+          ${renderBrandingPreviewCard("โลโก้หน้า Login / แถบเมนู", branding.login_logo_url, "login")}
+          ${renderBrandingPreviewCard("Icon บน Tab / Taskbar", branding.favicon_url, "favicon")}
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="loginLogoFile">อัปโหลดโลโก้ระบบ / แถบเมนู</label>
+            <input id="loginLogoFile" type="file" accept="image/png,image/jpeg,image/webp" />
+            <small class="field-hint">รองรับ PNG, JPG, WEBP ไม่เกิน 5 MB</small>
+          </div>
+          <div class="field">
+            <label for="faviconFile">อัปโหลด Icon เว็บไซต์</label>
+            <input id="faviconFile" type="file" accept="image/png,image/jpeg,image/webp" />
+            <small class="field-hint">แนะนำภาพสี่เหลี่ยม เช่น 512×512 px</small>
+          </div>
+        </div>
+
+        <div class="form-actions normal-flow">
+          <button type="button" id="uploadLoginLogoButton" class="btn btn-primary">บันทึกโลโก้ระบบ</button>
+          <button type="button" id="uploadFaviconButton" class="btn btn-primary">บันทึก Icon เว็บไซต์</button>
+        </div>
+      </section>
+
+      <section class="card form-card drive-settings-card-v1102">
+        <div class="card-header">
+          <div>
+            <h3>Google Drive Archive</h3>
+            <p>ตั้งค่าการบันทึก PDF ใบเสนอราคาไปยัง Google Drive ผ่าน Google Apps Script</p>
+          </div>
+        </div>
+
+        ${driveSettings.loadError ? `<div class="alert alert-warning">ยังโหลดการตั้งค่า Drive ไม่ได้: ${escapeHTML(driveSettings.loadError)}<br />กรุณารัน <strong>supabase/patch_v1_10_2.sql</strong> ก่อนใช้งาน</div>` : ""}
+
+        <div class="form-grid">
+          <div class="field full">
+            <label for="driveWebAppUrlV1102">Google Apps Script Web App URL *</label>
+            <input id="driveWebAppUrlV1102" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHTML(driveSettings.webAppUrl || "")}" />
+          </div>
+
+          <div class="field full">
+            <label for="driveParentFolderIdV1102">Google Drive Parent Folder ID *</label>
+            <input id="driveParentFolderIdV1102" type="text" placeholder="Folder ID จาก Google Drive" value="${escapeHTML(driveSettings.parentFolderId || "")}" />
+            <small class="field-hint">ระบบจะสร้าง folder ย่อยของ Sales ใน Parent Folder นี้</small>
+          </div>
+
+          <div class="field full">
+            <label for="driveUploadSecretV1102">Shared Secret / Upload Token *</label>
+            <input id="driveUploadSecretV1102" type="password" autocomplete="new-password" placeholder="ต้องตรงกับค่า UPLOAD_SECRET ใน Apps Script" value="${escapeHTML(driveSettings.uploadSecret || "")}" />
+            <small class="field-hint">ใช้ป้องกัน request ภายนอกระดับพื้นฐาน เนื่องจากระบบอยู่บน GitHub Pages ค่านี้ไม่ควรถูกมองว่าเป็น secret ระดับ backend</small>
+          </div>
+        </div>
+
+        <div class="form-actions normal-flow drive-actions-v1102">
+          <button type="button" id="saveDriveSettingsButtonV1102" class="btn btn-primary">บันทึกการตั้งค่า Drive</button>
+          <button type="button" id="testDriveSettingsButtonV1102" class="btn btn-ghost">ทดสอบการเชื่อมต่อ</button>
+        </div>
+
+        <div id="driveSettingsResultV1102" class="drive-settings-result-v1102"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header"><h3>การใช้งานผู้ใช้</h3></div>
+        <div class="checklist-grid">
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Admin สร้างบัญชีผ่าน Supabase Dashboard</span></label>
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Role ใช้จากตาราง profiles</span></label>
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Sales เห็นข้อมูลของตัวเองตาม RLS</span></label>
+          <label class="checklist-item"><input type="checkbox" checked disabled /><span>Manager/Admin ดูภาพรวมได้ตามสิทธิ์</span></label>
+        </div>
+      </section>
+    </div>
+  `;
+
+  bindAppBrandingSettingsActions?.();
+  bindDriveArchiveSettingsActionsV1102();
+}
+
+function readDriveSettingsFormV1102() {
+  return {
+    webAppUrl: document.getElementById("driveWebAppUrlV1102")?.value || "",
+    parentFolderId: document.getElementById("driveParentFolderIdV1102")?.value || "",
+    uploadSecret: document.getElementById("driveUploadSecretV1102")?.value || "",
+  };
+}
+
+function setDriveSettingsResultV1102(message, type = "info") {
+  const target = document.getElementById("driveSettingsResultV1102");
+  if (!target) return;
+  const className = type === "error" ? "alert alert-error" : type === "success" ? "alert alert-success-v1102" : "alert alert-warning";
+  target.innerHTML = message ? `<div class="${className}">${escapeHTML(message)}</div>` : "";
+}
+
+function bindDriveArchiveSettingsActionsV1102() {
+  document.getElementById("saveDriveSettingsButtonV1102")?.addEventListener("click", async () => {
+    const button = document.getElementById("saveDriveSettingsButtonV1102");
+    try {
+      button.disabled = true;
+      button.textContent = "กำลังบันทึก...";
+      const clean = await saveDriveArchiveSettingsV1102(readDriveSettingsFormV1102());
+      appState.driveArchiveSettingsV1102 = clean;
+      setDriveSettingsResultV1102("บันทึกการตั้งค่า Google Drive สำเร็จ", "success");
+      showToast("บันทึกการตั้งค่า Google Drive สำเร็จ");
+    } catch (error) {
+      console.error(error);
+      setDriveSettingsResultV1102(error.message || "ไม่สามารถบันทึกการตั้งค่า Drive ได้", "error");
+      showToast(error.message || "ไม่สามารถบันทึกการตั้งค่า Drive ได้");
+    } finally {
+      button.disabled = false;
+      button.textContent = "บันทึกการตั้งค่า Drive";
+    }
+  });
+
+  document.getElementById("testDriveSettingsButtonV1102")?.addEventListener("click", async () => {
+    const button = document.getElementById("testDriveSettingsButtonV1102");
+    try {
+      button.disabled = true;
+      button.textContent = "กำลังทดสอบ...";
+      const settings = validateDriveArchiveSettingsV1102(readDriveSettingsFormV1102());
+      const response = await postToAppsScriptIframeV1102(settings.webAppUrl, {
+        action: "ping",
+        secret: settings.uploadSecret,
+        parentFolderId: settings.parentFolderId,
+      }, 45000);
+
+      if (!response.ok) throw new Error(response.error || "Apps Script ตอบกลับว่าไม่สำเร็จ");
+      const folderName = response.parentFolderName ? ` (${response.parentFolderName})` : "";
+      setDriveSettingsResultV1102(`เชื่อมต่อ Google Drive สำเร็จ${folderName}`, "success");
+      showToast("เชื่อมต่อ Google Drive สำเร็จ");
+    } catch (error) {
+      console.error(error);
+      setDriveSettingsResultV1102(error.message || "ทดสอบการเชื่อมต่อไม่สำเร็จ", "error");
+      showToast(error.message || "ทดสอบการเชื่อมต่อไม่สำเร็จ");
+    } finally {
+      button.disabled = false;
+      button.textContent = "ทดสอบการเชื่อมต่อ";
+    }
+  });
+}
+
+function postToAppsScriptIframeV1102(webAppUrl, payload, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    const requestId = `fi-drive-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const frameName = `fiDriveFrame_${requestId.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+    const iframe = document.createElement("iframe");
+    const form = document.createElement("form");
+    const input = document.createElement("input");
+    let done = false;
+
+    const cleanup = () => {
+      window.removeEventListener("message", onMessage);
+      window.clearTimeout(timer);
+      form.remove();
+      window.setTimeout(() => iframe.remove(), 1000);
+    };
+
+    const finish = (fn, value) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      fn(value);
+    };
+
+    function onMessage(event) {
+      const data = event.data || {};
+      if (!data || data.source !== "fi-drive-archive-v1102" || data.requestId !== requestId) return;
+      finish(resolve, data);
+    }
+
+    const timer = window.setTimeout(() => {
+      finish(reject, new Error("การเชื่อมต่อ Google Apps Script ใช้เวลานานเกินไป กรุณาตรวจ Web App URL / Deploy permission"));
+    }, timeoutMs);
+
+    iframe.name = frameName;
+    iframe.style.display = "none";
+    iframe.setAttribute("aria-hidden", "true");
+
+    form.method = "POST";
+    form.action = webAppUrl;
+    form.target = frameName;
+    form.enctype = "application/x-www-form-urlencoded";
+    form.style.display = "none";
+
+    input.type = "hidden";
+    input.name = "payload";
+    input.value = JSON.stringify({ ...payload, requestId, version: FI_V1102_VERSION });
+
+    form.appendChild(input);
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+    window.addEventListener("message", onMessage);
+    form.submit();
+  });
+}
+
+async function loadDriveFileLogV1102(quotationId) {
+  if (!quotationId) return null;
+  const { data, error } = await supabaseClient
+    .from("quotation_drive_files")
+    .select("*")
+    .eq("quotation_id", quotationId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Cannot load quotation_drive_files. Run supabase/patch_v1_10_2.sql first.", error);
+    return { loadError: error.message || String(error) };
+  }
+  return data || null;
+}
+
+async function loadQuotationOwnerProfileV1102(ownerId) {
+  if (!ownerId) return { full_name: "-", email: "" };
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", ownerId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || { full_name: "-", email: "" };
+}
+
+function buildDriveFolderNameV1102(profile, fallbackName = "Sales") {
+  const name = sanitizeDriveNameV1102(profile?.full_name || fallbackName || "Sales", "Sales");
+  const email = sanitizeDriveNameV1102(profile?.email || "no-email", "no-email");
+  return `${name} - ${email}`;
+}
+
+function buildDrivePdfFileNameV1102(model) {
+  const title = typeof buildSuggestedPdfTitleV1101 === "function"
+    ? buildSuggestedPdfTitleV1101(model)
+    : `${model?.quotation?.quotation_no || "ใบเสนอราคา"} (${getPrimaryPrintProductNameV1101(model)})`;
+  return `${sanitizeDriveNameV1102(title, "ใบเสนอราคา")}.pdf`;
+}
+
+async function collectPrintCssV1102() {
+  const cssParts = [];
+  for (const sheet of Array.from(document.styleSheets || [])) {
+    try {
+      const rules = Array.from(sheet.cssRules || []);
+      if (rules.length) cssParts.push(rules.map((rule) => rule.cssText).join("\n"));
+    } catch (_error) {
+      // Cross-origin stylesheet; ignored intentionally.
+    }
+  }
+
+  cssParts.push(`
+    body { margin: 0; background: #ffffff; font-family: "Noto Sans Thai", Arial, sans-serif; }
+    .print-v2-wrap { display: block !important; padding: 0 !important; background: #ffffff !important; }
+    .print-v2-page { box-shadow: none !important; margin: 0 auto !important; border: 0 !important; }
+  `);
+  return cssParts.join("\n");
+}
+
+async function buildDriveArchiveHtmlV1102() {
+  const page = document.getElementById("quotationPrintPage") || document.querySelector(".print-v2-page") || document.querySelector(".print-page");
+  if (!page) throw new Error("ไม่พบพื้นที่เอกสารสำหรับสร้าง PDF");
+  const css = await collectPrintCssV1102();
+  return `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <style>${css}</style>
+</head>
+<body>
+  <div class="print-v2-wrap drive-export-v1102">
+    ${page.outerHTML}
+  </div>
+</body>
+</html>`;
+}
+
+function canArchiveQuotationToDriveV1102(quotation) {
+  const role = appState.profile?.role;
+  const isOwner = quotation?.owner_id === appState.user?.id;
+  return role === "admin" || (role === "sales" && isOwner);
+}
+
+async function insertDriveFileLogV1102({ model, fileName, response, folderId }) {
+  const payload = {
+    quotation_id: model.quotation.id,
+    owner_id: model.quotation.owner_id,
+    file_name: fileName,
+    file_id: response.fileId,
+    file_url: response.fileUrl,
+    folder_id: response.folderId || folderId || null,
+    created_by: appState.user.id,
+  };
+
+  const { data, error } = await supabaseClient
+    .from("quotation_drive_files")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error) {
+    if (String(error.code || "") === "23505" || /duplicate|unique/i.test(error.message || "")) {
+      const existing = await loadDriveFileLogV1102(model.quotation.id);
+      if (existing && !existing.loadError) return existing;
+    }
+    throw error;
+  }
+
+  return data;
+}
+
+async function handleSaveQuotationPdfToDriveV1102(model) {
+  const button = document.getElementById("saveDrivePdfButtonV1102");
+  const target = document.getElementById("driveArchiveStatusV1102");
+
+  try {
+    if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+      throw new Error("คุณไม่มีสิทธิ์บันทึกใบเสนอราคานี้ไป Google Drive");
+    }
+
+    const existing = await loadDriveFileLogV1102(model.quotation.id);
+    if (existing && !existing.loadError) {
+      renderDriveArchiveStatusV1102(model, existing, appState.driveArchiveSettingsV1102 || {});
+      showToast("ใบเสนอราคานี้ถูกบันทึกไป Google Drive แล้ว");
+      return;
+    }
+
+    const settings = validateDriveArchiveSettingsV1102(appState.driveArchiveSettingsV1102 || await loadDriveArchiveSettingsV1102());
+    const ownerProfile = await loadQuotationOwnerProfileV1102(model.quotation.owner_id);
+    const salesFolderName = buildDriveFolderNameV1102(ownerProfile, model.ownerName);
+    const fileName = buildDrivePdfFileNameV1102(model);
+    const html = await buildDriveArchiveHtmlV1102();
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "กำลังบันทึกไป Drive...";
+    }
+    if (target) target.innerHTML = `<div class="alert alert-warning">กำลังสร้าง PDF และบันทึกไป Google Drive...</div>`;
+
+    const response = await postToAppsScriptIframeV1102(settings.webAppUrl, {
+      action: "upload",
+      secret: settings.uploadSecret,
+      parentFolderId: settings.parentFolderId,
+      quotationId: model.quotation.id,
+      quotationNo: model.quotation.quotation_no || "",
+      salesFolderName,
+      fileName,
+      html,
+    });
+
+    if (!response.ok) throw new Error(response.error || "Apps Script ไม่สามารถบันทึกไฟล์ได้");
+
+    const savedLog = await insertDriveFileLogV1102({
+      model,
+      fileName,
+      response,
+      folderId: settings.parentFolderId,
+    });
+
+    renderDriveArchiveStatusV1102(model, savedLog, settings);
+    showToast(response.existing ? "พบไฟล์เดิมใน Google Drive และบันทึก log แล้ว" : "บันทึก PDF ไป Google Drive สำเร็จ");
+  } catch (error) {
+    console.error(error);
+    if (target) target.innerHTML = `<div class="alert alert-error">${escapeHTML(error.message || "ไม่สามารถบันทึกไป Google Drive ได้")}</div>`;
+    showToast(error.message || "ไม่สามารถบันทึกไป Google Drive ได้");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "บันทึกไป Google Drive";
+    }
+  }
+}
+
+function renderDriveArchiveStatusV1102(model, driveLog, settings) {
+  const target = document.getElementById("driveArchiveStatusV1102");
+  if (!target) return;
+
+  if (driveLog && driveLog.loadError) {
+    target.innerHTML = `<div class="alert alert-warning">ยังตรวจประวัติ Google Drive ไม่ได้ กรุณารัน <strong>supabase/patch_v1_10_2.sql</strong></div>`;
+    return;
+  }
+
+  if (driveLog?.file_url) {
+    target.innerHTML = `
+      <a class="btn btn-ghost drive-open-button-v1102" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">
+        เปิดไฟล์ใน Google Drive
+      </a>
+      <span class="drive-status-text-v1102">บันทึกแล้ว: ${escapeHTML(driveLog.file_name || "PDF")}</span>
+    `;
+    return;
+  }
+
+  if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+    target.innerHTML = `<div class="alert alert-warning">คุณมีสิทธิ์ดูเอกสาร แต่ไม่มีสิทธิ์บันทึก PDF ไป Google Drive</div>`;
+    return;
+  }
+
+  if (!isDriveArchiveConfiguredV1102(settings)) {
+    target.innerHTML = `
+      <div class="alert alert-warning">
+        ยังไม่ได้ตั้งค่า Google Drive Archive กรุณาให้ Admin ตั้งค่า Web App URL, Folder ID และ Shared Secret ในเมนูตั้งค่า
+      </div>
+    `;
+    return;
+  }
+
+  target.innerHTML = `<button id="saveDrivePdfButtonV1102" type="button" class="btn btn-ghost">บันทึกไป Google Drive</button>`;
+  document.getElementById("saveDrivePdfButtonV1102")?.addEventListener("click", async () => {
+    await handleSaveQuotationPdfToDriveV1102(model);
+  });
+}
+
+async function initializeDriveArchiveToolbarV1102(model) {
+  const actions = document.querySelector(".print-toolbar-actions") || document.querySelector(".print-v2-toolbar .print-toolbar-actions");
+  if (!actions || document.getElementById("driveArchiveStatusV1102")) return;
+
+  const holder = document.createElement("div");
+  holder.id = "driveArchiveStatusV1102";
+  holder.className = "drive-archive-status-v1102";
+  holder.innerHTML = `<span class="drive-status-text-v1102">กำลังตรวจสถานะ Drive...</span>`;
+  actions.appendChild(holder);
+
+  const [settings, driveLog] = await Promise.all([
+    loadDriveArchiveSettingsV1102(),
+    loadDriveFileLogV1102(model.quotation.id),
+  ]);
+
+  appState.driveArchiveSettingsV1102 = settings;
+  renderDriveArchiveStatusV1102(model, driveLog, settings);
+}
+
+function bindPrintV15Actions(model) {
+  const printButton = $("#printButton");
+  const backButton = $("#backFromPrintButton");
+
+  if (printButton) {
+    printButton.addEventListener("click", () => printWithSuggestedFilenameV1101(model));
+  }
+
+  if (backButton) {
+    backButton.addEventListener("click", () => {
+      location.hash = `#quotation-view/${model.quotation.id}`;
+    });
+  }
+
+  initializeDriveArchiveToolbarV1102(model).catch((error) => {
+    console.error(error);
+    const target = document.getElementById("driveArchiveStatusV1102");
+    if (target) target.innerHTML = `<div class="alert alert-error">${escapeHTML(error.message || "ไม่สามารถเตรียม Google Drive Archive ได้")}</div>`;
+  });
+}
+
+const originalDebugV1102 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1102() {
+  const result = typeof originalDebugV1102 === "function" ? await originalDebugV1102() : {};
+  return {
+    ...result,
+    version: FI_V1102_VERSION,
+    googleDriveArchive: true,
+    googleDriveSettingsInSettingsPage: true,
+    onePdfPerQuotation: true,
+    appsScriptIframePost: true,
+    sqlChanged: true,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V1102_VERSION;
