@@ -5744,3 +5744,145 @@ body {
     width: 100%;
   }
 }
+
+/* =======================================================
+   v1.11.4 Payment Gate + Delivery Layout Polish
+   ======================================================= */
+
+.quotation-table-v1114 .row-locked-v1114 {
+  background: #fafafa;
+  color: #64748b;
+}
+
+.quotation-table-v1114 input[type="checkbox"]:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.status-paid {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.status-dialog-v1114 {
+  max-width: 520px;
+}
+
+.payment-component-box-v1114 {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: #eff6ff;
+}
+
+.payment-component-box-v1114 strong {
+  color: #172554;
+}
+
+.payment-component-box-v1114 p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.payment-check-v1114 {
+  min-height: auto;
+  padding: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.email-modal-v1114 {
+  max-width: 760px;
+}
+
+.delivery-modal-header-v1114 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+.modal-eyebrow-v1114 {
+  display: inline-flex;
+  margin-bottom: 4px;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.delivery-form-v1114 {
+  display: grid;
+  gap: 16px;
+}
+
+.delivery-section-v1114 {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+.delivery-section-v1114.soft {
+  background: var(--surface-soft);
+}
+
+.delivery-section-v1114 h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.delivery-grid-v1114 {
+  display: grid;
+  gap: 14px;
+}
+
+.delivery-grid-v1114.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.delivery-grid-v1114 .field.full {
+  grid-column: 1 / -1;
+}
+
+.drive-file-confirm-v1114 {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.email-note-v1114 {
+  margin: 0;
+  border-radius: 14px;
+}
+
+.modal-actions-v1114 {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.metric-grid-v1114 .metric-card:last-child {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.09), rgba(37, 99, 235, 0.08));
+}
+
+@media (max-width: 720px) {
+  .delivery-grid-v1114.two-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions-v1114 {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions-v1114 .btn {
+    width: 100%;
+  }
+}

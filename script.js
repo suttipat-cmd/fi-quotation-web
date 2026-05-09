@@ -20038,3 +20038,747 @@ async function loadQuotationForSentActionV1105(quotationId) {
 }
 
 window.FI_APP_VERSION = FI_V1113_VERSION;
+
+// =======================================================
+// v1.11.4 Payment Gate + Sent Cancellation Guard
+// Scope:
+// - Sent/Paid quotations cannot be cancelled from UI, bulk action, or SQL RPC.
+// - Sent rows cannot be selected by checkbox, including Select All.
+// - Paid status asks which sections were paid and stores actual paid amount.
+// - Dashboard "ยอดเดือนนี้" is computed from paid quotations only.
+// - Delivery modal layout polish.
+// Requires supabase/patch_v1_11_4.sql and Apps Script v1.11.4.
+// =======================================================
+
+const FI_V1114_VERSION = "1.11.4";
+window.FI_APP_VERSION = FI_V1114_VERSION;
+
+const PAYMENT_COMPONENTS_V1114 = {
+  recurring: "recurring",
+  oneTime: "one_time",
+  both: "both",
+};
+
+function normalizeStatusV1114(row) {
+  return row?.status || row?.effective_status || "";
+}
+
+function isSentOrPaidV1114(row) {
+  const status = normalizeStatusV1114(row);
+  return status === "sent" || status === "paid";
+}
+
+function isRowSelectableV1114(row) {
+  return !isSentOrPaidV1114(row);
+}
+
+function getSelectableRowsV1114(rows) {
+  return (rows || []).filter(isRowSelectableV1114);
+}
+
+function paymentComponentFromPayloadV1114(payload = {}) {
+  const components = Array.isArray(payload.paidComponents) ? payload.paidComponents : [];
+  const hasRecurring = components.includes(PAYMENT_COMPONENTS_V1114.recurring);
+  const hasOneTime = components.includes(PAYMENT_COMPONENTS_V1114.oneTime);
+  if (hasRecurring && hasOneTime) return PAYMENT_COMPONENTS_V1114.both;
+  if (hasRecurring) return PAYMENT_COMPONENTS_V1114.recurring;
+  if (hasOneTime) return PAYMENT_COMPONENTS_V1114.oneTime;
+  return "";
+}
+
+function statusLabel(status) {
+  const map = {
+    draft: "ร่าง",
+    confirmed: "ยืนยันแล้ว",
+    sent: "ส่งแล้ว",
+    paid: "ชำระเงินแล้ว",
+    expired: "หมดอายุ",
+    cancelled: "ยกเลิก",
+  };
+  return map[status] || status || "-";
+}
+
+function pruneSelectionToRows(rows) {
+  const visibleIds = new Set((rows || []).map((row) => row.id));
+  const selectableIds = new Set(getSelectableRowsV1114(rows || []).map((row) => row.id));
+  Array.from(appState.selectedQuotationIds || []).forEach((id) => {
+    if (!visibleIds.has(id) || !selectableIds.has(id)) appState.selectedQuotationIds.delete(id);
+  });
+}
+
+function areAllVisibleRowsSelected(rows) {
+  const selectableRows = getSelectableRowsV1114(rows || []);
+  return selectableRows.length > 0 && selectableRows.every((row) => appState.selectedQuotationIds.has(row.id));
+}
+
+function handleDelegatedChange(event) {
+  const rowCheckbox = event.target.closest("[data-select-quotation]");
+  if (rowCheckbox) {
+    const id = rowCheckbox.dataset.selectQuotation;
+    const row = (appState.quotationListRows || []).find((item) => item.id === id);
+    if (!isRowSelectableV1114(row)) {
+      rowCheckbox.checked = false;
+      appState.selectedQuotationIds.delete(id);
+      showToast("ใบเสนอราคาที่ส่งแล้วหรือชำระเงินแล้วไม่สามารถเลือกเพื่อยกเลิก/ปรับสถานะได้", "warning");
+      updateBulkActionState();
+      return;
+    }
+
+    if (rowCheckbox.checked) appState.selectedQuotationIds.add(id);
+    else appState.selectedQuotationIds.delete(id);
+    updateBulkActionState();
+    return;
+  }
+
+  if (event.target.id === "selectAllQuotations") {
+    const checked = event.target.checked;
+    const selectableRows = getSelectableRowsV1114(appState.quotationFilteredRows || []);
+    const selectableIds = new Set(selectableRows.map((row) => row.id));
+
+    (appState.quotationFilteredRows || []).forEach((row) => {
+      if (!selectableIds.has(row.id)) {
+        appState.selectedQuotationIds.delete(row.id);
+        return;
+      }
+      if (checked) appState.selectedQuotationIds.add(row.id);
+      else appState.selectedQuotationIds.delete(row.id);
+    });
+
+    document.querySelectorAll("[data-select-quotation]").forEach((checkbox) => {
+      const id = checkbox.dataset.selectQuotation;
+      checkbox.checked = checked && selectableIds.has(id);
+      checkbox.disabled = !selectableIds.has(id);
+    });
+    updateBulkActionState();
+  }
+}
+
+function renderQuotationTable(rows) {
+  if (!rows.length) return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
+  const showSales = appState.profile.role !== "sales";
+  const selectableRows = getSelectableRowsV1114(rows);
+  const allSelected = areAllVisibleRowsSelected(rows);
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table quotation-table-v1114">
+        <thead>
+          <tr>
+            <th class="select-col"><input id="selectAllQuotations" type="checkbox" ${allSelected ? "checked" : ""} ${selectableRows.length ? "" : "disabled"} /></th>
+            ${sortableTh("row_no", "ลำดับ")}
+            ${sortableTh("quotation_no", "เลขที่")}
+            ${sortableTh("customer_name", "ลูกค้า")}
+            ${sortableTh("billing_type", "ประเภท")}
+            ${showSales ? sortableTh("owner_name", "ฝ่ายขาย") : ""}
+            ${sortableTh("quote_date", "วันที่เสนอราคา")}
+            ${sortableTh("valid_until", "วันหมดอายุ")}
+            ${sortableTh("grand_total_display", "ยอดรวม")}
+            ${sortableTh("effective_status", "สถานะ")}
+            ${sortableTh("created_at", "วันที่สร้าง")}
+            <th>การดำเนินการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => {
+            const selectable = isRowSelectableV1114(row);
+            return `
+              <tr class="${selectable ? "" : "row-locked-v1114"}">
+                <td class="select-col">
+                  <input type="checkbox" data-select-quotation="${row.id}" ${appState.selectedQuotationIds?.has(row.id) && selectable ? "checked" : ""} ${selectable ? "" : "disabled"} />
+                </td>
+                <td>${index + 1}</td>
+                <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
+                <td>${escapeHTML(row.customer_name || "-")}</td>
+                <td>${billingTypeLabel(row.billing_type)}</td>
+                ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
+                <td>${formatDate(row.quote_date)}</td>
+                <td>${formatDate(row.valid_until)}</td>
+                <td class="num-cell">${formatTHB(row.grand_total_display)}</td>
+                <td>${statusBadge(row.effective_status || row.status)}</td>
+                <td>${formatDate(row.created_at)}</td>
+                <td><button class="btn btn-ghost" data-action="view" data-id="${row.id}">ดู</button></td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function canTransitionToStatus(row, status) {
+  const current = getRawStatus(row);
+  if (status === "sent") return current === "confirmed";
+  if (status === "paid") return current === "sent";
+  if (status === "cancelled") return !["sent", "paid", "cancelled"].includes(current);
+  return false;
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+  if (!canModify) return "";
+
+  const status = quotation.status;
+  const buttons = [];
+
+  if (status === "draft") {
+    buttons.push(`<button id="editDraftButton" class="btn btn-ghost">แก้ไขร่าง</button>`);
+    buttons.push(`<button id="confirmQuotationButton" class="btn btn-primary">ยืนยันและสร้างเลข</button>`);
+    buttons.push(`<button id="cancelQuotationButton" class="btn btn-ghost danger-soft">ยกเลิก</button>`);
+  }
+
+  if (status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`
+      <span class="view-sent-action-wrap-v1105">
+        <button id="markSentButton" type="button" class="btn btn-ghost btn-compact-v1105" disabled>ส่งแล้ว</button>
+        <span id="viewSentHintV1105" class="sent-action-hint-v1105">กำลังตรวจสถานะ Drive...</span>
+      </span>
+    `);
+    buttons.push(`<button id="cancelQuotationButton" class="btn btn-ghost danger-soft">ยกเลิก</button>`);
+  }
+
+  if (status === "sent") {
+    buttons.push(`<button id="markPaidButton" class="btn btn-primary">ชำระเงินแล้ว</button>`);
+  }
+
+  if (status !== "draft") {
+    buttons.push(`<button id="printPreviewButton" class="btn btn-primary">ตัวอย่างเอกสาร / พิมพ์</button>`);
+    buttons.push(`<button id="duplicateQuotationButton" class="btn btn-ghost">สร้างสำเนา</button>`);
+  }
+
+  return buttons.join("");
+}
+
+async function cancelSingleQuotation(quotationId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from("quotations")
+      .select("id, status")
+      .eq("id", quotationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (isSentOrPaidV1114(data)) {
+      showToast("ใบเสนอราคาที่ส่งแล้วหรือชำระเงินแล้วไม่สามารถยกเลิกได้", "warning");
+      return;
+    }
+  } catch (error) {
+    console.warn("Cannot verify status before cancel", error);
+  }
+
+  const payload = await showStatusChangeDialog({ status: "cancelled", count: 1 });
+  if (!payload) return;
+  await updateQuotationStatuses([quotationId], "cancelled", payload);
+  await renderQuotationViewPage(quotationId);
+}
+
+async function markQuotationAsPaid(quotationId) {
+  const payload = await showStatusChangeDialog({ status: "paid", count: 1 });
+  if (!payload) return;
+  await updateQuotationStatuses([quotationId], "paid", payload);
+  await renderQuotationViewPage(quotationId);
+}
+
+async function applyBulkStatus(status) {
+  if (!status) return;
+
+  const selectedRows = (appState.quotationListRows || []).filter((row) => appState.selectedQuotationIds.has(row.id));
+  const eligibleRows = selectedRows.filter((row) => canTransitionToStatus(row, status));
+
+  if (!eligibleRows.length) {
+    showToast("รายการที่เลือกไม่สามารถเปลี่ยนเป็นสถานะนี้ได้", "warning");
+    return;
+  }
+
+  const payload = await showStatusChangeDialog({
+    status,
+    count: eligibleRows.length,
+    skipped: selectedRows.length - eligibleRows.length,
+  });
+
+  if (!payload) return;
+
+  await updateQuotationStatuses(eligibleRows.map((row) => row.id), status, payload);
+  appState.selectedQuotationIds.clear();
+  await renderQuotationsPage();
+}
+
+function showStatusChangeDialog({ status, count, skipped = 0 }) {
+  const today = toDateInputValue(new Date());
+  const needsDate = ["sent", "paid"].includes(status);
+  const needsReason = status === "cancelled";
+  const needsPaymentComponent = status === "paid";
+  const title = count > 1 ? `ปรับสถานะ ${number(count)} รายการ` : `เปลี่ยนสถานะเป็น${statusLabel(status)}`;
+  const skippedText = skipped > 0 ? `<div class="alert alert-warning">ข้าม ${number(skipped)} รายการที่ไม่เข้าเงื่อนไขสถานะนี้</div>` : "";
+
+  return new Promise((resolve) => {
+    const dialog = document.createElement("div");
+    dialog.className = "modal-backdrop";
+    dialog.innerHTML = `
+      <div class="confirm-dialog status-dialog status-dialog-v1114">
+        <h3>${escapeHTML(title)}</h3>
+        ${skippedText}
+        ${needsDate ? `
+          <div class="field">
+            <label>${status === "sent" ? "วันที่ส่งใบเสนอราคา" : "วันที่ชำระเงิน"}</label>
+            <input id="statusEffectiveDate" type="date" value="${today}" />
+          </div>
+        ` : ""}
+        ${needsPaymentComponent ? `
+          <div class="payment-component-box-v1114">
+            <strong>เลือกส่วนของยอดเงินที่ได้รับชำระแล้ว</strong>
+            <p>ระบบจะใช้ส่วนที่เลือกเพื่อคำนวณ “ยอดรับชำระเดือนนี้” บน Dashboard</p>
+            <label class="checkbox-row payment-check-v1114">
+              <input type="checkbox" id="paidComponentRecurringV1114" checked />
+              <span>ค่าบริการชำระรายเดือน / รายปี</span>
+            </label>
+            <label class="checkbox-row payment-check-v1114">
+              <input type="checkbox" id="paidComponentOneTimeV1114" checked />
+              <span>ค่าบริการชำระครั้งเดียวจบ</span>
+            </label>
+          </div>
+        ` : ""}
+        ${needsReason ? `
+          <div class="field">
+            <label>เหตุผลการยกเลิก (ไม่บังคับ)</label>
+            <textarea id="statusReason" rows="4" placeholder="ระบุเหตุผลการยกเลิก ถ้ามี"></textarea>
+          </div>
+        ` : ""}
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-ghost" data-dialog-cancel>ยกเลิก</button>
+          <button type="button" class="btn ${needsReason ? "danger-soft" : "btn-primary"}" data-dialog-confirm>บันทึก</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const cleanup = (value) => {
+      dialog.remove();
+      resolve(value);
+    };
+
+    dialog.querySelector("[data-dialog-cancel]").addEventListener("click", () => cleanup(null));
+    dialog.querySelector("[data-dialog-confirm]").addEventListener("click", () => {
+      const effectiveDate = needsDate ? dialog.querySelector("#statusEffectiveDate")?.value : today;
+      const note = needsReason ? dialog.querySelector("#statusReason")?.value.trim() : "";
+      const paidComponents = [];
+      if (needsPaymentComponent) {
+        if (dialog.querySelector("#paidComponentRecurringV1114")?.checked) paidComponents.push(PAYMENT_COMPONENTS_V1114.recurring);
+        if (dialog.querySelector("#paidComponentOneTimeV1114")?.checked) paidComponents.push(PAYMENT_COMPONENTS_V1114.oneTime);
+        if (!paidComponents.length) {
+          showToast("กรุณาเลือกอย่างน้อย 1 ส่วนของยอดที่ได้รับชำระ", "warning");
+          return;
+        }
+      }
+      if (needsDate && !effectiveDate) {
+        showToast("กรุณาระบุวันที่", "warning");
+        return;
+      }
+      cleanup({ effectiveDate, note, paidComponents });
+    });
+  });
+}
+
+async function updateQuotationStatuses(ids, status, payload = {}) {
+  await withAction(`change-status-${status}`, async () => {
+    showPageBusy("กำลังปรับสถานะ...");
+    const paidComponent = status === "paid" ? paymentComponentFromPayloadV1114(payload) : null;
+    const { error } = await supabaseClient.rpc("change_quotation_status_v1114", {
+      p_quotation_ids: ids,
+      p_new_status: status,
+      p_effective_date: payload.effectiveDate || toDateInputValue(new Date()),
+      p_note: payload.note || null,
+      p_paid_component: paidComponent,
+    });
+    if (error) throw error;
+    hidePageBusy();
+    showToast(`ปรับสถานะเป็น${statusLabel(status)}สำเร็จ ${number(ids.length)} รายการ`, "success");
+  });
+}
+
+function renderDashboardMetrics(metrics) {
+  return `
+    <div class="metric-grid metric-grid-v1111 metric-grid-v1114">
+      <div class="metric-card"><span>ใบเสนอราคาทั้งหมด</span><strong>${number(metrics.total_count)}</strong></div>
+      <div class="metric-card"><span>ร่าง</span><strong>${number(metrics.draft_count)}</strong></div>
+      <div class="metric-card"><span>ยืนยันแล้ว</span><strong>${number(metrics.confirmed_count)}</strong></div>
+      <div class="metric-card"><span>ส่งแล้ว</span><strong>${number(metrics.sent_count)}</strong></div>
+      <div class="metric-card"><span>ยอดรับชำระเดือนนี้</span><strong>${formatTHB(metrics.total_amount_this_month)}</strong></div>
+    </div>
+  `;
+}
+
+function getMonthBoundsV1114() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return { start, end };
+}
+
+function getDateValueV1114(value) {
+  const date = parseDateOnly(value);
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+function isDateInCurrentMonthV1114(value) {
+  const date = getDateValueV1114(value);
+  if (!date) return false;
+  const { start, end } = getMonthBoundsV1114();
+  return date >= start && date < end;
+}
+
+function calculateItemLineAmountV1114(item) {
+  if (item?.line_subtotal !== null && item?.line_subtotal !== undefined) return Number(item.line_subtotal || 0);
+  if (item?.section_type === "recurring") return Number(item.unit_price || 0);
+  return Number(item.quantity || 0) * Number(item.unit_price || 0);
+}
+
+function calculateSectionAmountsV1114(items) {
+  return (items || []).reduce((acc, item) => {
+    const amount = calculateItemLineAmountV1114(item);
+    if (item.section_type === "recurring") acc.recurring += amount;
+    else if (item.section_type === "one_time") acc.oneTime += amount;
+    return acc;
+  }, { recurring: 0, oneTime: 0 });
+}
+
+function calculatePaidAmountFromComponentV1114(payment, items) {
+  const actual = Number(payment?.paid_amount_actual || 0);
+  if (actual > 0) return actual;
+  const sections = calculateSectionAmountsV1114(items || []);
+  const component = payment?.paid_component || PAYMENT_COMPONENTS_V1114.both;
+  if (component === PAYMENT_COMPONENTS_V1114.recurring) return sections.recurring;
+  if (component === PAYMENT_COMPONENTS_V1114.oneTime) return sections.oneTime;
+  return sections.recurring + sections.oneTime;
+}
+
+async function loadPaymentInfoMapV1114(quotationIds) {
+  const ids = (quotationIds || []).filter(Boolean);
+  const map = new Map();
+  if (!ids.length) return map;
+
+  const { data, error } = await supabaseClient
+    .from("quotations")
+    .select("id, status, paid_at, paid_component, paid_amount_actual, paid_recurring_amount, paid_one_time_amount")
+    .in("id", ids);
+  if (error) throw error;
+  (data || []).forEach((row) => map.set(row.id, row));
+  return map;
+}
+
+async function loadQuotationItemsMapV1114(quotationIds) {
+  const ids = (quotationIds || []).filter(Boolean);
+  const map = new Map();
+  if (!ids.length) return map;
+
+  const { data, error } = await supabaseClient
+    .from("quotation_items")
+    .select("quotation_id, section_type, line_subtotal, quantity, unit_price")
+    .in("quotation_id", ids);
+  if (error) throw error;
+
+  (data || []).forEach((item) => {
+    if (!map.has(item.quotation_id)) map.set(item.quotation_id, []);
+    map.get(item.quotation_id).push(item);
+  });
+  return map;
+}
+
+function enrichQuotationsWithPaymentV1114(quotations, paymentMap, itemsMap) {
+  return (quotations || []).map((row) => {
+    const payment = paymentMap.get(row.id) || {};
+    const paidAmount = calculatePaidAmountFromComponentV1114(payment, itemsMap.get(row.id) || []);
+    return {
+      ...row,
+      paid_at: payment.paid_at || row.paid_at || null,
+      paid_component: payment.paid_component || row.paid_component || null,
+      paid_amount_actual: paidAmount,
+    };
+  });
+}
+
+function buildDashboardMetricsFromRowsV1114(rows) {
+  const metrics = emptyDashboardMetrics();
+  (rows || []).forEach((row) => {
+    const status = normalizeQuotationStatusV1110(row);
+    metrics.total_count += 1;
+    if (status === "draft") metrics.draft_count += 1;
+    else if (status === "confirmed") metrics.confirmed_count += 1;
+    else if (status === "sent") metrics.sent_count += 1;
+    else if (status === "paid") metrics.paid_count = Number(metrics.paid_count || 0) + 1;
+    else if (status === "expired") metrics.expired_count += 1;
+    else if (status === "cancelled") metrics.cancelled_count += 1;
+
+    if (status === "paid" && isDateInCurrentMonthV1114(row.paid_at)) {
+      metrics.total_amount_this_month += Number(row.paid_amount_actual || 0);
+    }
+  });
+  return metrics;
+}
+
+function buildSalesSummaryFromRowsV1114(rows) {
+  const groups = new Map();
+  (rows || []).forEach((row) => {
+    const key = row.owner_id || "unknown";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        owner_id: key,
+        owner_name: row.owner_name || "-",
+        total_count: 0,
+        draft_count: 0,
+        confirmed_count: 0,
+        sent_count: 0,
+        paid_count: 0,
+        expired_count: 0,
+        cancelled_count: 0,
+        total_amount_this_month: 0,
+      });
+    }
+    const group = groups.get(key);
+    const status = normalizeQuotationStatusV1110(row);
+    group.total_count += 1;
+    if (status === "draft") group.draft_count += 1;
+    else if (status === "confirmed") group.confirmed_count += 1;
+    else if (status === "sent") group.sent_count += 1;
+    else if (status === "paid") group.paid_count += 1;
+    else if (status === "expired") group.expired_count += 1;
+    else if (status === "cancelled") group.cancelled_count += 1;
+    if (status === "paid" && isDateInCurrentMonthV1114(row.paid_at)) {
+      group.total_amount_this_month += Number(row.paid_amount_actual || 0);
+    }
+  });
+  return Array.from(groups.values()).sort((a, b) => String(a.owner_name).localeCompare(String(b.owner_name), "th"));
+}
+
+function renderSalesSummaryTableV1112(rows) {
+  const source = Array.isArray(rows) ? rows : [];
+  if (!source.length) return `<div class="empty-state">ยังไม่มีข้อมูลใบเสนอราคา</div>`;
+
+  const pageInfo = getDashboardPageRowsV1112("salesSummary", source);
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ฝ่ายขาย</th>
+            <th>ทั้งหมด</th>
+            <th>ร่าง</th>
+            <th>ยืนยันแล้ว</th>
+            <th>ส่งแล้ว</th>
+            <th>ชำระเงินแล้ว</th>
+            <th>หมดอายุ</th>
+            <th>ยอดรับชำระเดือนนี้</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageInfo.rows.map((row) => `
+            <tr>
+              <td>${escapeHTML(row.owner_name || "-")}</td>
+              <td>${number(row.total_count)}</td>
+              <td>${number(row.draft_count)}</td>
+              <td>${number(row.confirmed_count)}</td>
+              <td>${number(row.sent_count)}</td>
+              <td>${number(row.paid_count || 0)}</td>
+              <td>${number(row.expired_count)}</td>
+              <td>${formatTHB(row.total_amount_this_month)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${renderDashboardPaginationV1112("salesSummary", pageInfo)}
+  `;
+}
+
+function renderSalesSummaryTable(rows) { return renderSalesSummaryTableV1112(rows); }
+
+async function renderDashboardPage() {
+  setPageHeader("แดชบอร์ด", "งานที่ต้องทำต่อและข้อมูลสำคัญของใบเสนอราคา");
+  renderLoading();
+
+  const isSales = appState.profile.role === "sales";
+  const quotationsResult = await supabaseClient
+    .from("v_quotations_list")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(200);
+
+  if (quotationsResult.error) throw quotationsResult.error;
+
+  const quotationBaseRows = quotationsResult.data || [];
+  const paymentMap = await loadPaymentInfoMapV1114(quotationBaseRows.map((row) => row.id));
+  const itemsMap = await loadQuotationItemsMapV1114(quotationBaseRows.map((row) => row.id));
+  const quotations = enrichQuotationsWithPaymentV1114(quotationBaseRows, paymentMap, itemsMap);
+  const metrics = buildDashboardMetricsFromRowsV1114(quotations);
+  const salesSummary = buildSalesSummaryFromRowsV1114(quotations);
+
+  const driveMap = await loadDriveLogsMapV1110(quotations.map((row) => row.id));
+  const insights = calculateDashboardInsightsV1111(quotations, driveMap);
+  const today = startOfToday();
+  const next7 = addDays(today, 7);
+
+  const draftRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "draft");
+  const needsDriveRows = quotations
+    .filter((row) => row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed")
+    .filter((row) => !driveMap.has(row.id));
+  const readyToSendRows = quotations
+    .filter((row) => (row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed") && driveMap.has(row.id));
+  const sentRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "sent");
+  const expiringSoonRows = quotations
+    .filter((row) => ["confirmed", "sent"].includes(normalizeQuotationStatusV1110(row)))
+    .filter((row) => row.valid_until && new Date(row.valid_until) >= today && new Date(row.valid_until) <= next7);
+  const recentDocs = quotations;
+
+  elements.pageContent.innerHTML = `
+    ${renderDashboardMetrics(metrics)}
+    ${renderDashboardInsightsV1111(insights)}
+
+    <section class="journey-workspace-v1110 journey-workspace-v1111">
+      <div class="journey-workspace-head-v1110">
+        <div>
+          <span class="journey-eyebrow-v1110">งานที่ต้องทำต่อ</span>
+          <h3>งานที่ต้องทำต่อ</h3>
+          <p>แสดงสถานะละ ${number(DASHBOARD_WORKSPACE_PAGE_SIZE_V1111)} รายการ เพื่อให้ scan งานได้ง่าย</p>
+        </div>
+        ${appState.profile.role !== "manager" ? `<button type="button" id="dashboardNewQuotationButtonV1110" class="btn btn-primary">+ สร้างใบเสนอราคา</button>` : ""}
+      </div>
+      <div class="journey-workspace-grid-v1110">
+        <div class="journey-workspace-column-v1110"><h4>ร่างที่ยังไม่เสร็จ</h4>${renderJourneyTaskListV1111(draftRows, driveMap, "ไม่มีร่างที่ต้องทำต่อ", "draft")}</div>
+        <div class="journey-workspace-column-v1110"><h4>รอบันทึก PDF</h4>${renderJourneyTaskListV1111(needsDriveRows, driveMap, "ไม่มีใบที่รอบันทึก PDF", "needsDrive")}</div>
+        <div class="journey-workspace-column-v1110"><h4>พร้อมส่งแล้ว</h4>${renderJourneyTaskListV1111(readyToSendRows, driveMap, "ไม่มีใบที่พร้อมส่ง", "readyToSend")}</div>
+        <div class="journey-workspace-column-v1110"><h4>ส่งแล้วล่าสุด</h4>${renderJourneyTaskListV1111(sentRows, driveMap, "ยังไม่มีใบที่ส่งแล้ว", "sent")}</div>
+      </div>
+    </section>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header"><div><h3>เอกสารใกล้หมดอายุ</h3><p>ใบที่ยืนยันแล้วหรือส่งแล้ว และจะหมดอายุภายใน 7 วัน</p></div></div>
+        ${renderDashboardCompactQuotationListV1112(expiringSoonRows, "ยังไม่มีเอกสารใกล้หมดอายุ", "expiringSoon")}
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h3>อัปเดตล่าสุด</h3><p>ใบเสนอราคาที่มีการแก้ไขหรือสร้างล่าสุด</p></div></div>
+        ${renderDashboardCompactQuotationListV1112(recentDocs, "ยังไม่มีใบเสนอราคา", "recentDocs")}
+      </div>
+    </div>
+
+    ${!isSales ? `
+      <div class="card">
+        <div class="card-header"><div><h3>ยอดรวมตามฝ่ายขาย</h3><p>ยอดรับชำระเดือนนี้คิดจากใบสถานะชำระเงินแล้วเท่านั้น</p></div></div>
+        ${renderSalesSummaryTableV1112(salesSummary)}
+      </div>
+    ` : ""}
+  `;
+
+  document.getElementById("dashboardNewQuotationButtonV1110")?.addEventListener("click", () => {
+    location.hash = "#quotation-new";
+  });
+  bindJourneyTaskLinksV1110();
+  bindWorkspacePaginationV1111();
+  bindDashboardPaginationV1112();
+  bindCompactQuotationLinks();
+  translateVisibleLabelsV1111();
+}
+
+function openMarkSentModalV1104(model, driveLog) {
+  closeMarkSentModalV1104();
+
+  const quotation = model?.quotation || {};
+  const todayValue = formatSentDateForInputV1104(quotation.sent_at || quotation.delivery_planned_sent_at);
+  const defaultName = quotation.sent_recipient_name || quotation.delivery_recipient_name || "";
+  const defaultEmail = quotation.sent_recipient_email || quotation.delivery_recipient_email || "";
+  const defaultPosition = quotation.sent_recipient_position || quotation.delivery_recipient_position || "";
+
+  const modal = document.createElement("div");
+  modal.id = "markSentModalV1104";
+  modal.className = "modal-backdrop-v1104";
+  modal.innerHTML = `
+    <div class="modal-card-v1104 email-modal-v1113 email-modal-v1114" role="dialog" aria-modal="true">
+      <div class="modal-header-v1104 delivery-modal-header-v1114">
+        <div>
+          <span class="modal-eyebrow-v1114">ข้อมูลการส่งใบเสนอราคา</span>
+          <h3>บันทึกข้อมูลผู้รับปลายทาง</h3>
+          <p>บันทึกข้อมูลไว้ก่อน หรือบันทึกพร้อมส่งอีเมลแนบ PDF จาก Google Drive</p>
+        </div>
+        <button id="closeSentModalButtonV1104" type="button" class="icon-button">×</button>
+      </div>
+
+      <form id="markSentFormV1104" class="delivery-form-v1114">
+        <section class="delivery-section-v1114">
+          <h4>ข้อมูลการส่ง</h4>
+          <div class="delivery-grid-v1114 two-cols">
+            <div class="field">
+              <label for="sentDateInputV1104">วันที่ส่งใบเสนอราคา <span class="required-star">*</span></label>
+              <input id="sentDateInputV1104" type="date" value="${escapeHTML(todayValue)}" required />
+            </div>
+            <div class="field">
+              <label for="sentRecipientNameInputV1104">ผู้รับ <span class="required-star">*</span></label>
+              <input id="sentRecipientNameInputV1104" type="text" value="${escapeHTML(defaultName)}" placeholder="ชื่อผู้รับปลายทาง" required />
+            </div>
+            <div class="field">
+              <label for="sentRecipientPositionInputV1104">ตำแหน่ง</label>
+              <input id="sentRecipientPositionInputV1104" type="text" value="${escapeHTML(defaultPosition)}" placeholder="เช่น ผู้จัดการฝ่ายขนส่ง" />
+            </div>
+            <div class="field full">
+              <label for="sentRecipientEmailInputV1104">อีเมลผู้รับ <span class="required-star">*</span></label>
+              <textarea id="sentRecipientEmailInputV1104" rows="3" placeholder="customer1@company.com, customer2@company.com" required>${escapeHTML(defaultEmail)}</textarea>
+              <small class="field-hint">รองรับหลายอีเมล คั่นด้วย comma, semicolon หรือขึ้นบรรทัดใหม่</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="delivery-section-v1114 soft">
+          <h4>ไฟล์แนบและการส่งอีเมล</h4>
+          <div class="drive-file-confirm-v1104 drive-file-confirm-v1114">
+            <span>PDF ใน Google Drive</span>
+            <a href="${escapeHTML(driveLog?.file_url || "#")}" target="_blank" rel="noopener">${escapeHTML(driveLog?.file_name || "เปิดไฟล์")}</a>
+          </div>
+          <div class="email-note-v1113 email-note-v1114">
+            ระบบจะส่งถึงอีเมลผู้รับ, CC fixed email จากเมนูตั้งค่า และ CC อีเมลฝ่ายขายเจ้าของใบเสนอราคา
+          </div>
+        </section>
+
+        <div id="markSentErrorV1104" class="alert alert-error hidden"></div>
+
+        <div class="form-actions normal-flow modal-actions-v1104 modal-actions-v1113 modal-actions-v1114">
+          <button type="button" id="cancelSentModalButtonV1104" class="btn btn-ghost">ยกเลิก</button>
+          <button type="button" id="saveDeliveryOnlyButtonV1113" class="btn btn-ghost">บันทึก</button>
+          <button type="submit" id="submitSentButtonV1104" class="btn btn-primary">บันทึกและส่งอีเมล</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.getElementById("closeSentModalButtonV1104")?.addEventListener("click", closeMarkSentModalV1104);
+  document.getElementById("cancelSentModalButtonV1104")?.addEventListener("click", closeMarkSentModalV1104);
+  document.getElementById("saveDeliveryOnlyButtonV1113")?.addEventListener("click", async () => saveDeliveryInfoOnlyV1113(model));
+  modal.addEventListener("click", (event) => { if (event.target === modal) closeMarkSentModalV1104(); });
+  document.getElementById("markSentFormV1104")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await submitMarkSentWithRecipientV1104(model);
+  });
+
+  document.getElementById("sentRecipientEmailInputV1104")?.focus();
+}
+
+const originalDebugV1114 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1114() {
+  const result = typeof originalDebugV1114 === "function" ? await originalDebugV1114() : {};
+  return {
+    ...result,
+    version: FI_V1114_VERSION,
+    sentCancellationBlocked: true,
+    sentRowsCheckboxDisabled: true,
+    paidAmountBySelectedSection: true,
+    dashboardPaidOnlyMonthAmount: true,
+    deliveryModalLayoutPolish: true,
+    mailAppEmailSend: true,
+    sqlChanged: true,
+    appsScriptChanged: true,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1114_VERSION;
