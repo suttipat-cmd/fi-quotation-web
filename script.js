@@ -18047,3 +18047,467 @@ window.FI_DEBUG = async function FI_DEBUG_V1105() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V1105_VERSION;
+
+// =======================================================
+// v1.11.0 Quotation Journey UX
+// Scope: make the quotation flow guide users from login ->
+// draft -> confirm -> Drive archive -> recipient delivery.
+// Frontend-only release; no new SQL required beyond v1.10.2/v1.10.4.
+// =======================================================
+
+const FI_V1110_VERSION = "1.11.0";
+window.FI_APP_VERSION = FI_V1110_VERSION;
+
+function normalizeQuotationStatusV1110(quotation) {
+  return quotation?.effective_status || quotation?.status || "-";
+}
+
+function hasDrivePdfV1110(driveLog) {
+  return Boolean(driveLog && !driveLog.loadError && driveLog.file_url);
+}
+
+function getJourneyStateV1110(quotation, driveLog) {
+  const status = normalizeQuotationStatusV1110(quotation);
+
+  if (status === "draft" || quotation?.status === "draft") return "draft";
+  if (status === "sent" || quotation?.status === "sent") return "sent";
+  if (status === "cancelled" || quotation?.status === "cancelled") return "cancelled";
+  if (status === "expired") return "expired";
+  if (quotation?.status === "confirmed" || status === "confirmed") {
+    return hasDrivePdfV1110(driveLog) ? "ready_to_send" : "needs_drive";
+  }
+  return status || "unknown";
+}
+
+function getJourneyStepsV1110(state) {
+  const stepMap = {
+    draft: 1,
+    needs_drive: 2,
+    ready_to_send: 3,
+    sent: 4,
+    expired: 2,
+    cancelled: 0,
+  };
+  const activeIndex = stepMap[state] ?? 0;
+  return [
+    { key: "draft", label: "ร่าง", done: activeIndex > 1, active: activeIndex === 1 },
+    { key: "confirmed", label: "ยืนยัน", done: activeIndex > 2, active: activeIndex === 2 },
+    { key: "drive", label: "บันทึก PDF", done: activeIndex > 3, active: activeIndex === 3 },
+    { key: "sent", label: "ส่งแล้ว", done: activeIndex >= 4, active: activeIndex === 4 },
+  ];
+}
+
+function renderJourneyStepperV1110(state) {
+  return `
+    <div class="journey-stepper-v1110">
+      ${getJourneyStepsV1110(state).map((step, index) => `
+        <div class="journey-step-v1110 ${step.done ? "is-done" : ""} ${step.active ? "is-active" : ""}">
+          <span class="journey-step-dot-v1110">${step.done ? "✓" : index + 1}</span>
+          <span>${escapeHTML(step.label)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getJourneyCopyV1110(state) {
+  const map = {
+    draft: {
+      title: "ตรวจสอบร่างก่อนยืนยัน",
+      desc: "เอกสารยังแก้ไขได้เต็มรูปแบบ เมื่อข้อมูลครบแล้วให้ยืนยันเพื่อสร้างเลขและล็อกเอกสาร",
+      tone: "draft",
+    },
+    needs_drive: {
+      title: "ขั้นตอนถัดไป: บันทึก PDF ลง Google Drive",
+      desc: "เอกสารยืนยันแล้ว แต่ยังส่งไม่ได้จนกว่าจะเก็บไฟล์ PDF ลง Google Drive ก่อน",
+      tone: "warning",
+    },
+    ready_to_send: {
+      title: "พร้อมบันทึกข้อมูลการส่ง",
+      desc: "มีไฟล์ PDF ใน Google Drive แล้ว กรอกข้อมูลผู้รับเพื่อเปลี่ยนสถานะเป็นส่งแล้ว",
+      tone: "ready",
+    },
+    sent: {
+      title: "ส่งใบเสนอราคาแล้ว",
+      desc: "ใบเสนอราคานี้บันทึกข้อมูลการส่งเรียบร้อยแล้ว สามารถเปิดไฟล์ PDF หรือดูรายละเอียดได้",
+      tone: "sent",
+    },
+    expired: {
+      title: "ใบเสนอราคาหมดอายุ",
+      desc: "เอกสารนี้หมดอายุแล้ว หากต้องการเสนอราคาใหม่ให้สร้างสำเนาเป็น Draft ใหม่",
+      tone: "warning",
+    },
+    cancelled: {
+      title: "ใบเสนอราคาถูกยกเลิก",
+      desc: "เอกสารนี้ถูกยกเลิกแล้ว หากต้องการใช้งานต่อให้สร้างสำเนาใหม่",
+      tone: "muted",
+    },
+  };
+  return map[state] || {
+    title: "สถานะใบเสนอราคา",
+    desc: "ตรวจสอบสถานะและเลือก action ที่เหมาะสม",
+    tone: "muted",
+  };
+}
+
+function canModifyQuotationV1110(quotation) {
+  const role = appState.profile?.role;
+  const isOwner = quotation?.owner_id === appState.user?.id;
+  return role === "admin" || (role === "sales" && isOwner);
+}
+
+function renderJourneyPrimaryActionV1110(quotation, state, driveLog) {
+  if (!canModifyQuotationV1110(quotation)) return "";
+
+  if (state === "draft") {
+    return `
+      <button type="button" class="btn btn-primary" data-journey-action-v1110="review-draft" data-id="${escapeHTML(quotation.id)}">
+        ตรวจสอบ / ยืนยัน
+      </button>
+      <button type="button" class="btn btn-ghost" data-journey-action-v1110="edit-draft" data-id="${escapeHTML(quotation.id)}">
+        แก้ไข Draft
+      </button>
+    `;
+  }
+
+  if (state === "needs_drive") {
+    return `
+      <button type="button" class="btn btn-primary" data-journey-action-v1110="save-drive" data-id="${escapeHTML(quotation.id)}">
+        บันทึก PDF ลง Google Drive
+      </button>
+      <button type="button" class="btn btn-ghost" data-journey-action-v1110="print" data-id="${escapeHTML(quotation.id)}">
+        Preview / Print
+      </button>
+    `;
+  }
+
+  if (state === "ready_to_send") {
+    return `
+      <button type="button" class="btn btn-primary" data-journey-action-v1110="mark-sent" data-id="${escapeHTML(quotation.id)}">
+        ส่งแล้ว
+      </button>
+      ${driveLog?.file_url ? `<a class="btn btn-ghost" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">เปิดไฟล์ใน Google Drive</a>` : ""}
+    `;
+  }
+
+  if (state === "sent") {
+    return `
+      ${driveLog?.file_url ? `<a class="btn btn-primary" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">เปิดไฟล์ใน Google Drive</a>` : ""}
+      <button type="button" class="btn btn-ghost" data-journey-action-v1110="duplicate" data-id="${escapeHTML(quotation.id)}">
+        สร้างสำเนา
+      </button>
+    `;
+  }
+
+  if (["expired", "cancelled"].includes(state)) {
+    return `
+      <button type="button" class="btn btn-ghost" data-journey-action-v1110="duplicate" data-id="${escapeHTML(quotation.id)}">
+        สร้างสำเนา
+      </button>
+    `;
+  }
+
+  return "";
+}
+
+function renderQuotationJourneyCardV1110(quotation, driveLog, options = {}) {
+  const state = getJourneyStateV1110(quotation, driveLog);
+  const copy = getJourneyCopyV1110(state);
+  const compact = options.compact ? "journey-card-compact-v1110" : "";
+  const driveText = hasDrivePdfV1110(driveLog)
+    ? `บันทึก PDF แล้ว: ${escapeHTML(driveLog.file_name || "Google Drive")}`
+    : "ยังไม่ได้บันทึก PDF ลง Google Drive";
+
+  return `
+    <section id="quotationJourneyCardV1110" class="quotation-journey-card-v1110 ${compact} tone-${copy.tone}">
+      <div class="journey-main-v1110">
+        <div>
+          <div class="journey-eyebrow-v1110">Quotation Journey</div>
+          <h3>${escapeHTML(copy.title)}</h3>
+          <p>${escapeHTML(copy.desc)}</p>
+        </div>
+        <div class="journey-status-pill-v1110">${statusBadge(normalizeQuotationStatusV1110(quotation))}</div>
+      </div>
+      ${renderJourneyStepperV1110(state)}
+      <div class="journey-meta-v1110">
+        <span>${escapeHTML(quotation.quotation_no || "ยังไม่ออกเลข")}</span>
+        <span>${escapeHTML(quotation.customer_name || "-")}</span>
+        <span>${driveText}</span>
+      </div>
+      <div class="journey-actions-v1110">
+        ${renderJourneyPrimaryActionV1110(quotation, state, driveLog)}
+      </div>
+    </section>
+  `;
+}
+
+function bindJourneyActionsV1110(root = document, quotation = null, driveLog = null) {
+  root.querySelectorAll("[data-journey-action-v1110]").forEach((button) => {
+    if (button.dataset.journeyBoundV1110 === "1") return;
+    button.dataset.journeyBoundV1110 = "1";
+    button.addEventListener("click", async () => {
+      const action = button.dataset.journeyActionV1110;
+      const id = button.dataset.id || quotation?.id;
+      if (!id) return;
+
+      if (action === "edit-draft") {
+        location.hash = `#quotation-edit/${id}`;
+        return;
+      }
+      if (action === "review-draft") {
+        await confirmQuotation(id);
+        return;
+      }
+      if (action === "save-drive" || action === "print") {
+        location.hash = `#quotation-print/${id}`;
+        return;
+      }
+      if (action === "mark-sent") {
+        if (quotation && driveLog?.file_url && typeof openMarkSentModalV1104 === "function") {
+          openMarkSentModalV1104({ quotation }, driveLog);
+          return;
+        }
+        await markQuotationAsSent(id);
+        return;
+      }
+      if (action === "duplicate") {
+        await duplicateQuotation(id);
+      }
+    });
+  });
+}
+
+async function loadDriveLogsMapV1110(quotationIds) {
+  const ids = Array.from(new Set((quotationIds || []).filter(Boolean)));
+  const map = new Map();
+  if (!ids.length || !supabaseClient) return map;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("quotation_drive_files")
+      .select("quotation_id, file_name, file_url, file_id, folder_id, created_at")
+      .in("quotation_id", ids);
+
+    if (error) throw error;
+    (data || []).forEach((row) => map.set(row.quotation_id, row));
+  } catch (error) {
+    console.warn("Cannot load drive logs for journey dashboard.", error);
+  }
+  return map;
+}
+
+function renderJourneyTaskListV1110(rows, driveMap, emptyText) {
+  if (!rows.length) return `<div class="empty-state compact">${escapeHTML(emptyText)}</div>`;
+
+  return `
+    <div class="journey-task-list-v1110">
+      ${rows.map((row) => {
+        const driveLog = driveMap.get(row.id) || null;
+        const state = getJourneyStateV1110(row, driveLog);
+        const copy = getJourneyCopyV1110(state);
+        const actionLabel = state === "draft"
+          ? "ทำต่อ"
+          : state === "needs_drive"
+            ? "บันทึก PDF"
+            : state === "ready_to_send"
+              ? "ส่งแล้ว"
+              : "ดูรายละเอียด";
+        const target = state === "needs_drive" ? `quotation-print/${row.id}` : `quotation-view/${row.id}`;
+        return `
+          <button type="button" class="journey-task-item-v1110" data-journey-task-target-v1110="#${target}">
+            <div>
+              <strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong>
+              <span>${escapeHTML(row.customer_name || "-")}</span>
+              <small>${escapeHTML(copy.title)}</small>
+            </div>
+            <div class="journey-task-right-v1110">
+              ${statusBadge(normalizeQuotationStatusV1110(row))}
+              <b>${escapeHTML(actionLabel)}</b>
+            </div>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function bindJourneyTaskLinksV1110() {
+  document.querySelectorAll("[data-journey-task-target-v1110]").forEach((button) => {
+    button.addEventListener("click", () => {
+      location.hash = button.dataset.journeyTaskTargetV1110;
+    });
+  });
+}
+
+async function renderDashboardPage() {
+  setPageHeader("Dashboard", "งานที่ต้องทำต่อและภาพรวมใบเสนอราคา");
+  renderLoading();
+
+  const isSales = appState.profile.role === "sales";
+
+  const [dashboardResult, quotationsResult] = await Promise.all([
+    isSales
+      ? supabaseClient.from("v_dashboard_sales").select("*").eq("owner_id", appState.user.id).maybeSingle()
+      : supabaseClient.from("v_dashboard_manager").select("*").order("owner_name", { ascending: true }),
+    supabaseClient.from("v_quotations_list").select("*").order("updated_at", { ascending: false }).limit(160),
+  ]);
+
+  if (dashboardResult.error) throw dashboardResult.error;
+  if (quotationsResult.error) throw quotationsResult.error;
+
+  const quotations = quotationsResult.data || [];
+  const metrics = isSales
+    ? dashboardResult.data || emptyDashboardMetrics()
+    : summarizeManagerDashboard(dashboardResult.data || []);
+
+  const driveMap = await loadDriveLogsMapV1110(quotations.map((row) => row.id));
+  const draftRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "draft").slice(0, 8);
+  const needsDriveRows = quotations
+    .filter((row) => row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed")
+    .filter((row) => !driveMap.has(row.id))
+    .slice(0, 8);
+  const readyToSendRows = quotations
+    .filter((row) => (row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed") && driveMap.has(row.id))
+    .slice(0, 8);
+  const sentRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "sent").slice(0, 8);
+
+  elements.pageContent.innerHTML = `
+    <section class="journey-workspace-v1110">
+      <div class="journey-workspace-head-v1110">
+        <div>
+          <span class="journey-eyebrow-v1110">Quotation Workspace</span>
+          <h3>งานที่ต้องทำต่อ</h3>
+          <p>ระบบจัดกลุ่มใบเสนอราคาตามขั้นตอน เพื่อให้ทำงานต่อได้ทันที</p>
+        </div>
+        ${appState.profile.role !== "manager" ? `<button type="button" id="dashboardNewQuotationButtonV1110" class="btn btn-primary">+ สร้างใบเสนอราคา</button>` : ""}
+      </div>
+      <div class="journey-workspace-grid-v1110">
+        <div class="journey-workspace-column-v1110"><h4>Draft ที่ยังไม่เสร็จ</h4>${renderJourneyTaskListV1110(draftRows, driveMap, "ไม่มี Draft ที่ต้องทำต่อ")}</div>
+        <div class="journey-workspace-column-v1110"><h4>รอบันทึก PDF</h4>${renderJourneyTaskListV1110(needsDriveRows, driveMap, "ไม่มีใบที่รอบันทึก PDF")}</div>
+        <div class="journey-workspace-column-v1110"><h4>พร้อมส่งแล้ว</h4>${renderJourneyTaskListV1110(readyToSendRows, driveMap, "ไม่มีใบที่พร้อมส่ง")}</div>
+        <div class="journey-workspace-column-v1110"><h4>ส่งแล้วล่าสุด</h4>${renderJourneyTaskListV1110(sentRows, driveMap, "ยังไม่มีใบที่ส่งแล้ว")}</div>
+      </div>
+    </section>
+
+    ${renderDashboardMetrics(metrics)}
+
+    ${!isSales ? `
+      <div class="card">
+        <div class="card-header"><div><h3>ยอดรวมตาม Sales</h3><p>มุมมองสำหรับ Manager / Admin</p></div></div>
+        ${renderSalesSummaryTable(dashboardResult.data || [])}
+      </div>
+    ` : ""}
+  `;
+
+  document.getElementById("dashboardNewQuotationButtonV1110")?.addEventListener("click", () => {
+    location.hash = "#quotation-new";
+  });
+  bindJourneyTaskLinksV1110();
+}
+
+async function injectJourneyIntoQuotationViewV1110(quotationId) {
+  if (!quotationId || document.getElementById("quotationJourneyCardV1110")) return;
+  try {
+    const { data: quotation, error } = await supabaseClient
+      .from("quotations")
+      .select("id, owner_id, status, quotation_no, customer_name, valid_until, sent_at, sent_recipient_email, sent_recipient_name, sent_recipient_position")
+      .eq("id", quotationId)
+      .maybeSingle();
+    if (error || !quotation) return;
+
+    const driveLog = await loadDriveFileLogV1102(quotationId);
+    const html = renderQuotationJourneyCardV1110(quotation, driveLog);
+    elements.pageContent.insertAdjacentHTML("afterbegin", html);
+    bindJourneyActionsV1110(document.getElementById("quotationJourneyCardV1110"), quotation, driveLog);
+  } catch (error) {
+    console.warn("Cannot inject journey card.", error);
+  }
+}
+
+const originalRenderQuotationViewPageV1110 = window.renderQuotationViewPage || renderQuotationViewPage;
+window.renderQuotationViewPage = async function renderQuotationViewPageV1110(quotationId) {
+  const result = await originalRenderQuotationViewPageV1110.call(this, quotationId);
+  await injectJourneyIntoQuotationViewV1110(quotationId);
+  return result;
+};
+try { renderQuotationViewPage = window.renderQuotationViewPage; } catch (_error) {}
+
+const originalRenderQuotationPrintPageV1110 = window.renderQuotationPrintPage || renderQuotationPrintPage;
+window.renderQuotationPrintPage = async function renderQuotationPrintPageV1110(quotationId) {
+  const result = await originalRenderQuotationPrintPageV1110.call(this, quotationId);
+  try {
+    const { data: quotation } = await supabaseClient
+      .from("quotations")
+      .select("id, owner_id, status, quotation_no, customer_name, valid_until, sent_at")
+      .eq("id", quotationId)
+      .maybeSingle();
+    const driveLog = await loadDriveFileLogV1102(quotationId);
+    const toolbar = document.querySelector(".print-toolbar");
+    if (toolbar && quotation && !document.getElementById("quotationPrintJourneyV1110")) {
+      toolbar.insertAdjacentHTML("afterend", `<div id="quotationPrintJourneyV1110">${renderQuotationJourneyCardV1110(quotation, driveLog, { compact: true })}</div>`);
+      bindJourneyActionsV1110(document.getElementById("quotationPrintJourneyV1110"), quotation, driveLog);
+    }
+  } catch (error) {
+    console.warn("Cannot render print journey card.", error);
+  }
+  return result;
+};
+try { renderQuotationPrintPage = window.renderQuotationPrintPage; } catch (_error) {}
+
+const originalRenderQuotationFormPageV1110 = window.renderQuotationFormPage || (typeof renderQuotationFormPage === "function" ? renderQuotationFormPage : null);
+if (typeof originalRenderQuotationFormPageV1110 === "function") {
+  window.renderQuotationFormPage = async function renderQuotationFormPageV1110(options) {
+    const result = await originalRenderQuotationFormPageV1110.call(this, options);
+    if (!document.getElementById("quotationFormJourneyV1110")) {
+      const form = document.getElementById("quotationDraftForm");
+      if (form) {
+        form.insertAdjacentHTML("beforebegin", `
+          <section id="quotationFormJourneyV1110" class="quotation-journey-card-v1110 journey-card-compact-v1110 tone-draft">
+            <div class="journey-main-v1110">
+              <div>
+                <div class="journey-eyebrow-v1110">Create Quotation</div>
+                <h3>${options?.mode === "edit" ? "แก้ไข Draft แล้วตรวจสอบก่อนยืนยัน" : "สร้าง Draft ให้ครบ แล้วไปตรวจสอบก่อนยืนยัน"}</h3>
+                <p>เอกสารยังแก้ไขได้ในขั้น Draft เมื่อบันทึกแล้วระบบจะพาไปหน้าตรวจสอบก่อน Confirm</p>
+              </div>
+            </div>
+            ${renderJourneyStepperV1110("draft")}
+          </section>
+        `);
+      }
+    }
+    return result;
+  };
+  try { renderQuotationFormPage = window.renderQuotationFormPage; } catch (_error) {}
+}
+
+const originalConfirmQuotationV1110 = window.confirmQuotation || confirmQuotation;
+window.confirmQuotation = async function confirmQuotationV1110(quotationId) {
+  const result = await originalConfirmQuotationV1110.call(this, quotationId);
+  showToast("ยืนยันแล้ว ขั้นตอนถัดไปคือบันทึก PDF ลง Google Drive");
+  return result;
+};
+try { confirmQuotation = window.confirmQuotation; } catch (_error) {}
+
+const originalDebugV1110 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1110() {
+  const result = typeof originalDebugV1110 === "function" ? await originalDebugV1110() : {};
+  return {
+    ...result,
+    version: FI_V1110_VERSION,
+    quotationJourneyUX: true,
+    dashboardWorkspace: true,
+    stateMachine: "draft -> confirmed_needs_drive -> ready_to_send -> sent",
+    sqlChanged: false,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1110_VERSION;
+
+// Keep original confirmation behavior to avoid duplicate confirmations; the Journey card explains next step after render.
+try {
+  if (typeof originalConfirmQuotationV1110 === "function") {
+    window.confirmQuotation = originalConfirmQuotationV1110;
+    confirmQuotation = originalConfirmQuotationV1110;
+  }
+} catch (_error) {}
+window.FI_APP_VERSION = FI_V1110_VERSION;

@@ -1,20 +1,28 @@
-# FI Quotation Web App v1.10.5
+# FI Quotation Web App v1.11.0
 
-## v1.10.5 Sent Action UI Polish + View Sent Action
+## v1.11.0 Quotation Journey UX
 
-Release นี้ต่อยอดจาก v1.10.4 เพื่อปรับ UI และ wording ของ workflow การส่งใบเสนอราคาให้กระชับขึ้น โดยยังคงเงื่อนไขเดิมคือ ต้องบันทึก PDF ลง Google Drive ก่อนจึงจะเปลี่ยนสถานะเป็น “ส่งแล้ว” ได้
+Release นี้ต่อยอดจาก v1.10.5 เพื่อปรับ UX ของ flow การสร้างและส่งใบเสนอราคาให้เป็นเส้นทางงานที่ชัดเจนขึ้น ตั้งแต่ผู้ใช้ login เข้าระบบ เห็นงานที่ต้องทำต่อ สร้าง Draft ยืนยันเอกสาร บันทึก PDF ลง Google Drive และกรอกข้อมูลการส่งใบเสนอราคา
 
-## สิ่งที่เปลี่ยนใน v1.10.5
+## สิ่งที่เปลี่ยนใน v1.11.0
 
-- อัปเดต cache busting เป็น `style.css?v=1.10.5` และ `script.js?v=1.10.5`
-- อัปเดต `window.FI_APP_VERSION = "1.10.5"`
-- ปรับปุ่ม action บนหน้า Preview / Print ให้กระชับขึ้น ไม่กินพื้นที่มากเกินไป
-- เปลี่ยน wording ปุ่มสถานะจากข้อความยาวให้เหลือเพียง `ส่งแล้ว`
-- ปุ่ม `ส่งแล้ว` ยังถูก disable ถ้ายังไม่มี PDF ที่บันทึกลง Google Drive
-- เมื่อมี PDF ใน Google Drive แล้ว ผู้ใช้สามารถกด `ส่งแล้ว` ได้จากหน้า `#quotation-view` ด้วย
-- ปุ่ม `ส่งแล้ว` ในหน้า View และ Print ใช้ action เดียวกัน เปิด modal กรอกข้อมูลการส่งเหมือนกัน
-- ปรับ UI “ข้อมูลการส่งใบเสนอราคา” ให้เป็น card ขนาดพอดี อ่านง่าย และไม่ทำให้ toolbar ดูแน่นเกินไป
-- ไม่มี SQL patch ใหม่ใน release นี้
+- อัปเดต cache busting เป็น `style.css?v=1.11.0` และ `script.js?v=1.11.0`
+- อัปเดต `window.FI_APP_VERSION = "1.11.0"`
+- เพิ่ม Quotation Workspace บน Dashboard เพื่อแยกงานที่ต้องทำต่อเป็น 4 กลุ่ม
+  - Draft ที่ยังไม่เสร็จ
+  - ใบที่ยืนยันแล้วแต่ยังไม่ได้บันทึก PDF ลง Google Drive
+  - ใบที่มี PDF แล้วและพร้อมกรอกข้อมูลการส่ง
+  - ใบที่ส่งแล้วล่าสุด
+- เพิ่ม Quotation Journey card บนหน้า `#quotation-view`
+- เพิ่ม Journey card แบบ compact บนหน้า `#quotation-print`
+- เพิ่ม stepper: ร่าง → ยืนยัน → บันทึก PDF → ส่งแล้ว
+- ทำ primary action ตามสถานะของใบเสนอราคา
+  - Draft: ตรวจสอบ / ยืนยัน, แก้ไข Draft
+  - Confirmed ยังไม่มี Drive PDF: บันทึก PDF ลง Google Drive
+  - Confirmed มี Drive PDF แล้ว: ส่งแล้ว
+  - Sent: เปิดไฟล์ใน Google Drive
+- เพิ่ม guidance บนหน้า Create/Edit Draft เพื่อให้ผู้ใช้เข้าใจว่าต้องบันทึก Draft และตรวจสอบก่อน Confirm
+- ไม่เปลี่ยน SQL, RLS, Apps Script payload หรือ business logic เดิม
 
 ## ไฟล์ใน package
 
@@ -37,7 +45,7 @@ supabase/
   ...patch เก่าที่ใช้ตั้งค่าระบบ
 ```
 
-## ขั้นตอนติดตั้ง v1.10.5
+## ขั้นตอนติดตั้ง v1.11.0
 
 ### 1) ติดตั้งไฟล์เว็บ
 
@@ -52,7 +60,7 @@ Windows: Ctrl + Shift + R
 
 ### 2) SQL
 
-ไม่ต้องรัน SQL ใหม่สำหรับ v1.10.5
+ไม่ต้องรัน SQL ใหม่สำหรับ v1.11.0
 
 ต้องเคยรัน SQL เหล่านี้สำเร็จแล้ว:
 
@@ -61,11 +69,11 @@ supabase/patch_v1_10_2.sql
 supabase/patch_v1_10_4.sql
 ```
 
-เพราะ v1.10.5 ยังใช้ table `quotation_drive_files` และ RPC `mark_quotation_as_sent_v1104` จาก release ก่อนหน้า
+เพราะ v1.11.0 ยังใช้ table `quotation_drive_files` และ RPC `mark_quotation_as_sent_v1104` จาก release ก่อนหน้า
 
 ### 3) Google Apps Script
 
-ไม่จำเป็นต้องเปลี่ยน Apps Script ถ้าใช้อยู่บน v1.10.3 หรือ v1.10.4 แล้ว เพราะ v1.10.5 ไม่เปลี่ยน payload การบันทึก PDF ไป Drive
+ไม่จำเป็นต้องเปลี่ยน Apps Script ถ้าใช้อยู่บน v1.10.3 หรือใหม่กว่าแล้ว เพราะ v1.11.0 ไม่เปลี่ยน payload การบันทึก PDF ไป Drive
 
 ## ตรวจ release ก่อน push
 
@@ -81,7 +89,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.10.5 sent action ui polish"
+git commit -m "Release v1.11.0 quotation journey ux"
 git push origin main
 ```
 
@@ -103,7 +111,7 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.10.5
+1.11.0
 ```
 
 ## Debug helper
@@ -115,24 +123,24 @@ await window.FI_DEBUG()
 ควรเห็นค่าประมาณนี้:
 
 ```text
-version: 1.10.5
-sentActionWording: "ส่งแล้ว"
-sentViewActionEnabledAfterDrive: true
-compactSentDeliveryUI: true
+version: 1.11.0
+quotationJourneyUX: true
+dashboardWorkspace: true
+stateMachine: draft -> confirmed_needs_drive -> ready_to_send -> sent
 sqlChanged: false
 ```
 
 ## จุดที่ต้องทดสอบทันที
 
 ```text
-1. เปิดหน้า Preview / Print แล้วปุ่ม action ต้องไม่ใหญ่ผิดปกติ
-2. ปุ่มเปลี่ยนสถานะต้องแสดง wording เป็น “ส่งแล้ว” เท่านั้น
-3. ถ้ายังไม่มี PDF ใน Google Drive ปุ่ม “ส่งแล้ว” ต้อง disabled
-4. หลังบันทึก PDF ลง Google Drive แล้ว ปุ่ม “ส่งแล้ว” ต้องกดได้จากหน้า Preview / Print
-5. หลังบันทึก PDF ลง Google Drive แล้ว ปุ่ม “ส่งแล้ว” ต้องกดได้จากหน้า View
-6. ทั้งสองปุ่มต้องเปิด modal กรอกวันที่ส่ง, อีเมลผู้รับ, ผู้รับ, ตำแหน่ง เหมือนกัน
-7. บันทึกสำเร็จแล้ว status ต้องเป็น sent
-8. ข้อมูลการส่งใบเสนอราคาต้องแสดงเป็น card ที่อ่านง่ายและไม่กินพื้นที่ toolbar มากเกินไป
-9. ปุ่มเปิดไฟล์ใน Google Drive ยังทำงาน
-10. ปุ่มพิมพ์ / บันทึกเป็น PDF เดิมยังทำงาน
+1. Dashboard ต้องมี Quotation Workspace และแยกงานที่ต้องทำต่อได้
+2. กดงาน Draft จาก Dashboard แล้วไปหน้า View/Edit ได้ถูกต้อง
+3. กดงานที่รอบันทึก PDF แล้วไปหน้า Preview / Print ได้ถูกต้อง
+4. หน้า View ต้องมี Quotation Journey card และ stepper
+5. หน้า Print ต้องมี Journey card แบบ compact
+6. Draft ต้องแสดง step ร่าง และ action ตรวจสอบ / ยืนยัน
+7. Confirmed ที่ยังไม่มี Drive PDF ต้องแสดง action บันทึก PDF ลง Google Drive
+8. Confirmed ที่มี Drive PDF แล้วต้องแสดง action ส่งแล้ว
+9. Sent ต้องแสดง action เปิดไฟล์ใน Google Drive และไม่ชวนส่งซ้ำ
+10. Flow เดิมของบันทึก PDF ลง Drive และ modal กรอกข้อมูลผู้รับยังทำงานเหมือน v1.10.5
 ```
