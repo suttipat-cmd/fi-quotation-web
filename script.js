@@ -18511,3 +18511,639 @@ try {
   }
 } catch (_error) {}
 window.FI_APP_VERSION = FI_V1110_VERSION;
+
+// =======================================================
+// v1.11.1 Dashboard + Print Action UX Refinement
+// Scope:
+// - Journey card is informational only (no duplicate action buttons)
+// - Dashboard workspace pagination, 5 items per status by default
+// - Thai wording consistency for key navigation/tables/status labels
+// - Compact, separated print action panel for PDF / Drive / delivery info
+// Frontend-only release. No SQL or Apps Script changes.
+// =======================================================
+
+const FI_V1111_VERSION = "1.11.1";
+window.FI_APP_VERSION = FI_V1111_VERSION;
+
+const DASHBOARD_WORKSPACE_PAGE_SIZE_V1111 = 5;
+
+function roleLabel(role) {
+  const map = {
+    admin: "ผู้ดูแลระบบ",
+    manager: "ผู้จัดการ",
+    sales: "ฝ่ายขาย",
+  };
+  return map[role] || role || "-";
+}
+
+function statusPill(label, style) {
+  const translated = {
+    Active: "เปิดใช้งาน",
+    Inactive: "ปิดใช้งาน",
+  }[label] || label;
+  return `<span class="status-badge status-${style}">${escapeHTML(translated)}</span>`;
+}
+
+function translateVisibleLabelsV1111(root = document) {
+  const replacements = new Map([
+    ["Dashboard", "แดชบอร์ด"],
+    ["Company Profile", "ข้อมูลบริษัท"],
+    ["Settings", "ตั้งค่า"],
+  ]);
+
+  root.querySelectorAll(".menu-item").forEach((button) => {
+    const page = button.dataset.page;
+    const label = button.querySelector("span:last-child");
+    if (!label) return;
+    const map = {
+      dashboard: "แดชบอร์ด",
+      quotations: "ใบเสนอราคา",
+      customers: "ลูกค้า",
+      products: "สินค้า/บริการ",
+      company: "ข้อมูลบริษัท",
+      settings: "ตั้งค่า",
+    };
+    if (map[page]) label.textContent = map[page];
+  });
+}
+
+const originalRenderMenuV1111 = window.renderMenu || (typeof renderMenu === "function" ? renderMenu : null);
+if (typeof originalRenderMenuV1111 === "function") {
+  window.renderMenu = function renderMenuV1111(...args) {
+    const result = originalRenderMenuV1111.apply(this, args);
+    window.setTimeout(() => translateVisibleLabelsV1111(), 0);
+    return result;
+  };
+  try { renderMenu = window.renderMenu; } catch (_error) {}
+}
+
+function renderDashboardMetrics(metrics) {
+  return `
+    <div class="metric-grid metric-grid-v1111">
+      <div class="metric-card"><span>ใบเสนอราคาทั้งหมด</span><strong>${number(metrics.total_count)}</strong></div>
+      <div class="metric-card"><span>ร่าง</span><strong>${number(metrics.draft_count)}</strong></div>
+      <div class="metric-card"><span>ยืนยันแล้ว</span><strong>${number(metrics.confirmed_count)}</strong></div>
+      <div class="metric-card"><span>ส่งแล้ว</span><strong>${number(metrics.sent_count)}</strong></div>
+      <div class="metric-card"><span>ยอดเดือนนี้</span><strong>${formatTHB(metrics.total_amount_this_month)}</strong></div>
+    </div>
+  `;
+}
+
+function renderSalesSummaryTable(rows) {
+  if (!rows.length) return `<div class="empty-state">ยังไม่มีข้อมูลใบเสนอราคา</div>`;
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ฝ่ายขาย</th>
+            <th>ทั้งหมด</th>
+            <th>ร่าง</th>
+            <th>ยืนยันแล้ว</th>
+            <th>ส่งแล้ว</th>
+            <th>หมดอายุ</th>
+            <th>ยอดเดือนนี้</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHTML(row.owner_name || "-")}</td>
+              <td>${number(row.total_count)}</td>
+              <td>${number(row.draft_count)}</td>
+              <td>${number(row.confirmed_count)}</td>
+              <td>${number(row.sent_count)}</td>
+              <td>${number(row.expired_count)}</td>
+              <td>${formatTHB(row.total_amount_this_month)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderQuotationTable(rows) {
+  if (!rows.length) return `<div class="empty-state">ยังไม่มีใบเสนอราคา</div>`;
+  const showSales = appState.profile.role !== "sales";
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>เลขที่</th>
+            <th>ลูกค้า</th>
+            <th>ประเภท</th>
+            ${showSales ? "<th>ฝ่ายขาย</th>" : ""}
+            <th>วันที่</th>
+            <th>หมดอายุ</th>
+            <th>ยอดรวม</th>
+            <th>สถานะ</th>
+            <th>การดำเนินการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong></td>
+              <td>${escapeHTML(row.customer_name || "-")}</td>
+              <td>${billingTypeLabel(row.billing_type)}</td>
+              ${showSales ? `<td>${escapeHTML(row.owner_name || "-")}</td>` : ""}
+              <td>${formatDate(row.quote_date)}</td>
+              <td>${formatDate(row.valid_until)}</td>
+              <td>${formatTHB(row.grand_total_display)}</td>
+              <td>${statusBadge(row.effective_status)}</td>
+              <td><button class="btn btn-ghost" data-action="view" data-id="${row.id}">ดูรายละเอียด</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderProductsTable(rows) {
+  if (!rows.length) return `<div class="empty-state">ยังไม่มีสินค้า/บริการ</div>`;
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>รหัสสินค้า</th>
+            <th>ชื่อสินค้า/บริการ</th>
+            <th>รายละเอียด</th>
+            <th>หน่วย</th>
+            <th>สถานะ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><strong>${escapeHTML(row.code || "-")}</strong></td>
+              <td>${escapeHTML(row.name || "-")}</td>
+              <td>${escapeHTML(row.description || "-")}</td>
+              <td>${escapeHTML(row.default_unit || "-")}</td>
+              <td>${row.is_active ? statusPill("Active", "confirmed") : statusPill("Inactive", "cancelled")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+  if (!canModify) return "";
+
+  const buttons = [];
+
+  if (quotation.status === "draft") {
+    buttons.push(`<button id="editDraftButton" class="btn btn-ghost">แก้ไขร่าง</button>`);
+    buttons.push(`<button id="confirmQuotationButton" class="btn btn-primary">ยืนยันและสร้างเลข</button>`);
+  }
+
+  if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`
+      <span class="view-sent-action-wrap-v1105">
+        <button id="markSentButton" type="button" class="btn btn-ghost btn-compact-v1105" disabled>ส่งแล้ว</button>
+        <span id="viewSentHintV1105" class="sent-action-hint-v1105">กำลังตรวจสถานะ Drive...</span>
+      </span>
+    `);
+  }
+
+  if (quotation.status !== "draft") {
+    buttons.push(`<button id="printPreviewButton" class="btn btn-primary">ตัวอย่างเอกสาร / พิมพ์</button>`);
+    buttons.push(`<button id="duplicateQuotationButton" class="btn btn-ghost">สร้างสำเนา</button>`);
+  }
+
+  return buttons.join("");
+}
+
+function renderQuotationJourneyCardV1110(quotation, driveLog, options = {}) {
+  const state = getJourneyStateV1110(quotation, driveLog);
+  const copy = getJourneyCopyV1110(state);
+  const compact = options.compact ? "journey-card-compact-v1110" : "";
+  const driveText = hasDrivePdfV1110(driveLog)
+    ? `บันทึก PDF แล้ว: ${escapeHTML(driveLog.file_name || "Google Drive")}`
+    : "ยังไม่ได้บันทึก PDF ลง Google Drive";
+
+  return `
+    <section id="quotationJourneyCardV1110" class="quotation-journey-card-v1110 ${compact} tone-${copy.tone} journey-info-only-v1111">
+      <div class="journey-main-v1110">
+        <div>
+          <div class="journey-eyebrow-v1110">เส้นทางใบเสนอราคา</div>
+          <h3>${escapeHTML(copy.title)}</h3>
+          <p>${escapeHTML(copy.desc)}</p>
+        </div>
+        <div class="journey-status-pill-v1110">${statusBadge(normalizeQuotationStatusV1110(quotation))}</div>
+      </div>
+      ${renderJourneyStepperV1110(state)}
+      <div class="journey-meta-v1110">
+        <span>${escapeHTML(quotation.quotation_no || "ยังไม่ออกเลข")}</span>
+        <span>${escapeHTML(quotation.customer_name || "-")}</span>
+        <span>${driveText}</span>
+      </div>
+    </section>
+  `;
+}
+
+function ensureDashboardWorkspacePagesV1111() {
+  if (!appState.dashboardWorkspacePagesV1111) {
+    appState.dashboardWorkspacePagesV1111 = { draft: 0, needsDrive: 0, readyToSend: 0, sent: 0 };
+  }
+  return appState.dashboardWorkspacePagesV1111;
+}
+
+function amountOfRowV1111(row) {
+  return Number(row?.grand_total_display ?? row?.grand_total ?? 0) || 0;
+}
+
+function sumRowsAmountV1111(rows) {
+  return (rows || []).reduce((sum, row) => sum + amountOfRowV1111(row), 0);
+}
+
+function calculateDashboardInsightsV1111(quotations, driveMap) {
+  const today = startOfToday();
+  const next7 = addDays(today, 7);
+  const confirmedRows = quotations.filter((row) => row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed");
+  const needsDriveRows = confirmedRows.filter((row) => !driveMap.has(row.id));
+  const readyToSendRows = confirmedRows.filter((row) => driveMap.has(row.id));
+  const sentRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "sent");
+  const expiringSoonRows = quotations
+    .filter((row) => ["confirmed", "sent"].includes(normalizeQuotationStatusV1110(row)))
+    .filter((row) => row.valid_until && new Date(row.valid_until) >= today && new Date(row.valid_until) <= next7);
+
+  return {
+    needsDriveAmount: sumRowsAmountV1111(needsDriveRows),
+    readyToSendAmount: sumRowsAmountV1111(readyToSendRows),
+    sentAmount: sumRowsAmountV1111(sentRows),
+    expiringSoonCount: expiringSoonRows.length,
+    expiringSoonAmount: sumRowsAmountV1111(expiringSoonRows),
+  };
+}
+
+function renderDashboardInsightsV1111(insights) {
+  return `
+    <section class="dashboard-insights-v1111">
+      <div class="insight-card-v1111 warning">
+        <span>รอบันทึก PDF</span>
+        <strong>${formatTHB(insights.needsDriveAmount)}</strong>
+        <small>มูลค่าที่ยืนยันแล้วแต่ยังไม่มีไฟล์ Drive</small>
+      </div>
+      <div class="insight-card-v1111 ready">
+        <span>พร้อมส่งแล้ว</span>
+        <strong>${formatTHB(insights.readyToSendAmount)}</strong>
+        <small>มูลค่าที่มีไฟล์ Drive แล้วแต่ยังไม่บันทึกข้อมูลส่ง</small>
+      </div>
+      <div class="insight-card-v1111 sent">
+        <span>ส่งแล้ว</span>
+        <strong>${formatTHB(insights.sentAmount)}</strong>
+        <small>มูลค่าใบเสนอราคาที่บันทึกข้อมูลการส่งแล้ว</small>
+      </div>
+      <div class="insight-card-v1111 danger">
+        <span>ใกล้หมดอายุ 7 วัน</span>
+        <strong>${number(insights.expiringSoonCount)} ใบ</strong>
+        <small>${formatTHB(insights.expiringSoonAmount)}</small>
+      </div>
+    </section>
+  `;
+}
+
+function getWorkspaceTargetV1111(row, state) {
+  if (state === "needs_drive") return `#quotation-print/${row.id}`;
+  return `#quotation-view/${row.id}`;
+}
+
+function renderJourneyTaskListV1111(rows, driveMap, emptyText, pageKey) {
+  const pages = ensureDashboardWorkspacePagesV1111();
+  const total = rows.length;
+  const maxPage = Math.max(0, Math.ceil(total / DASHBOARD_WORKSPACE_PAGE_SIZE_V1111) - 1);
+  const page = Math.min(Math.max(Number(pages[pageKey] || 0), 0), maxPage);
+  pages[pageKey] = page;
+  const start = page * DASHBOARD_WORKSPACE_PAGE_SIZE_V1111;
+  const visibleRows = rows.slice(start, start + DASHBOARD_WORKSPACE_PAGE_SIZE_V1111);
+
+  if (!total) return `<div class="empty-state compact">${escapeHTML(emptyText)}</div>`;
+
+  return `
+    <div class="journey-task-list-v1110">
+      ${visibleRows.map((row) => {
+        const driveLog = driveMap.get(row.id) || null;
+        const state = getJourneyStateV1110(row, driveLog);
+        const copy = getJourneyCopyV1110(state);
+        return `
+          <button type="button" class="journey-task-item-v1110" data-journey-task-target-v1110="${getWorkspaceTargetV1111(row, state)}">
+            <div>
+              <strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong>
+              <span>${escapeHTML(row.customer_name || "-")}</span>
+              <small>${escapeHTML(copy.title)}</small>
+            </div>
+            <div class="journey-task-right-v1110">
+              ${statusBadge(normalizeQuotationStatusV1110(row))}
+              <b>${formatTHB(row.grand_total_display || row.grand_total || 0)}</b>
+            </div>
+          </button>
+        `;
+      }).join("")}
+    </div>
+    <div class="workspace-pagination-v1111">
+      <span>แสดง ${number(start + 1)}-${number(Math.min(start + DASHBOARD_WORKSPACE_PAGE_SIZE_V1111, total))} จาก ${number(total)}</span>
+      <div>
+        <button type="button" class="btn btn-ghost btn-mini-v1111" data-workspace-page-v1111="${pageKey}" data-dir="prev" ${page <= 0 ? "disabled" : ""}>ก่อนหน้า</button>
+        <button type="button" class="btn btn-ghost btn-mini-v1111" data-workspace-page-v1111="${pageKey}" data-dir="next" ${page >= maxPage ? "disabled" : ""}>ถัดไป</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindWorkspacePaginationV1111() {
+  document.querySelectorAll("[data-workspace-page-v1111]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const key = button.dataset.workspacePageV1111;
+      const dir = button.dataset.dir;
+      const pages = ensureDashboardWorkspacePagesV1111();
+      pages[key] = Math.max(0, Number(pages[key] || 0) + (dir === "next" ? 1 : -1));
+      await renderDashboardPage();
+    });
+  });
+}
+
+async function renderDashboardPage() {
+  setPageHeader("แดชบอร์ด", "งานที่ต้องทำต่อและข้อมูลสำคัญของใบเสนอราคา");
+  renderLoading();
+
+  const isSales = appState.profile.role === "sales";
+  const [dashboardResult, quotationsResult] = await Promise.all([
+    isSales
+      ? supabaseClient.from("v_dashboard_sales").select("*").eq("owner_id", appState.user.id).maybeSingle()
+      : supabaseClient.from("v_dashboard_manager").select("*").order("owner_name", { ascending: true }),
+    supabaseClient.from("v_quotations_list").select("*").order("updated_at", { ascending: false }).limit(200),
+  ]);
+
+  if (dashboardResult.error) throw dashboardResult.error;
+  if (quotationsResult.error) throw quotationsResult.error;
+
+  const quotations = quotationsResult.data || [];
+  const metrics = isSales
+    ? dashboardResult.data || emptyDashboardMetrics()
+    : summarizeManagerDashboard(dashboardResult.data || []);
+
+  const driveMap = await loadDriveLogsMapV1110(quotations.map((row) => row.id));
+  const insights = calculateDashboardInsightsV1111(quotations, driveMap);
+  const today = startOfToday();
+  const next7 = addDays(today, 7);
+
+  const draftRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "draft");
+  const needsDriveRows = quotations
+    .filter((row) => row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed")
+    .filter((row) => !driveMap.has(row.id));
+  const readyToSendRows = quotations
+    .filter((row) => (row.status === "confirmed" || normalizeQuotationStatusV1110(row) === "confirmed") && driveMap.has(row.id));
+  const sentRows = quotations.filter((row) => normalizeQuotationStatusV1110(row) === "sent");
+  const expiringSoonRows = quotations
+    .filter((row) => ["confirmed", "sent"].includes(normalizeQuotationStatusV1110(row)))
+    .filter((row) => row.valid_until && new Date(row.valid_until) >= today && new Date(row.valid_until) <= next7)
+    .slice(0, 8);
+  const recentDocs = quotations.slice(0, 8);
+
+  elements.pageContent.innerHTML = `
+    ${renderDashboardMetrics(metrics)}
+    ${renderDashboardInsightsV1111(insights)}
+
+    <section class="journey-workspace-v1110 journey-workspace-v1111">
+      <div class="journey-workspace-head-v1110">
+        <div>
+          <span class="journey-eyebrow-v1110">งานที่ต้องทำต่อ</span>
+          <h3>งานที่ต้องทำต่อ</h3>
+          <p>แสดงสถานะละ ${number(DASHBOARD_WORKSPACE_PAGE_SIZE_V1111)} รายการ เพื่อให้ scan งานได้ง่าย</p>
+        </div>
+        ${appState.profile.role !== "manager" ? `<button type="button" id="dashboardNewQuotationButtonV1110" class="btn btn-primary">+ สร้างใบเสนอราคา</button>` : ""}
+      </div>
+      <div class="journey-workspace-grid-v1110">
+        <div class="journey-workspace-column-v1110"><h4>ร่างที่ยังไม่เสร็จ</h4>${renderJourneyTaskListV1111(draftRows, driveMap, "ไม่มีร่างที่ต้องทำต่อ", "draft")}</div>
+        <div class="journey-workspace-column-v1110"><h4>รอบันทึก PDF</h4>${renderJourneyTaskListV1111(needsDriveRows, driveMap, "ไม่มีใบที่รอบันทึก PDF", "needsDrive")}</div>
+        <div class="journey-workspace-column-v1110"><h4>พร้อมส่งแล้ว</h4>${renderJourneyTaskListV1111(readyToSendRows, driveMap, "ไม่มีใบที่พร้อมส่ง", "readyToSend")}</div>
+        <div class="journey-workspace-column-v1110"><h4>ส่งแล้วล่าสุด</h4>${renderJourneyTaskListV1111(sentRows, driveMap, "ยังไม่มีใบที่ส่งแล้ว", "sent")}</div>
+      </div>
+    </section>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header"><div><h3>เอกสารใกล้หมดอายุ</h3><p>ใบที่ยืนยันแล้วหรือส่งแล้ว และจะหมดอายุภายใน 7 วัน</p></div></div>
+        ${renderCompactQuotationList(expiringSoonRows, "ยังไม่มีเอกสารใกล้หมดอายุ")}
+      </div>
+      <div class="card">
+        <div class="card-header"><div><h3>อัปเดตล่าสุด</h3><p>ใบเสนอราคาที่มีการแก้ไขหรือสร้างล่าสุด</p></div></div>
+        ${renderCompactQuotationList(recentDocs, "ยังไม่มีใบเสนอราคา")}
+      </div>
+    </div>
+
+    ${!isSales ? `
+      <div class="card">
+        <div class="card-header"><div><h3>ยอดรวมตามฝ่ายขาย</h3><p>ภาพรวมสำหรับผู้ดูแลระบบและผู้จัดการ</p></div></div>
+        ${renderSalesSummaryTable(dashboardResult.data || [])}
+      </div>
+    ` : ""}
+  `;
+
+  document.getElementById("dashboardNewQuotationButtonV1110")?.addEventListener("click", () => {
+    location.hash = "#quotation-new";
+  });
+  bindJourneyTaskLinksV1110();
+  bindWorkspacePaginationV1111();
+  translateVisibleLabelsV1111();
+}
+
+function renderSentInfoHtmlV1104(quotation) {
+  if (!isQuotationSentV1104(quotation)) return "";
+  const sentAt = quotation?.sent_at ? formatDate(quotation.sent_at) : "-";
+  const email = quotation?.sent_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || "-";
+
+  return `
+    <div class="sent-summary-v1111">
+      <div class="sent-summary-head-v1111">
+        <span class="sent-summary-icon-v1111">✓</span>
+        <div><strong>ข้อมูลการส่งใบเสนอราคา</strong><small>บันทึกข้อมูลการส่งแล้ว</small></div>
+      </div>
+      <div class="sent-summary-grid-v1111">
+        <div><span>วันที่ส่ง</span><b>${escapeHTML(sentAt)}</b></div>
+        <div><span>อีเมลผู้รับ</span><b>${escapeHTML(email)}</b></div>
+        <div><span>ผู้รับ</span><b>${escapeHTML(name)}</b></div>
+        <div><span>ตำแหน่ง</span><b>${escapeHTML(position)}</b></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderSentWorkflowInlineV1104(model, driveLog) {
+  const quotation = model?.quotation || {};
+  if (isQuotationSentV1104(quotation)) return renderSentInfoHtmlV1104(quotation);
+  if (!canMarkQuotationSentV1104(quotation)) return `<div class="workflow-muted-v1111">ยังไม่มีข้อมูลการส่งใบเสนอราคา</div>`;
+
+  const hasDrivePdf = Boolean(driveLog?.file_url);
+  return `
+    <div class="sent-action-v1111 ${hasDrivePdf ? "is-ready" : "is-disabled"}">
+      <button id="markSentAfterDriveButtonV1104" type="button" class="btn ${hasDrivePdf ? "btn-primary" : "btn-ghost"} btn-compact-v1105" ${hasDrivePdf ? "" : "disabled"}>ส่งแล้ว</button>
+      <span class="sent-action-hint-v1105">${hasDrivePdf ? "กรอกข้อมูลผู้รับเพื่อเปลี่ยนสถานะเป็นส่งแล้ว" : "ต้องบันทึก PDF ลง Google Drive ก่อน"}</span>
+    </div>
+  `;
+}
+
+function renderDriveArchiveStatusV1102(model, driveLog, settings) {
+  const target = document.getElementById("driveArchiveStatusV1102");
+  if (!target) return;
+
+  let driveHtml = "";
+  const quotation = model?.quotation || {};
+
+  if (driveLog && driveLog.loadError) {
+    driveHtml = `<div class="workflow-alert-v1111 warning">ยังตรวจประวัติ Google Drive ไม่ได้ กรุณารัน <strong>supabase/patch_v1_10_2.sql</strong></div>`;
+  } else if (driveLog?.file_url) {
+    driveHtml = `
+      <div class="workflow-state-v1111 success">
+        <div><strong>บันทึก PDF แล้ว</strong><small>${escapeHTML(driveLog.file_name || "PDF")}</small></div>
+        <a class="btn btn-ghost btn-compact-v1105 drive-open-button-v1102" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">เปิดไฟล์ใน Google Drive</a>
+      </div>
+    `;
+  } else if (!canArchiveQuotationToDriveV1102(quotation)) {
+    driveHtml = `<div class="workflow-alert-v1111 warning">คุณมีสิทธิ์ดูเอกสาร แต่ไม่มีสิทธิ์บันทึก PDF ไป Google Drive</div>`;
+  } else if (!isDriveArchiveConfiguredV1102(settings)) {
+    driveHtml = `<div class="workflow-alert-v1111 warning">ยังไม่ได้ตั้งค่า Google Drive Archive กรุณาให้ผู้ดูแลระบบตั้งค่าในเมนูตั้งค่า</div>`;
+  } else {
+    driveHtml = `
+      <div class="workflow-state-v1111 pending">
+        <div><strong>ยังไม่ได้บันทึก PDF</strong><small>ต้องบันทึกลง Google Drive ก่อนจึงจะกดส่งแล้วได้</small></div>
+        <button id="saveDrivePdfButtonV1102" type="button" class="btn btn-ghost btn-compact-v1105">บันทึกไป Google Drive</button>
+      </div>
+    `;
+  }
+
+  target.innerHTML = `
+    <div class="print-workflow-grid-v1111">
+      <section class="print-workflow-section-v1111">
+        <span class="print-workflow-label-v1111">Google Drive</span>
+        ${driveHtml}
+      </section>
+      <section class="print-workflow-section-v1111">
+        <span class="print-workflow-label-v1111">การส่งใบเสนอราคา</span>
+        ${renderSentWorkflowInlineV1104(model, driveLog?.file_url ? driveLog : null)}
+      </section>
+    </div>
+  `;
+
+  document.getElementById("saveDrivePdfButtonV1102")?.addEventListener("click", async () => {
+    await handleSaveQuotationPdfToDriveV1102(model);
+  });
+  bindSentWorkflowInlineV1104(model, driveLog?.file_url ? driveLog : null);
+}
+
+async function initializeDriveArchiveToolbarV1102(model) {
+  const toolbar = document.querySelector(".print-toolbar") || document.querySelector(".print-v2-toolbar");
+  if (!toolbar || document.getElementById("printActionPanelV1111")) return;
+
+  const actions = toolbar.querySelector(".print-toolbar-actions") || toolbar;
+  const printButton = document.getElementById("printButton");
+  const backButton = document.getElementById("backFromPrintButton");
+
+  if (backButton) {
+    backButton.classList.add("btn-compact-v1105");
+    backButton.textContent = "ย้อนกลับ";
+  }
+
+  const panel = document.createElement("section");
+  panel.id = "printActionPanelV1111";
+  panel.className = "print-action-panel-v1111";
+  panel.innerHTML = `
+    <div class="print-action-head-v1111">
+      <div>
+        <span class="journey-eyebrow-v1110">จัดการเอกสาร</span>
+        <h3>ไฟล์ PDF และการส่งใบเสนอราคา</h3>
+      </div>
+    </div>
+    <div class="print-action-row-v1111">
+      <section class="print-workflow-section-v1111 print-local-pdf-v1111">
+        <span class="print-workflow-label-v1111">ไฟล์ในเครื่อง</span>
+        <div id="printPdfActionSlotV1111" class="print-pdf-action-slot-v1111"></div>
+      </section>
+      <div id="driveArchiveStatusV1102" class="drive-archive-status-v1102 print-drive-status-v1111">
+        <span class="drive-status-text-v1102">กำลังตรวจสถานะ Drive...</span>
+      </div>
+    </div>
+  `;
+  toolbar.insertAdjacentElement("afterend", panel);
+
+  if (printButton) {
+    printButton.classList.add("btn-compact-v1105");
+    printButton.textContent = "พิมพ์ / บันทึกเป็น PDF";
+    document.getElementById("printPdfActionSlotV1111")?.appendChild(printButton);
+  }
+
+  // Keep the back button in the compact toolbar; remove any duplicated Drive holder from the toolbar actions.
+  actions.querySelectorAll("#driveArchiveStatusV1102").forEach((node) => {
+    if (node.closest("#printActionPanelV1111")) return;
+    node.remove();
+  });
+
+  const [settings, driveLog] = await Promise.all([
+    loadDriveArchiveSettingsV1102(),
+    loadDriveFileLogV1102(model.quotation.id),
+  ]);
+  appState.driveArchiveSettingsV1102 = settings;
+  renderDriveArchiveStatusV1102(model, driveLog, settings);
+}
+
+const originalRenderQuotationPrintPageV1111 = window.renderQuotationPrintPage || (typeof renderQuotationPrintPage === "function" ? renderQuotationPrintPage : null);
+if (typeof originalRenderQuotationPrintPageV1111 === "function") {
+  window.renderQuotationPrintPage = async function renderQuotationPrintPageV1111(quotationId) {
+    const result = await originalRenderQuotationPrintPageV1111.call(this, quotationId);
+    setPageHeader("ตัวอย่างเอกสาร / พิมพ์", "ตรวจสอบเอกสาร บันทึก PDF และจัดการข้อมูลการส่งใบเสนอราคา");
+    translateVisibleLabelsV1111();
+    return result;
+  };
+  try { renderQuotationPrintPage = window.renderQuotationPrintPage; } catch (_error) {}
+}
+
+const originalRenderCompanyPageV1111 = window.renderCompanyPage || (typeof renderCompanyPage === "function" ? renderCompanyPage : null);
+if (typeof originalRenderCompanyPageV1111 === "function") {
+  window.renderCompanyPage = async function renderCompanyPageV1111(...args) {
+    const result = await originalRenderCompanyPageV1111.apply(this, args);
+    setPageHeader("ข้อมูลบริษัท", "ข้อมูลบริษัทและบัญชีธนาคารที่ใช้บนใบเสนอราคา");
+    return result;
+  };
+  try { renderCompanyPage = window.renderCompanyPage; } catch (_error) {}
+}
+
+const originalRenderSettingsPageV1111 = window.renderSettingsPage || (typeof renderSettingsPage === "function" ? renderSettingsPage : null);
+if (typeof originalRenderSettingsPageV1111 === "function") {
+  window.renderSettingsPage = async function renderSettingsPageV1111(...args) {
+    const result = await originalRenderSettingsPageV1111.apply(this, args);
+    setPageHeader("ตั้งค่า", "ตั้งค่าระบบและการเชื่อมต่อ Google Drive");
+    return result;
+  };
+  try { renderSettingsPage = window.renderSettingsPage; } catch (_error) {}
+}
+
+const originalDebugV1111 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1111() {
+  const result = typeof originalDebugV1111 === "function" ? await originalDebugV1111() : {};
+  return {
+    ...result,
+    version: FI_V1111_VERSION,
+    quotationJourneyActionsRemoved: true,
+    dashboardWorkspacePagination: true,
+    dashboardWorkspacePageSize: DASHBOARD_WORKSPACE_PAGE_SIZE_V1111,
+    thaiWordingPolish: true,
+    printActionPanelRefined: true,
+    sqlChanged: false,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1111_VERSION;

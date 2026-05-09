@@ -5329,3 +5329,321 @@ body {
     justify-items: start;
   }
 }
+
+/* =======================================================
+   v1.11.1 Dashboard + Print Action UX Refinement
+   ======================================================= */
+
+.metric-grid-v1111 .metric-card span {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dashboard-insights-v1111 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.insight-card-v1111 {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 5px;
+  border-left: 4px solid #cbd5e1;
+}
+
+.insight-card-v1111 span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.insight-card-v1111 strong {
+  font-size: 22px;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.insight-card-v1111 small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.insight-card-v1111.warning { border-left-color: #f59e0b; }
+.insight-card-v1111.ready { border-left-color: #2563eb; }
+.insight-card-v1111.sent { border-left-color: #22c55e; }
+.insight-card-v1111.danger { border-left-color: #ef4444; }
+
+.journey-info-only-v1111 .journey-actions-v1110,
+.journey-info-only-v1111 [data-journey-action-v1110] {
+  display: none !important;
+}
+
+.journey-info-only-v1111 {
+  padding-bottom: 16px;
+}
+
+.journey-workspace-v1111 .journey-workspace-column-v1110 {
+  min-height: 0;
+}
+
+.workspace-pagination-v1111 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workspace-pagination-v1111 > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-mini-v1111 {
+  padding: 6px 9px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.print-action-panel-v1111 {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 12px;
+}
+
+.print-action-head-v1111 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.print-action-head-v1111 h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.print-action-row-v1111 {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.65fr) minmax(0, 1.8fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.print-workflow-grid-v1111 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.print-workflow-section-v1111 {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.print-workflow-label-v1111 {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.print-pdf-action-slot-v1111 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-state-v1111 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.workflow-state-v1111 div {
+  min-width: 0;
+}
+
+.workflow-state-v1111 strong,
+.workflow-state-v1111 small {
+  display: block;
+}
+
+.workflow-state-v1111 strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.workflow-state-v1111 small {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.workflow-state-v1111.success strong { color: var(--success-text); }
+.workflow-state-v1111.pending strong { color: var(--warning-text); }
+
+.workflow-alert-v1111 {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.workflow-alert-v1111.warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid #fed7aa;
+}
+
+.workflow-muted-v1111 {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sent-action-v1111 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sent-summary-v1111 {
+  display: grid;
+  gap: 10px;
+}
+
+.sent-summary-head-v1111 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sent-summary-icon-v1111 {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--success-bg);
+  color: var(--success-text);
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+
+.sent-summary-head-v1111 strong,
+.sent-summary-head-v1111 small {
+  display: block;
+}
+
+.sent-summary-head-v1111 small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sent-summary-grid-v1111 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.sent-summary-grid-v1111 div {
+  min-width: 0;
+}
+
+.sent-summary-grid-v1111 span,
+.sent-summary-grid-v1111 b {
+  display: block;
+}
+
+.sent-summary-grid-v1111 span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sent-summary-grid-v1111 b {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.print-toolbar .print-toolbar-actions {
+  align-items: center;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-insights-v1111 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .print-action-row-v1111,
+  .print-workflow-grid-v1111 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-insights-v1111 {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-pagination-v1111 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-pagination-v1111 > div,
+  .workspace-pagination-v1111 .btn {
+    width: 100%;
+  }
+
+  .print-action-panel-v1111 {
+    padding: 12px;
+  }
+
+  .workflow-state-v1111,
+  .sent-action-v1111 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workflow-state-v1111 .btn,
+  .sent-action-v1111 .btn,
+  .print-pdf-action-slot-v1111 .btn {
+    width: 100%;
+  }
+
+  .sent-summary-grid-v1111 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .print-action-panel-v1111,
+  #quotationPrintJourneyV1110 {
+    display: none !important;
+  }
+}
