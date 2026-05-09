@@ -17162,3 +17162,610 @@ window.FI_DEBUG = async function FI_DEBUG_V1103() {
 
 // Final visible version stamp for QA.
 window.FI_APP_VERSION = FI_V1103_VERSION;
+
+// =======================================================
+// v1.10.4 Drive PDF Single Page Fix + Sent Workflow Gate
+// Scope:
+// - Prevent blank extra Drive PDF pages from html2canvas/jsPDF capture.
+// - Remove technical PDF-rendering message from end-user UI.
+// - Require Google Drive PDF archive before marking quotation as sent.
+// - Capture recipient data when marking as sent.
+// Requires supabase/patch_v1_10_4.sql.
+// =======================================================
+
+const FI_V1104_VERSION = "1.10.4";
+window.FI_APP_VERSION = FI_V1104_VERSION;
+
+function isQuotationSentV1104(quotation) {
+  return String(quotation?.status || "") === "sent";
+}
+
+function canMarkQuotationSentV1104(quotation) {
+  const role = appState.profile?.role;
+  const isOwner = quotation?.owner_id === appState.user?.id;
+  return quotation?.status === "confirmed" && (role === "admin" || (role === "sales" && isOwner));
+}
+
+function normalizeEmailV1104(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidEmailV1104(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmailV1104(value));
+}
+
+function formatSentDateForInputV1104(value) {
+  if (!value) return toDateInputValue(new Date());
+  try {
+    return toDateInputValue(new Date(value));
+  } catch (_error) {
+    return toDateInputValue(new Date());
+  }
+}
+
+function renderSentInfoHtmlV1104(quotation) {
+  if (!isQuotationSentV1104(quotation)) return "";
+  const sentAt = quotation?.sent_at ? formatDate(quotation.sent_at) : "-";
+  const email = quotation?.sent_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || "-";
+  return `
+    <div class="sent-info-panel-v1104">
+      <strong>ข้อมูลการส่งใบเสนอราคา</strong>
+      <div class="sent-info-grid-v1104">
+        <span>วันที่ส่ง</span><b>${escapeHTML(sentAt)}</b>
+        <span>อีเมลผู้รับ</span><b>${escapeHTML(email)}</b>
+        <span>ผู้รับ</span><b>${escapeHTML(name)}</b>
+        <span>ตำแหน่ง</span><b>${escapeHTML(position)}</b>
+      </div>
+    </div>
+  `;
+}
+
+function renderSentWorkflowInlineV1104(model, driveLog) {
+  const quotation = model?.quotation || {};
+
+  if (isQuotationSentV1104(quotation)) {
+    return renderSentInfoHtmlV1104(quotation);
+  }
+
+  if (!canMarkQuotationSentV1104(quotation)) {
+    return "";
+  }
+
+  if (!driveLog?.file_url) {
+    return `
+      <div class="sent-gate-v1104">
+        <button type="button" class="btn btn-ghost" disabled>ส่งแล้ว</button>
+        <span class="drive-status-text-v1102">ต้องบันทึก PDF ลง Google Drive ก่อนจึงจะเปลี่ยนสถานะเป็นส่งแล้วได้</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="sent-gate-v1104 ready">
+      <button id="markSentAfterDriveButtonV1104" type="button" class="btn btn-primary">บันทึกข้อมูลการส่ง / ส่งแล้ว</button>
+    </div>
+  `;
+}
+
+function bindSentWorkflowInlineV1104(model, driveLog) {
+  document.getElementById("markSentAfterDriveButtonV1104")?.addEventListener("click", async () => {
+    const freshLog = driveLog?.file_url ? driveLog : await loadDriveFileLogV1102(model.quotation.id);
+    if (!freshLog?.file_url) {
+      showToast("กรุณาบันทึก PDF ลง Google Drive ก่อน");
+      renderDriveArchiveStatusV1102(model, freshLog, appState.driveArchiveSettingsV1102 || {});
+      return;
+    }
+    openMarkSentModalV1104(model, freshLog);
+  });
+}
+
+function closeMarkSentModalV1104() {
+  document.getElementById("markSentModalV1104")?.remove();
+}
+
+function openMarkSentModalV1104(model, driveLog) {
+  closeMarkSentModalV1104();
+
+  const quotation = model?.quotation || {};
+  const todayValue = formatSentDateForInputV1104(quotation.sent_at);
+  const defaultName = quotation.sent_recipient_name || "";
+  const defaultEmail = quotation.sent_recipient_email || "";
+  const defaultPosition = quotation.sent_recipient_position || "";
+
+  const modal = document.createElement("div");
+  modal.id = "markSentModalV1104";
+  modal.className = "modal-backdrop-v1104";
+  modal.innerHTML = `
+    <div class="modal-card-v1104" role="dialog" aria-modal="true">
+      <div class="modal-header-v1104">
+        <div>
+          <h3>ข้อมูลการส่งใบเสนอราคา</h3>
+          <p>กรอกข้อมูลผู้รับปลายทางก่อนเปลี่ยนสถานะเป็นส่งแล้ว</p>
+        </div>
+        <button id="closeSentModalButtonV1104" type="button" class="icon-button">×</button>
+      </div>
+
+      <form id="markSentFormV1104" class="form-stack">
+        <div class="field">
+          <label for="sentDateInputV1104">วันที่ส่งใบเสนอราคา <span class="required-star">*</span></label>
+          <input id="sentDateInputV1104" type="date" value="${escapeHTML(todayValue)}" required />
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label for="sentRecipientEmailInputV1104">อีเมลผู้รับ <span class="required-star">*</span></label>
+            <input id="sentRecipientEmailInputV1104" type="email" value="${escapeHTML(defaultEmail)}" placeholder="customer@company.com" required />
+          </div>
+          <div class="field">
+            <label for="sentRecipientNameInputV1104">ผู้รับ <span class="required-star">*</span></label>
+            <input id="sentRecipientNameInputV1104" type="text" value="${escapeHTML(defaultName)}" placeholder="ชื่อผู้รับปลายทาง" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="sentRecipientPositionInputV1104">ตำแหน่ง</label>
+          <input id="sentRecipientPositionInputV1104" type="text" value="${escapeHTML(defaultPosition)}" placeholder="เช่น ผู้จัดการฝ่ายขนส่ง" />
+        </div>
+
+        <div class="drive-file-confirm-v1104">
+          <span>ไฟล์ PDF ใน Google Drive</span>
+          <a href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">${escapeHTML(driveLog.file_name || "เปิดไฟล์")}</a>
+        </div>
+
+        <div id="markSentErrorV1104" class="alert alert-error hidden"></div>
+
+        <div class="form-actions normal-flow modal-actions-v1104">
+          <button type="button" id="cancelSentModalButtonV1104" class="btn btn-ghost">ยกเลิก</button>
+          <button type="submit" id="submitSentButtonV1104" class="btn btn-primary">บันทึกและเปลี่ยนเป็นส่งแล้ว</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.getElementById("closeSentModalButtonV1104")?.addEventListener("click", closeMarkSentModalV1104);
+  document.getElementById("cancelSentModalButtonV1104")?.addEventListener("click", closeMarkSentModalV1104);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeMarkSentModalV1104();
+  });
+  document.getElementById("markSentFormV1104")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await submitMarkSentWithRecipientV1104(model);
+  });
+
+  document.getElementById("sentRecipientEmailInputV1104")?.focus();
+}
+
+function setMarkSentErrorV1104(message) {
+  const target = document.getElementById("markSentErrorV1104");
+  if (!target) return;
+  target.textContent = message || "";
+  target.classList.toggle("hidden", !message);
+}
+
+async function submitMarkSentWithRecipientV1104(model) {
+  const button = document.getElementById("submitSentButtonV1104");
+  const sentDate = document.getElementById("sentDateInputV1104")?.value || "";
+  const email = normalizeEmailV1104(document.getElementById("sentRecipientEmailInputV1104")?.value || "");
+  const name = String(document.getElementById("sentRecipientNameInputV1104")?.value || "").trim();
+  const position = String(document.getElementById("sentRecipientPositionInputV1104")?.value || "").trim();
+
+  setMarkSentErrorV1104("");
+
+  if (!sentDate) {
+    setMarkSentErrorV1104("กรุณาเลือกวันที่ส่งใบเสนอราคา");
+    return;
+  }
+  if (!email || !isValidEmailV1104(email)) {
+    setMarkSentErrorV1104("กรุณากรอกอีเมลผู้รับให้ถูกต้อง");
+    return;
+  }
+  if (!name) {
+    setMarkSentErrorV1104("กรุณากรอกชื่อผู้รับ");
+    return;
+  }
+
+  try {
+    if (button) {
+      button.disabled = true;
+      button.textContent = "กำลังบันทึก...";
+    }
+
+    const driveLog = await loadDriveFileLogV1102(model.quotation.id);
+    if (!driveLog?.file_url) {
+      throw new Error("กรุณาบันทึก PDF ลง Google Drive ก่อนเปลี่ยนสถานะเป็นส่งแล้ว");
+    }
+
+    const { error } = await supabaseClient.rpc("mark_quotation_as_sent_v1104", {
+      p_quotation_id: model.quotation.id,
+      p_sent_at: sentDate,
+      p_recipient_email: email,
+      p_recipient_name: name,
+      p_recipient_position: position || null,
+    });
+
+    if (error) throw error;
+
+    closeMarkSentModalV1104();
+    showToast("บันทึกข้อมูลการส่งและเปลี่ยนสถานะเป็นส่งแล้วสำเร็จ");
+    location.hash = `#quotation-view/${model.quotation.id}`;
+    await renderQuotationViewPage(model.quotation.id);
+  } catch (error) {
+    console.error(error);
+    const message = error.message || "ไม่สามารถเปลี่ยนสถานะเป็นส่งแล้วได้";
+    setMarkSentErrorV1104(message);
+    showToast(message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "บันทึกและเปลี่ยนเป็นส่งแล้ว";
+    }
+  }
+}
+
+// Hide the old direct "sent" action from the detail page. Sending now starts from Preview / Print after Drive archive.
+function renderQuotationActionButtons(quotation, effectiveStatus) {
+  const role = appState.profile.role;
+  const isOwner = quotation.owner_id === appState.user.id;
+  const canModify = role === "admin" || (role === "sales" && isOwner);
+
+  if (!canModify) return "";
+
+  const buttons = [];
+
+  if (quotation.status === "draft") {
+    buttons.push(`
+      <button id="editDraftButton" class="btn btn-ghost">
+        แก้ไข Draft
+      </button>
+    `);
+    buttons.push(`
+      <button id="confirmQuotationButton" class="btn btn-primary">
+        Confirm และสร้างเลข
+      </button>
+    `);
+  }
+
+  if (quotation.status === "confirmed" && effectiveStatus === "confirmed") {
+    buttons.push(`
+      <button type="button" class="btn btn-ghost" disabled>
+        ส่งแล้ว: บันทึก Drive ก่อน
+      </button>
+    `);
+  }
+
+  if (quotation.status !== "draft") {
+    buttons.push(`
+      <button id="printPreviewButton" class="btn btn-primary">
+        Preview / Print
+      </button>
+    `);
+    buttons.push(`
+      <button id="duplicateQuotationButton" class="btn btn-ghost">
+        สร้างสำเนา
+      </button>
+    `);
+  }
+
+  return buttons.join("");
+}
+
+// Keep old function name as a safety net; it now guides users to Preview / Print.
+async function markQuotationAsSent(quotationId) {
+  showToast("กรุณาบันทึก PDF ลง Google Drive จากหน้า Preview / Print ก่อนเปลี่ยนสถานะเป็นส่งแล้ว");
+  location.hash = `#quotation-print/${quotationId}`;
+}
+
+const originalRenderQuotationViewPageV1104 = window.renderQuotationViewPage || renderQuotationViewPage;
+window.renderQuotationViewPage = async function renderQuotationViewPageV1104(quotationId) {
+  const result = await originalRenderQuotationViewPageV1104.call(this, quotationId);
+  await injectSentInfoIntoViewV1104(quotationId);
+  return result;
+};
+try { renderQuotationViewPage = window.renderQuotationViewPage; } catch (_error) {}
+
+async function injectSentInfoIntoViewV1104(quotationId) {
+  if (!quotationId || !supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from("quotations")
+      .select("id, status, sent_at, sent_recipient_email, sent_recipient_name, sent_recipient_position")
+      .eq("id", quotationId)
+      .maybeSingle();
+
+    if (error || !data || !isQuotationSentV1104(data)) return;
+
+    const host = document.querySelector(".page-content .card:first-child");
+    if (!host || document.getElementById("sentInfoInViewV1104")) return;
+
+    const panel = document.createElement("div");
+    panel.id = "sentInfoInViewV1104";
+    panel.innerHTML = renderSentInfoHtmlV1104(data);
+    host.appendChild(panel);
+  } catch (error) {
+    console.warn("Cannot load sent recipient info. Run supabase/patch_v1_10_4.sql if this is a new release.", error);
+  }
+}
+
+function isCanvasRowBlankV1104(ctx, y, width, options = {}) {
+  const sampleStep = options.sampleStep || 8;
+  const whiteThreshold = options.whiteThreshold || 248;
+  const alphaThreshold = options.alphaThreshold || 8;
+  const row = ctx.getImageData(0, y, width, 1).data;
+  for (let x = 0; x < width; x += sampleStep) {
+    const i = x * 4;
+    const alpha = row[i + 3];
+    if (alpha <= alphaThreshold) continue;
+    if (row[i] < whiteThreshold || row[i + 1] < whiteThreshold || row[i + 2] < whiteThreshold) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function findCanvasContentHeightV1104(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return canvas.height;
+
+  const sampleEveryY = 3;
+  const bottomPadding = Math.ceil(canvas.width * 0.006); // small visual safety padding
+  for (let y = canvas.height - 1; y >= 0; y -= sampleEveryY) {
+    if (!isCanvasRowBlankV1104(ctx, y, canvas.width)) {
+      return Math.min(canvas.height, y + bottomPadding);
+    }
+  }
+  return canvas.height;
+}
+
+function canvasToPdfBase64V1104(canvas) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+  const pageWidthMm = 210;
+  const pageHeightMm = 297;
+  const sourceWidth = canvas.width;
+  const maxSourcePageHeight = Math.floor(sourceWidth * pageHeightMm / pageWidthMm);
+  const blankTolerancePx = Math.max(24, Math.ceil(maxSourcePageHeight * 0.015));
+  const effectiveHeight = Math.min(canvas.height, findCanvasContentHeightV1104(canvas));
+
+  let sourceY = 0;
+  let pageIndex = 0;
+
+  while (sourceY < effectiveHeight) {
+    let remaining = effectiveHeight - sourceY;
+
+    // If the only remaining area is tiny whitespace/rounding noise, do not create a blank trailing page.
+    if (pageIndex > 0 && remaining <= blankTolerancePx) break;
+
+    const sliceHeight = Math.min(maxSourcePageHeight, remaining);
+    if (sliceHeight <= 0) break;
+
+    const pageCanvas = document.createElement("canvas");
+    pageCanvas.width = sourceWidth;
+    pageCanvas.height = sliceHeight;
+    const ctx = pageCanvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+    ctx.drawImage(canvas, 0, sourceY, sourceWidth, sliceHeight, 0, 0, sourceWidth, sliceHeight);
+
+    const imgData = pageCanvas.toDataURL("image/png");
+    const sliceHeightMm = sliceHeight * pageWidthMm / sourceWidth;
+    if (pageIndex > 0) pdf.addPage("a4", "portrait");
+    pdf.addImage(imgData, "PNG", 0, 0, pageWidthMm, Math.min(pageHeightMm, sliceHeightMm), undefined, "FAST");
+
+    sourceY += sliceHeight;
+    pageIndex += 1;
+  }
+
+  const dataUri = pdf.output("datauristring");
+  return dataUri.split(",")[1] || "";
+}
+
+async function createDriveCaptureCloneV1104() {
+  const page = getPrintPageForDriveCaptureV1103();
+  if (!page) throw new Error("ไม่พบพื้นที่เอกสารสำหรับสร้าง PDF");
+
+  const container = document.createElement("div");
+  container.className = "drive-capture-root-v1103 drive-capture-root-v1104";
+
+  const clone = page.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.style.boxShadow = "none";
+  clone.style.border = "0";
+  clone.style.margin = "0";
+  clone.style.background = "#ffffff";
+  clone.style.maxWidth = "none";
+  clone.style.width = "210mm";
+  clone.style.minHeight = "297mm";
+
+  container.appendChild(clone);
+  document.body.appendChild(container);
+
+  await inlineImagesForDriveCaptureV1103(clone);
+  await waitForPrintAssetsV1103(clone);
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  // If the document fits one A4 page, lock the capture height to one page.
+  // This prevents a second blank PDF page caused by min-height/border/rounding noise.
+  const contentOverflow = clone.scrollHeight - clone.clientHeight;
+  if (contentOverflow <= 8) {
+    clone.style.height = "297mm";
+    clone.style.minHeight = "0";
+    clone.style.overflow = "hidden";
+  } else {
+    clone.style.height = "auto";
+    clone.style.overflow = "visible";
+  }
+
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  return { container, clone };
+}
+
+async function buildDrivePdfBase64V1103() {
+  ensureDrivePdfLibrariesV1103();
+
+  const { container, clone } = await createDriveCaptureCloneV1104();
+  try {
+    const canvas = await window.html2canvas(clone, {
+      backgroundColor: "#ffffff",
+      scale: Math.min(2, Math.max(1.5, window.devicePixelRatio || 1.5)),
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: Math.max(document.documentElement.clientWidth, 1200),
+      windowHeight: Math.max(document.documentElement.clientHeight, 1600),
+    });
+
+    const base64 = canvasToPdfBase64V1104(canvas);
+    if (!base64) throw new Error("ไม่สามารถเตรียมไฟล์ PDF สำหรับบันทึก Google Drive ได้");
+    return base64;
+  } finally {
+    container.remove();
+  }
+}
+
+async function handleSaveQuotationPdfToDriveV1102(model) {
+  const button = document.getElementById("saveDrivePdfButtonV1102");
+  const target = document.getElementById("driveArchiveStatusV1102");
+
+  try {
+    if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+      throw new Error("คุณไม่มีสิทธิ์บันทึกใบเสนอราคานี้ไป Google Drive");
+    }
+
+    const existing = await loadDriveFileLogV1102(model.quotation.id);
+    if (existing && !existing.loadError) {
+      renderDriveArchiveStatusV1102(model, existing, appState.driveArchiveSettingsV1102 || {});
+      showToast("ใบเสนอราคานี้ถูกบันทึกไป Google Drive แล้ว");
+      return;
+    }
+
+    const settings = validateDriveArchiveSettingsV1102(appState.driveArchiveSettingsV1102 || await loadDriveArchiveSettingsV1102());
+    const ownerProfile = await loadQuotationOwnerProfileV1102(model.quotation.owner_id);
+    const salesFolderName = buildDriveFolderNameV1102(ownerProfile, model.ownerName);
+    const fileName = buildDrivePdfFileNameV1102(model);
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "กำลังเตรียม PDF...";
+    }
+    if (target) {
+      target.innerHTML = `<div class="alert alert-warning">กำลังเตรียมไฟล์ PDF...</div>`;
+    }
+
+    const pdfBase64 = await buildDrivePdfBase64V1103();
+
+    if (button) button.textContent = "กำลังบันทึกไป Drive...";
+    if (target) {
+      target.innerHTML = `<div class="alert alert-warning">กำลังบันทึก PDF ไป Google Drive...</div>`;
+    }
+
+    const response = await postToAppsScriptIframeV1102(settings.webAppUrl, {
+      action: "upload",
+      secret: settings.uploadSecret,
+      parentFolderId: settings.parentFolderId,
+      quotationId: model.quotation.id,
+      quotationNo: model.quotation.quotation_no || "",
+      salesFolderName,
+      fileName,
+      pdfBase64,
+      renderMode: "browser-pdf-base64-v1104",
+      clientVersion: FI_V1104_VERSION,
+    });
+
+    if (!response.ok) throw new Error(response.error || "Apps Script ไม่สามารถบันทึกไฟล์ได้");
+
+    const savedLog = await insertDriveFileLogV1102({
+      model,
+      fileName,
+      response,
+      folderId: settings.parentFolderId,
+    });
+
+    renderDriveArchiveStatusV1102(model, savedLog, settings);
+    showToast(response.existing ? "พบไฟล์เดิมใน Google Drive และบันทึก log แล้ว" : "บันทึก PDF ไป Google Drive สำเร็จ");
+  } catch (error) {
+    console.error(error);
+    if (target) target.innerHTML = `<div class="alert alert-error">${escapeHTML(error.message || "ไม่สามารถบันทึกไป Google Drive ได้")}</div>`;
+    showToast(error.message || "ไม่สามารถบันทึกไป Google Drive ได้");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "บันทึกไป Google Drive";
+    }
+  }
+}
+
+function renderDriveArchiveStatusV1102(model, driveLog, settings) {
+  const target = document.getElementById("driveArchiveStatusV1102");
+  if (!target) return;
+
+  if (driveLog && driveLog.loadError) {
+    target.innerHTML = `<div class="alert alert-warning">ยังตรวจประวัติ Google Drive ไม่ได้ กรุณารัน <strong>supabase/patch_v1_10_2.sql</strong></div>`;
+    return;
+  }
+
+  if (driveLog?.file_url) {
+    target.innerHTML = `
+      <div class="drive-archive-stack-v1104">
+        <div class="drive-archive-row-v1104">
+          <a class="btn btn-ghost drive-open-button-v1102" href="${escapeHTML(driveLog.file_url)}" target="_blank" rel="noopener">
+            เปิดไฟล์ใน Google Drive
+          </a>
+          <span class="drive-status-text-v1102">บันทึกแล้ว: ${escapeHTML(driveLog.file_name || "PDF")}</span>
+        </div>
+        ${renderSentWorkflowInlineV1104(model, driveLog)}
+      </div>
+    `;
+    bindSentWorkflowInlineV1104(model, driveLog);
+    return;
+  }
+
+  if (!canArchiveQuotationToDriveV1102(model.quotation)) {
+    target.innerHTML = `<div class="alert alert-warning">คุณมีสิทธิ์ดูเอกสาร แต่ไม่มีสิทธิ์บันทึก PDF ไป Google Drive</div>`;
+    return;
+  }
+
+  if (!isDriveArchiveConfiguredV1102(settings)) {
+    target.innerHTML = `
+      <div class="alert alert-warning">
+        ยังไม่ได้ตั้งค่า Google Drive Archive กรุณาให้ Admin ตั้งค่า Web App URL, Folder ID และ Shared Secret ในเมนูตั้งค่า
+      </div>
+    `;
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="drive-archive-stack-v1104">
+      <div class="drive-archive-row-v1104">
+        <button id="saveDrivePdfButtonV1102" type="button" class="btn btn-ghost">บันทึกไป Google Drive</button>
+      </div>
+      ${renderSentWorkflowInlineV1104(model, null)}
+    </div>
+  `;
+  document.getElementById("saveDrivePdfButtonV1102")?.addEventListener("click", async () => {
+    await handleSaveQuotationPdfToDriveV1102(model);
+  });
+}
+
+const originalDebugV1104 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1104() {
+  const result = typeof originalDebugV1104 === "function" ? await originalDebugV1104() : {};
+  return {
+    ...result,
+    version: FI_V1104_VERSION,
+    drivePdfBlankPageFix: true,
+    drivePdfTrimWhitespace: true,
+    sentRequiresDrivePdf: true,
+    sentRecipientFields: true,
+    sqlChanged: true,
+  };
+};
+
+// Final visible version stamp for QA.
+window.FI_APP_VERSION = FI_V1104_VERSION;
+

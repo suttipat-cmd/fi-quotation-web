@@ -1,37 +1,27 @@
-# FI Quotation Web App v1.10.3
+# FI Quotation Web App v1.10.4
 
-## v1.10.3 Drive PDF Rendering Fix
+## v1.10.4 Drive PDF Single Page Fix + Sent Workflow Gate
 
-Release นี้ต่อยอดจาก v1.10.2 เพื่อแก้ปัญหา PDF ที่บันทึกลง Google Drive แล้วหน้าตาไม่เหมือน PDF ที่ผู้ใช้กดพิมพ์/บันทึกจากหน้าเว็บเอง
+Release นี้ต่อยอดจาก v1.10.3 เพื่อแก้ปัญหา PDF ที่บันทึกลง Google Drive แล้วเกิดหน้าว่างเพิ่ม และปรับ workflow การเปลี่ยนสถานะเป็น “ส่งแล้ว” ให้รัดกุมขึ้น
 
-## สาเหตุที่แก้ใน v1.10.3
+## สิ่งที่เปลี่ยนใน v1.10.4
 
-ใน v1.10.2 ระบบส่ง HTML ไปให้ Google Apps Script แปลงเป็น PDF ทำให้ผลลัพธ์ต่างจาก Chrome Save as PDF เช่น ฟอนต์ไทย, โลโก้, spacing, line-height และ page layout
-
-v1.10.3 เปลี่ยน flow เป็น:
-
-```text
-Browser สร้าง PDF จากหน้าเอกสารจริง
-↓
-ส่ง PDF base64 ไป Google Apps Script
-↓
-Apps Script บันทึก PDF blob ลง Google Drive
-```
-
-ดังนั้น Apps Script จะไม่แปลง HTML เป็น PDF สำหรับ upload ใหม่แล้ว
-
-## สิ่งที่เปลี่ยนใน v1.10.3
-
-- อัปเดต cache busting เป็น `style.css?v=1.10.3` และ `script.js?v=1.10.3`
-- อัปเดต `window.FI_APP_VERSION = "1.10.3"`
-- เพิ่ม CDN library สำหรับสร้าง PDF ฝั่ง Browser:
-  - `html2canvas@1.4.1`
-  - `jsPDF@2.5.1`
-- ปรับปุ่ม `บันทึกไป Google Drive` ให้สร้าง PDF จากหน้าเอกสารจริงใน Browser ก่อน upload
-- ปรับ `google-apps-script/Code.gs` ให้รับ `pdfBase64` แล้วบันทึกเป็น PDF blob ลง Google Drive โดยตรง
-- คงหลักการเดิม: 1 ใบเสนอราคา = 1 ไฟล์ PDF ใน Google Drive
-- คงชื่อไฟล์เดิม: `เลขที่ใบเสนอราคา (สินค้า/บริการ).pdf`
-- ไม่มี SQL ใหม่ใน v1.10.3
+- อัปเดต cache busting เป็น `style.css?v=1.10.4` และ `script.js?v=1.10.4`
+- อัปเดต `window.FI_APP_VERSION = "1.10.4"`
+- แก้การสร้าง PDF สำหรับ Google Drive เพื่อลดโอกาสเกิดหน้าว่างท้ายไฟล์
+  - lock capture กรณีเอกสารพอดี 1 หน้า A4
+  - trim white space ด้านล่างของ canvas
+  - skip trailing page ที่เกิดจาก rounding / blank area
+- ตัดข้อความ technical ออกจาก UI ตอนบันทึก Drive
+- เปลี่ยน workflow ส่งใบเสนอราคา
+  - ต้องบันทึก PDF ลง Google Drive ก่อน
+  - จากนั้นจึงกด “บันทึกข้อมูลการส่ง / ส่งแล้ว” ได้ในหน้า Preview / Print
+- เพิ่มข้อมูลผู้รับปลายทางตอนเปลี่ยนสถานะเป็นส่งแล้ว
+  - วันที่ส่งใบเสนอราคา
+  - อีเมลผู้รับ (required)
+  - ผู้รับ (required)
+  - ตำแหน่งผู้รับ
+- เพิ่ม SQL patch `supabase/patch_v1_10_4.sql`
 
 ## ไฟล์ใน package
 
@@ -47,13 +37,14 @@ scripts/
 google-apps-script/
   Code.gs
 supabase/
-  README_SQL.md
   patch_v1_10_2.sql
+  patch_v1_10_4.sql
   reset_usage_data_keep_master.sql
+  README_SQL.md
   ...patch เก่าที่ใช้ตั้งค่าระบบ
 ```
 
-## ขั้นตอนติดตั้ง v1.10.3
+## ขั้นตอนติดตั้ง v1.10.4
 
 ### 1) ติดตั้งไฟล์เว็บ
 
@@ -66,31 +57,27 @@ Mac: Command + Shift + R
 Windows: Ctrl + Shift + R
 ```
 
-### 2) ไม่ต้องรัน SQL ใหม่
+### 2) รัน SQL ใหม่
 
-ถ้าเคยรัน `supabase/patch_v1_10_2.sql` สำเร็จแล้ว รอบนี้ไม่ต้องรัน SQL เพิ่ม
-
-### 3) อัปเดต Google Apps Script
-
-ต้องอัปเดต Apps Script เป็น v1.10.3 เพราะ payload เปลี่ยนจาก HTML เป็น PDF base64
-
-1. เปิด Google Apps Script Project เดิมที่ใช้กับระบบนี้
-2. เปิดไฟล์ `Code.gs`
-3. Copy เนื้อหาจากไฟล์นี้ไปวางทับ:
+ต้องรัน SQL นี้ใน Supabase SQL Editor:
 
 ```text
-google-apps-script/Code.gs
+supabase/patch_v1_10_4.sql
 ```
 
-4. ตรวจ Script Property ว่ายังมีค่า:
+Patch นี้จะเพิ่ม field ข้อมูลผู้รับปลายทางและ RPC:
 
 ```text
-UPLOAD_SECRET = ค่าเดียวกับในหน้า Settings ของเว็บ
+mark_quotation_as_sent_v1104
 ```
 
-5. Deploy > Manage deployments > Edit deployment
-6. เลือก version ใหม่ แล้วกด Deploy
-7. ใช้ Web App URL เดิมได้ ถ้า deploy เป็น deployment เดิม
+> ต้องเคยรัน `supabase/patch_v1_10_2.sql` มาก่อน เพราะ v1.10.4 ใช้ table `quotation_drive_files` เป็นเงื่อนไขว่าต้องมี PDF ใน Drive ก่อน
+
+### 3) Google Apps Script
+
+ไม่จำเป็นต้องเปลี่ยน Apps Script ถ้าใช้อยู่บน v1.10.3 แล้ว เพราะ v1.10.4 ยังส่ง `pdfBase64` ให้ Apps Script บันทึกเป็น PDF blob เหมือนเดิม
+
+ถ้าต้องการให้ version ใน Apps Script ตรงกัน สามารถเปลี่ยน `FI_ARCHIVE_VERSION` ใน `google-apps-script/Code.gs` เป็น `1.10.4` แล้ว Deploy ใหม่ได้
 
 ## ตรวจ release ก่อน push
 
@@ -106,7 +93,7 @@ node --check script.js
 ```bash
 git status
 git add .
-git commit -m "Release v1.10.3 drive pdf rendering fix"
+git commit -m "Release v1.10.4 drive pdf single page sent workflow"
 git push origin main
 ```
 
@@ -128,7 +115,7 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.10.3
+1.10.4
 ```
 
 ## Debug helper
@@ -140,28 +127,24 @@ await window.FI_DEBUG()
 ควรเห็นค่าประมาณนี้:
 
 ```text
-version: 1.10.3
-drivePdfRenderMode: browser-pdf-base64
-appsScriptSavesPdfBlobOnly: true
-sqlChanged: false
+version: 1.10.4
+drivePdfBlankPageFix: true
+sentRequiresDrivePdf: true
+sentRecipientFields: true
+sqlChanged: true
 ```
 
 ## จุดที่ต้องทดสอบทันที
 
 ```text
-1. เปิดหน้า Preview / Print ของใบเสนอราคาที่ยืนยันแล้ว
-2. กด พิมพ์ / บันทึกเป็น PDF แล้วบันทึกไฟล์เองไว้ 1 ไฟล์
+1. รัน patch_v1_10_4.sql สำเร็จ
+2. เปิดหน้า Preview / Print ของใบเสนอราคาสถานะยืนยันแล้ว
 3. กด บันทึกไป Google Drive
-4. เปิดไฟล์จากปุ่ม เปิดไฟล์ใน Google Drive
-5. เทียบไฟล์จากข้อ 2 กับข้อ 4 ว่า layout ใกล้เคียงกันมากขึ้น
-6. ตรวจว่าโลโก้แสดงถูกต้อง
-7. ตรวจว่าฟอนต์ไทย/ระยะบรรทัด/ตารางไม่เพี้ยนแบบ v1.10.2
-8. ตรวจว่าใบเดิมบันทึกซ้ำไม่ได้เหมือนเดิม
+4. เปิดไฟล์ใน Google Drive แล้วตรวจว่าไม่มีหน้าว่างท้ายไฟล์
+5. หลังบันทึก Drive แล้วต้องเห็นปุ่ม บันทึกข้อมูลการส่ง / ส่งแล้ว
+6. กดปุ่มแล้วต้องมี modal ให้กรอก วันที่ส่ง, อีเมลผู้รับ, ผู้รับ, ตำแหน่ง
+7. อีเมลผู้รับและผู้รับต้อง required
+8. บันทึกสำเร็จแล้ว status ต้องเป็น ส่งแล้ว
+9. หน้า View ต้องแสดงข้อมูลการส่งใบเสนอราคา
+10. ถ้ายังไม่ได้บันทึก Drive ต้องยังเปลี่ยนสถานะเป็นส่งแล้วไม่ได้
 ```
-
-## ข้อควรทราบ
-
-- PDF ที่ upload ไป Drive ใน v1.10.3 เป็น PDF ที่สร้างจากการ capture หน้าเอกสารใน Browser เป็นภาพลง PDF จึงเน้นความเหมือนด้านหน้าตาเป็นหลัก
-- Text ใน PDF ที่บันทึกเข้า Drive อาจไม่ selectable 100% เหมือน PDF ที่ Chrome Save as PDF สร้างเอง
-- หากต้องการให้เหมือน Chrome Save as PDF แบบเกือบ 100% และ text selectable ควรใช้ backend ที่รัน Headless Chrome เช่น Puppeteer/Playwright ในอนาคต
-- ไม่มี `supabase/patch_v1_10_3.sql`

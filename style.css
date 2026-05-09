@@ -4668,3 +4668,190 @@ body {
   align-items: center;
   gap: 8px;
 }
+
+/* =======================================================
+   v1.10.4 Drive PDF Single Page Fix + Sent Workflow Gate
+   ======================================================= */
+
+.drive-capture-root-v1104 {
+  position: fixed !important;
+  left: -10000px !important;
+  top: 0 !important;
+  width: 210mm !important;
+  background: #ffffff !important;
+  pointer-events: none !important;
+  opacity: 1 !important;
+  z-index: -1 !important;
+}
+
+.drive-capture-root-v1104 .print-page,
+.drive-capture-root-v1104 .print-v2-page {
+  width: 210mm !important;
+  max-width: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  margin: 0 !important;
+  background: #ffffff !important;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.drive-archive-stack-v1104 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.drive-archive-row-v1104,
+.sent-gate-v1104 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.sent-info-panel-v1104 {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px 14px;
+}
+
+.sent-info-panel-v1104 > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.sent-info-grid-v1104 {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 6px 12px;
+  font-size: 14px;
+}
+
+.sent-info-grid-v1104 span {
+  color: var(--muted);
+}
+
+.sent-info-grid-v1104 b {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-backdrop-v1104 {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.modal-card-v1104 {
+  width: min(620px, 100%);
+  max-height: min(720px, calc(100vh - 36px));
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: var(--shadow-soft);
+  padding: 20px;
+}
+
+.modal-header-v1104 {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.modal-header-v1104 h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.modal-header-v1104 p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.icon-button {
+  border: 0;
+  background: var(--surface-soft);
+  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  cursor: pointer;
+  font-weight: 800;
+  display: inline-grid;
+  place-items: center;
+}
+
+.required-star {
+  color: var(--error-text);
+  font-weight: 800;
+}
+
+.drive-file-confirm-v1104 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.drive-file-confirm-v1104 span {
+  font-weight: 700;
+}
+
+.drive-file-confirm-v1104 a {
+  color: #1d4ed8;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.modal-actions-v1104 {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .drive-archive-stack-v1104,
+  .drive-archive-row-v1104,
+  .sent-gate-v1104 {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .drive-archive-row-v1104 .btn,
+  .sent-gate-v1104 .btn,
+  .drive-open-button-v1102 {
+    width: 100%;
+  }
+
+  .sent-info-grid-v1104 {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions-v1104 {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions-v1104 .btn {
+    width: 100%;
+  }
+}
+
