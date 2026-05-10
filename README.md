@@ -1,65 +1,46 @@
-# FI Quotation Web App v1.11.5
+# FI Quotation Web App v1.12.0
 
-## v1.11.5 Payment Modal UX + Paid Delivery Status Fix
+## v1.12.0 Production Readiness Cleanup
 
-Release นี้ต่อยอดจาก v1.11.4 โดยปรับหน้าตา modal กรอกข้อมูลชำระเงินให้เป็นรูปแบบเดียวกับ modal ข้อมูลการส่งใบเสนอราคา และแก้ข้อความสถานะในหน้า `#quotation-print` เมื่อใบเสนอราคาอยู่สถานะ `ชำระเงินแล้ว` ให้ไม่แสดงข้อความว่า “บันทึกข้อมูลผู้รับแล้ว แต่ยังไม่ได้ส่งอีเมล”
+Release นี้ต่อยอดจาก v1.11.5 เพื่อเตรียมให้ผู้ใช้งานจริงเริ่มใช้งาน โดยโฟกัสที่ความเสถียร ความถูกต้อง UX บนมือถือ และการลดความซับซ้อนของหน้าจอ
 
-## สิ่งที่เปลี่ยนใน v1.11.5
+## สิ่งที่เปลี่ยนใน v1.12.0
 
-- อัปเดต cache busting เป็น `style.css?v=1.11.5` และ `script.js?v=1.11.5`
-- อัปเดต `window.FI_APP_VERSION = "1.11.5"`
-- ปรับ modal เปลี่ยนสถานะเป็น `ชำระเงินแล้ว`
-  - ใช้ layout แบบเดียวกับ modal ข้อมูลการส่งใบเสนอราคา
-  - แยก section เป็น `วันที่ชำระเงิน`, `ยอดที่ได้รับชำระ`, และ `หมายเหตุ`
-  - ตัวเลือกยอดรับชำระแสดงเป็น card อ่านง่ายขึ้น
-  - ยังคงบังคับให้เลือกอย่างน้อย 1 ส่วนก่อนบันทึก
-- แก้ logic แสดงข้อมูลการส่งในหน้า `#quotation-print`
-  - ถ้าสถานะเป็น `ชำระเงินแล้ว` ให้ถือว่า workflow การส่งอีเมลเสร็จแล้ว
-  - แสดงข้อความ `ส่งอีเมลแล้ว และบันทึกสถานะชำระเงินแล้ว`
-  - ไม่แสดงข้อความ `บันทึกข้อมูลผู้รับแล้ว แต่ยังไม่ได้ส่งอีเมล` สำหรับใบที่ชำระเงินแล้ว
-- ไม่เปลี่ยน Database และไม่เปลี่ยน Google Apps Script จาก v1.11.4
+- อัปเดต cache busting เป็น `style.css?v=1.12.0` และ `script.js?v=1.12.0`
+- อัปเดต `window.FI_APP_VERSION = "1.12.0"`
+- ตัดเมนู/หน้า `ลูกค้า` ออกจากระบบ
+  - ยังเก็บ `customer_name` และ `customer_address` ในใบเสนอราคา เพราะเป็นข้อมูลจำเป็นของเอกสาร
+  - เลิกใช้หน้า derived customer list จาก `v_customers_from_quotations`
+- ปรับ Dashboard เป็น read-only
+  - ไม่มีปุ่มที่เปลี่ยนข้อมูล เช่น ส่งแล้ว / ชำระเงินแล้ว / ยกเลิก / bulk action
+  - อนุญาตให้กดดูรายละเอียดใบเสนอราคาได้
+- ปรับ Dashboard เป็นข้อมูลเชิงวิเคราะห์มากขึ้น
+  - Summary cards
+  - สัดส่วนสถานะใบเสนอราคา
+  - Funnel ร่าง → ยืนยันแล้ว → ส่งแล้ว → ชำระเงินแล้ว
+  - ใบใกล้หมดอายุ
+  - ส่งแล้วแต่ยังไม่ชำระเงิน
+  - ชำระเงินล่าสุด
+  - แนวโน้มยอดรับชำระ
+  - สินค้า/บริการที่ถูกเสนอมากที่สุด
+  - ยอดรวมตามฝ่ายขาย สำหรับ admin/manager
+- ตัด/ย่อข้อความที่ไม่จำเป็นบนหน้าเว็บ
+  - ข้อความเชิง technical เช่น Database, snapshot, MVP ถูกซ่อนจาก UI
+  - ข้อความช่วยที่ยังมีประโยชน์ถูกย้ายเป็น tooltip/help
+- ปรับ responsive/mobile layout
+  - Header และ mobile menu กระชับขึ้น
+  - Form, table, modal, action bar และ dashboard widgets รองรับจอมือถือดีขึ้น
+  - ปุ่มใน modal/action area เป็น full-width บนจอเล็ก
+- อัปเดต SQL reset usage data
+  - เพิ่มการล้าง `quotation_drive_files`
+  - ระบุลำดับการล้าง table เพื่อกันปัญหา foreign key
+- เพิ่มเอกสาร audit สำหรับสิ่งที่ตรวจพบและข้อควรติดตามต่อ
 
-## ไฟล์ใน package
+## SQL
 
-```text
-index.html
-style.css
-script.js
-README.md
-TEST_CHECKLIST.md
-RELEASE_CHECKLIST.md
-scripts/
-  check-release.js
-google-apps-script/
-  Code.gs
-supabase/
-  patch_v1_11_4.sql
-  patch_v1_11_3.sql
-  patch_v1_10_2.sql
-  patch_v1_10_4.sql
-  reset_usage_data_keep_master.sql
-  README_SQL.md
-  ...patch เก่าที่ใช้ตั้งค่าระบบ
-```
+v1.12.0 **ไม่มี schema patch ใหม่**
 
-## ขั้นตอนติดตั้ง v1.11.5
-
-### 1) ติดตั้งไฟล์เว็บ
-
-1. แตก ZIP
-2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
-3. เปิด Live Server หรือ GitHub Pages แล้วทำ hard refresh
-
-```text
-Mac: Command + Shift + R
-Windows: Ctrl + Shift + R
-```
-
-### 2) SQL
-
-รอบนี้ **ไม่ต้องรัน SQL ใหม่**
-
-ต้องเคยรัน SQL เหล่านี้สำเร็จแล้วจากเวอร์ชันก่อนหน้า:
+ต้องเคยรัน SQL เหล่านี้จากเวอร์ชันก่อนหน้าแล้ว:
 
 ```text
 supabase/patch_v1_10_2.sql
@@ -68,15 +49,62 @@ supabase/patch_v1_11_3.sql
 supabase/patch_v1_11_4.sql
 ```
 
-### 3) Google Apps Script
+เมื่อต้องการล้าง usage data โดยเก็บ master data ให้ใช้:
 
-รอบนี้ **ไม่ต้องอัปเดต Google Apps Script ใหม่** หากใช้งาน v1.11.4 อยู่แล้ว
+```text
+supabase/reset_usage_data_keep_master.sql
+```
 
-ยังต้องเคยทำขั้นตอนนี้จาก v1.11.4 แล้ว:
+ไฟล์ reset จะล้างตามลำดับ:
+
+```text
+1. quotation_status_logs / quotation_audit_logs / quotation_attachments / quotation_files ถ้ามี
+2. quotation_drive_files
+3. quotation_items
+4. quotations
+```
+
+ข้อมูลที่ยังคงอยู่:
+
+```text
+products
+profiles / auth.users
+company_profile
+app_settings
+Supabase Storage buckets/files
+```
+
+## Google Apps Script
+
+v1.12.0 **ไม่ต้องอัปเดต Apps Script ใหม่** หากใช้งาน v1.11.4/v1.11.5 อยู่แล้ว
+
+ยังต้องเคยทำขั้นตอนนี้แล้ว:
 
 ```text
 Run function authorizeEmailV1114 ใน Apps Script Editor
 Deploy Web App version ใหม่
+```
+
+## ขั้นตอนติดตั้ง
+
+1. แตก ZIP
+2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
+3. ไม่ต้องรัน SQL ใหม่ ยกเว้นต้องการล้างข้อมูลการใช้งาน
+4. ไม่ต้องแก้ Google Apps Script ถ้าใช้งาน v1.11.4 ขึ้นไปอยู่แล้ว
+5. Push ขึ้น GitHub Pages
+
+```bash
+git status
+git add .
+git commit -m "Release v1.12.0 production readiness cleanup"
+git push origin main
+```
+
+หลัง deploy แล้วทำ hard refresh:
+
+```text
+Mac: Command + Shift + R
+Windows: Ctrl + Shift + R
 ```
 
 ## ตรวจ release ก่อน push
@@ -88,24 +116,6 @@ node scripts/check-release.js
 node --check script.js
 ```
 
-## Push ผ่าน VS Code Terminal
-
-```bash
-git status
-git add .
-git commit -m "Release v1.11.5 payment modal ux"
-git push origin main
-```
-
-## หลัง Push ขึ้น GitHub Pages
-
-ทำ hard refresh:
-
-```text
-Mac: Command + Shift + R
-Windows: Ctrl + Shift + R
-```
-
 ## ตรวจเวอร์ชันใน Console
 
 ```js
@@ -115,21 +125,23 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.11.5
+1.12.0
 ```
 
 ## จุดที่ต้องทดสอบทันที
 
 ```text
-1. เปิดใบเสนอราคาสถานะส่งแล้ว
-2. กดปุ่มชำระเงินแล้ว
-3. Modal ชำระเงินต้องมี layout ใหม่ อ่านง่าย และคล้าย modal ข้อมูลการส่งใบเสนอราคา
-4. เลือกยอดรับชำระเฉพาะรายเดือน/รายปีได้
-5. เลือกยอดรับชำระเฉพาะครั้งเดียวจบได้
-6. เลือกทั้งคู่ได้
-7. ไม่เลือกอะไรเลยต้องบันทึกไม่ได้
-8. บันทึกแล้วสถานะต้องเป็นชำระเงินแล้ว
-9. หน้า #quotation-print ของใบสถานะชำระเงินแล้ว ต้องไม่แสดงว่า “บันทึกข้อมูลผู้รับแล้ว แต่ยังไม่ได้ส่งอีเมล”
-10. หน้า #quotation-print ต้องแสดงว่าส่งอีเมลแล้วและชำระเงินแล้ว
-11. Flow ส่งอีเมล / บันทึก PDF / Dashboard ยอดรับชำระเดือนนี้ ยังทำงานเหมือน v1.11.4
+1. เมนู “ลูกค้า” ต้องไม่แสดง
+2. เข้า #customers แล้วต้องถูกพากลับแดชบอร์ด
+3. Dashboard ต้องไม่มี action ที่เปลี่ยนข้อมูล
+4. Dashboard ยังต้องกดดูรายละเอียดใบเสนอราคาได้
+5. Dashboard widgets ต้องแสดงครบและไม่ทำให้หน้าจอยาวเกินไป
+6. Mobile header/menu ต้องใช้งานได้และ logout ได้
+7. หน้าใบเสนอราคา list/search/filter/sort/bulk ยังทำงานเหมือนเดิม
+8. สร้าง/แก้ไข/ยืนยัน/สร้างสำเนาใบเสนอราคายังทำงาน
+9. บันทึก PDF ไป Google Drive ยังทำงาน
+10. ส่งอีเมลและข้อมูลการส่งยังทำงาน
+11. ชำระเงินแล้วและยอดรับชำระเดือนนี้ยังถูกต้อง
+12. ใบสถานะส่งแล้ว/ชำระเงินแล้วยังยกเลิกไม่ได้
+13. reset_usage_data_keep_master.sql ล้าง usage data โดยไม่ลบ master data
 ```

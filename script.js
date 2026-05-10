@@ -21008,3 +21008,545 @@ window.FI_DEBUG = async function FI_DEBUG_V1115() {
 };
 
 window.FI_APP_VERSION = FI_V1115_VERSION;
+
+// =======================================================
+// v1.12.0 Production Readiness Cleanup
+// Scope:
+// - Remove standalone Customer feature from menu/routing while keeping customer fields in quotations.
+// - Make Dashboard read-only for analytics/navigation only.
+// - Trim non-essential UX copy and move useful guidance to tooltip/help text.
+// - Improve mobile fit through CSS hooks and post-render cleanup.
+// - Keep existing quotation / Drive / email / payment workflows unchanged.
+// =======================================================
+
+const FI_V1120_VERSION = "1.12.0";
+window.FI_APP_VERSION = FI_V1120_VERSION;
+
+const CUSTOMER_FEATURE_DEPRECATED_V1120 = true;
+const DASHBOARD_READ_ONLY_V1120 = true;
+const DASHBOARD_LIST_SIZE_V1120 = 5;
+
+function getStatusKeyV1120(row = {}) {
+  return String(row.status || row.effective_status || "");
+}
+
+function isDashboardViewTargetV1120(row = {}) {
+  return Boolean(row?.id);
+}
+
+function setCompactPageHeaderV1120(title, subtitle = "") {
+  setPageHeader(title, subtitle);
+  if (elements.pageSubtitle) {
+    elements.pageSubtitle.textContent = subtitle || "";
+  }
+}
+
+function getMenuLabelV1120(key) {
+  const map = {
+    dashboard: "แดชบอร์ด",
+    quotations: "ใบเสนอราคา",
+    products: "สินค้า/บริการ",
+    company: "ข้อมูลบริษัท",
+    settings: "ตั้งค่า",
+  };
+  return map[key] || key || "-";
+}
+
+function getMenuIconV1120(key) {
+  const icons = {
+    dashboard: "📊",
+    quotations: "📄",
+    products: "📦",
+    company: "🏛️",
+    settings: "⚙️",
+  };
+  return icons[key] || "•";
+}
+
+function activeMenuKeyV1120(page) {
+  if (page.startsWith("quotation-")) return "quotations";
+  if (page.startsWith("product-")) return "products";
+  if (page === "customers") return "dashboard";
+  return page;
+}
+
+renderMenu = function renderMenuV1120() {
+  if (!elements.sidebarMenu || !appState.profile?.role) return;
+
+  const role = appState.profile.role;
+  const currentPage = getCurrentPageV19 ? getCurrentPageV19() : getPageFromHash();
+  const activeKey = activeMenuKeyV1120(currentPage || "dashboard");
+  const menuKeys = [
+    { key: "dashboard", roles: ["admin", "manager", "sales"] },
+    { key: "quotations", roles: ["admin", "manager", "sales"] },
+    { key: "products", roles: ["admin", "manager", "sales"] },
+    { key: "company", roles: ["admin"] },
+    { key: "settings", roles: ["admin"] },
+  ].filter((route) => route.roles.includes(role));
+
+  elements.sidebarMenu.innerHTML = menuKeys
+    .map((route) => `
+      <button type="button" class="menu-item ${route.key === activeKey ? "active" : ""}" data-page="${escapeHTML(route.key)}">
+        <span>${getMenuIconV1120(route.key)}</span>
+        <span>${escapeHTML(getMenuLabelV1120(route.key))}</span>
+      </button>
+    `)
+    .join("");
+
+  elements.sidebarMenu.querySelectorAll(".menu-item[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      location.hash = `#${button.dataset.page}`;
+      elements.sidebarMenu?.classList.remove("is-open");
+      document.body.classList.remove("nav-open");
+    });
+  });
+};
+
+function redirectDeprecatedCustomerPageV1120() {
+  const page = getCurrentPageV19 ? getCurrentPageV19() : getPageFromHash();
+  if (page === "customers") {
+    location.hash = "#dashboard";
+    return true;
+  }
+  return false;
+}
+
+const originalRenderPageByKeyV161V1120 = typeof renderPageByKeyV161 === "function" ? renderPageByKeyV161 : null;
+if (originalRenderPageByKeyV161V1120) {
+  renderPageByKeyV161 = async function renderPageByKeyV1120(page) {
+    if (page === "customers") {
+      location.hash = "#dashboard";
+      return renderDashboardPage();
+    }
+    return originalRenderPageByKeyV161V1120(page);
+  };
+}
+
+function cleanupCopyV1120(root = document) {
+  const exactRemoveTexts = new Set([
+    "Draft จะยังไม่มีเลขเอกสาร เลขจะถูกสร้างเมื่อ Confirm",
+    "จำนวนเงินตัวอักษรจะสร้างจาก Database เมื่อบันทึก/ยืนยันเอกสาร",
+    "ข้อมูลนี้จะถูก snapshot ตอน Confirm ใบเสนอราคา",
+    "MVP นี้ Admin สร้าง User ผ่าน Supabase Dashboard แล้วตั้ง role ใน profiles",
+    "ใน phase ถัดไปสามารถเพิ่มหน้าแก้ role และเปิด/ปิด user ได้จากระบบ",
+    "Master Data สำหรับใช้ในใบเสนอราคา",
+    "หน้านี้เป็น read-only สำหรับ role ของคุณ",
+    "Admin จัดการสินค้าได้",
+  ]);
+
+  root.querySelectorAll("p, .inline-note, .helper-text, .form-status-note").forEach((node) => {
+    const text = (node.textContent || "").trim().replace(/\s+/g, " ");
+    if (exactRemoveTexts.has(text)) {
+      node.remove();
+      return;
+    }
+    if (text.includes("Database") || text.includes("snapshot") || text.includes("MVP")) {
+      node.remove();
+    }
+  });
+
+  const quantityHelp = root.querySelector("#draftQuantity")?.closest(".field");
+  if (quantityHelp && !quantityHelp.querySelector(".help-dot-v1120")) {
+    const label = quantityHelp.querySelector("label");
+    if (label) {
+      label.insertAdjacentHTML("beforeend", ` <span class="help-dot-v1120" title="จำนวนรถใช้เป็นเงื่อนไขราคา ไม่ได้นำไปคูณกับราคา">?</span>`);
+    }
+  }
+
+  root.querySelectorAll("button, th, span, h2, h3, h4, option, label").forEach((node) => {
+    if (!node.childElementCount) {
+      node.textContent = (node.textContent || "")
+        .replace(/Dashboard/g, "แดชบอร์ด")
+        .replace(/Sales/g, "ฝ่ายขาย")
+        .replace(/Draft/g, "ร่าง")
+        .replace(/Confirmed/g, "ยืนยันแล้ว")
+        .replace(/Sent/g, "ส่งแล้ว")
+        .replace(/Expired/g, "หมดอายุ")
+        .replace(/Action/g, "การดำเนินการ")
+        .replace(/Company Profile/g, "ข้อมูลบริษัท")
+        .replace(/Settings/g, "ตั้งค่า")
+        .replace(/Preview \/ Print/g, "ตัวอย่างเอกสาร / พิมพ์")
+        .replace(/Confirm/g, "ยืนยัน")
+        .replace(/History/g, "ประวัติ");
+    }
+  });
+
+  document.querySelectorAll("[title='จะทำใน Step ถัดไป']").forEach((node) => node.removeAttribute("title"));
+}
+
+function takeRowsV1120(rows, limit = DASHBOARD_LIST_SIZE_V1120) {
+  return (rows || []).slice(0, limit);
+}
+
+function sumPaidAmountV1120(rows) {
+  return (rows || []).reduce((sum, row) => sum + Number(row.paid_amount_actual || 0), 0);
+}
+
+function sumGrandTotalV1120(rows) {
+  return (rows || []).reduce((sum, row) => sum + Number(row.grand_total_display || row.grand_total || 0), 0);
+}
+
+function groupCountByStatusV1120(rows) {
+  const keys = ["draft", "confirmed", "sent", "paid", "expired", "cancelled"];
+  const result = Object.fromEntries(keys.map((key) => [key, 0]));
+  (rows || []).forEach((row) => {
+    const key = getStatusKeyV1120(row);
+    if (key in result) result[key] += 1;
+  });
+  return result;
+}
+
+function renderDashboardMetricCardsV1120(metrics) {
+  return `
+    <section class="dashboard-metrics-v1120">
+      <div class="metric-card metric-card-v1120"><span>ใบเสนอราคาทั้งหมด</span><strong>${number(metrics.total_count)}</strong></div>
+      <div class="metric-card metric-card-v1120"><span>ร่าง</span><strong>${number(metrics.draft_count)}</strong></div>
+      <div class="metric-card metric-card-v1120"><span>ยืนยันแล้ว</span><strong>${number(metrics.confirmed_count)}</strong></div>
+      <div class="metric-card metric-card-v1120"><span>ส่งแล้ว</span><strong>${number(metrics.sent_count)}</strong></div>
+      <div class="metric-card metric-card-v1120 is-primary"><span>ยอดรับชำระเดือนนี้</span><strong>${formatTHB(metrics.total_amount_this_month)}</strong></div>
+    </section>
+  `;
+}
+
+function renderReadOnlyQuotationListV1120(rows, emptyText, options = {}) {
+  const { amountMode = "grand", limit = DASHBOARD_LIST_SIZE_V1120 } = options;
+  const list = takeRowsV1120(rows, limit);
+  if (!list.length) return `<div class="empty-state compact">${escapeHTML(emptyText)}</div>`;
+  return `
+    <div class="compact-list dashboard-readonly-list-v1120">
+      ${list.map((row) => `
+        <button type="button" class="compact-item dashboard-view-link-v1120" data-dashboard-view-v1120="${escapeHTML(row.id)}">
+          <div>
+            <strong>${escapeHTML(row.quotation_no || "ยังไม่ออกเลข")}</strong>
+            <span>${escapeHTML(row.customer_name || "-")} · ${escapeHTML(row.owner_name || "-")}</span>
+          </div>
+          <div class="compact-item-right">
+            ${statusBadge(row.status || row.effective_status)}
+            <strong>${formatTHB(amountMode === "paid" ? row.paid_amount_actual : row.grand_total_display)}</strong>
+          </div>
+        </button>
+      `).join("")}
+    </div>
+    ${(rows || []).length > limit ? `<div class="dashboard-list-note-v1120">แสดง ${number(limit)} จาก ${number(rows.length)} รายการ</div>` : ""}
+  `;
+}
+
+function bindDashboardViewLinksV1120() {
+  document.querySelectorAll("[data-dashboard-view-v1120]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.dashboardViewV1120;
+      if (id) location.hash = `#quotation-view/${id}`;
+    });
+  });
+}
+
+function renderStatusPieV1120(statusCounts) {
+  const total = Object.values(statusCounts).reduce((sum, value) => sum + Number(value || 0), 0) || 1;
+  const entries = [
+    ["draft", "ร่าง", "#94a3b8"],
+    ["confirmed", "ยืนยันแล้ว", "#22c55e"],
+    ["sent", "ส่งแล้ว", "#2563eb"],
+    ["paid", "ชำระเงินแล้ว", "#16a34a"],
+    ["expired", "หมดอายุ", "#f97316"],
+    ["cancelled", "ยกเลิก", "#64748b"],
+  ];
+  let cursor = 0;
+  const slices = entries.map(([key, _label, color]) => {
+    const start = cursor;
+    const end = cursor + (Number(statusCounts[key] || 0) / total) * 360;
+    cursor = end;
+    return `${color} ${start}deg ${end}deg`;
+  }).join(", ");
+  return `
+    <div class="dashboard-chart-card-v1120">
+      <div class="card-header compact-v1120"><div><h3>สัดส่วนสถานะ</h3></div></div>
+      <div class="pie-wrap-v1120">
+        <div class="pie-chart-v1120" style="background: conic-gradient(${slices});"></div>
+        <div class="pie-legend-v1120">
+          ${entries.map(([key, label, color]) => `
+            <div><i style="background:${color}"></i><span>${label}</span><strong>${number(statusCounts[key] || 0)}</strong></div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFunnelV1120(statusCounts) {
+  const steps = [
+    ["draft", "ร่าง"],
+    ["confirmed", "ยืนยันแล้ว"],
+    ["sent", "ส่งแล้ว"],
+    ["paid", "ชำระเงินแล้ว"],
+  ];
+  const maxValue = Math.max(...steps.map(([key]) => Number(statusCounts[key] || 0)), 1);
+  return `
+    <div class="dashboard-chart-card-v1120">
+      <div class="card-header compact-v1120"><div><h3>Funnel ใบเสนอราคา</h3></div></div>
+      <div class="funnel-v1120">
+        ${steps.map(([key, label]) => {
+          const value = Number(statusCounts[key] || 0);
+          const width = Math.max(8, Math.round((value / maxValue) * 100));
+          return `<div class="funnel-row-v1120"><span>${label}</span><div><i style="width:${width}%"></i></div><strong>${number(value)}</strong></div>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderPaidTrendV1120(rows) {
+  const monthMap = new Map();
+  (rows || []).forEach((row) => {
+    const rawDate = row.paid_at || row.sent_email_sent_at || row.quote_date || row.created_at;
+    if (!rawDate) return;
+    const date = new Date(rawDate);
+    if (Number.isNaN(date.getTime())) return;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    if (!monthMap.has(key)) monthMap.set(key, { month: key, sent: 0, paid: 0, paidAmount: 0 });
+    const bucket = monthMap.get(key);
+    const status = getStatusKeyV1120(row);
+    if (status === "sent" || status === "paid") bucket.sent += 1;
+    if (status === "paid") {
+      bucket.paid += 1;
+      bucket.paidAmount += Number(row.paid_amount_actual || 0);
+    }
+  });
+  const months = Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month)).slice(-6);
+  const maxAmount = Math.max(...months.map((item) => item.paidAmount), 1);
+  if (!months.length) return `<div class="empty-state compact">ยังไม่มีข้อมูลแนวโน้ม</div>`;
+  return `
+    <div class="trend-bars-v1120">
+      ${months.map((item) => `
+        <div class="trend-row-v1120">
+          <span>${escapeHTML(item.month)}</span>
+          <div><i style="width:${Math.max(4, Math.round((item.paidAmount / maxAmount) * 100))}%"></i></div>
+          <strong>${formatTHB(item.paidAmount)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderTopProductsV1120(items) {
+  const map = new Map();
+  (items || []).forEach((item) => {
+    const name = item.product_name_snapshot || "ไม่ระบุสินค้า/บริการ";
+    if (!map.has(name)) map.set(name, { name, count: 0, amount: 0 });
+    const row = map.get(name);
+    row.count += 1;
+    row.amount += Number((item.line_subtotal ?? (item.section_type === "recurring" ? item.unit_price : Number(item.quantity || 0) * Number(item.unit_price || 0))) || 0);
+  });
+  const rows = Array.from(map.values()).sort((a, b) => b.count - a.count || b.amount - a.amount).slice(0, 5);
+  if (!rows.length) return `<div class="empty-state compact">ยังไม่มีข้อมูลสินค้า/บริการ</div>`;
+  return `
+    <div class="top-products-v1120">
+      ${rows.map((row, index) => `
+        <div>
+          <span>${number(index + 1)}</span>
+          <strong>${escapeHTML(row.name)}</strong>
+          <b>${number(row.count)} ครั้ง</b>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function loadDashboardItemsV1120(quotationIds) {
+  const ids = (quotationIds || []).filter(Boolean);
+  if (!ids.length) return [];
+  try {
+    const { data, error } = await supabaseClient
+      .from("quotation_items")
+      .select("quotation_id, section_type, product_name_snapshot, line_subtotal, quantity, unit_price")
+      .in("quotation_id", ids);
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.warn("Top product data skipped v1.12.0", error);
+    return [];
+  }
+}
+
+async function renderDashboardPage() {
+  setCompactPageHeaderV1120("แดชบอร์ด", "ภาพรวมและข้อมูลสำหรับติดตามผล");
+  renderLoading();
+
+  const isSales = appState.profile.role === "sales";
+  const quotationsResult = await supabaseClient
+    .from("v_quotations_list")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(500);
+  if (quotationsResult.error) throw quotationsResult.error;
+
+  const quotationBaseRows = quotationsResult.data || [];
+  const ids = quotationBaseRows.map((row) => row.id).filter(Boolean);
+
+  let quotations = quotationBaseRows;
+  try {
+    const paymentMap = await loadPaymentInfoMapV1114(ids);
+    const itemsMap = await loadQuotationItemsMapV1114(ids);
+    quotations = enrichQuotationsWithPaymentV1114(quotationBaseRows, paymentMap, itemsMap);
+  } catch (error) {
+    console.warn("Payment enrichment skipped v1.12.0", error);
+  }
+
+  let driveMap = new Map();
+  try {
+    driveMap = await loadDriveLogsMapV1110(ids);
+  } catch (error) {
+    console.warn("Drive log enrichment skipped v1.12.0", error);
+  }
+
+  const itemRows = await loadDashboardItemsV1120(ids);
+  const metrics = typeof buildDashboardMetricsFromRowsV1114 === "function"
+    ? buildDashboardMetricsFromRowsV1114(quotations)
+    : emptyDashboardMetrics();
+  const statusCounts = groupCountByStatusV1120(quotations);
+  const today = startOfToday();
+  const next7 = addDays(today, 7);
+
+  const paidRows = quotations.filter((row) => getStatusKeyV1120(row) === "paid");
+  const confirmedRows = quotations.filter((row) => getStatusKeyV1120(row) === "confirmed");
+  const sentRows = quotations.filter((row) => getStatusKeyV1120(row) === "sent");
+  const expiringSoonRows = quotations
+    .filter((row) => ["confirmed", "sent"].includes(getStatusKeyV1120(row)))
+    .filter((row) => row.valid_until && new Date(row.valid_until) >= today && new Date(row.valid_until) <= next7)
+    .sort((a, b) => new Date(a.valid_until) - new Date(b.valid_until));
+
+  const salesSummary = !isSales && typeof buildSalesSummaryFromRowsV1114 === "function"
+    ? buildSalesSummaryFromRowsV1114(quotations)
+    : [];
+
+  elements.pageContent.innerHTML = `
+    ${renderDashboardMetricCardsV1120(metrics)}
+
+    <section class="dashboard-chart-grid-v1120">
+      ${renderStatusPieV1120(statusCounts)}
+      ${renderFunnelV1120(statusCounts)}
+    </section>
+
+    <section class="dashboard-grid dashboard-grid-v1120">
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>ใบใกล้หมดอายุ</h3></div></div>
+        ${renderReadOnlyQuotationListV1120(expiringSoonRows, "ยังไม่มีใบใกล้หมดอายุ")}
+      </div>
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>ส่งแล้วแต่ยังไม่ชำระเงิน</h3></div></div>
+        ${renderReadOnlyQuotationListV1120(sentRows, "ยังไม่มีใบที่รอชำระเงิน")}
+      </div>
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>ชำระเงินล่าสุด</h3></div></div>
+        ${renderReadOnlyQuotationListV1120(paidRows.sort((a, b) => new Date(b.paid_at || b.updated_at || 0) - new Date(a.paid_at || a.updated_at || 0)), "ยังไม่มีใบที่ชำระเงิน", { amountMode: "paid" })}
+      </div>
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>อัปเดตล่าสุด</h3></div></div>
+        ${renderReadOnlyQuotationListV1120(quotations, "ยังไม่มีใบเสนอราคา")}
+      </div>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid-v1120">
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>แนวโน้มยอดรับชำระ</h3></div></div>
+        ${renderPaidTrendV1120(quotations)}
+      </div>
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>สินค้า/บริการที่ถูกเสนอมากที่สุด</h3></div></div>
+        ${renderTopProductsV1120(itemRows)}
+      </div>
+    </section>
+
+    ${!isSales ? `
+      <div class="card">
+        <div class="card-header compact-v1120"><div><h3>ยอดรวมตามฝ่ายขาย</h3></div></div>
+        ${renderSalesSummaryTableV1112(salesSummary)}
+      </div>
+    ` : ""}
+  `;
+
+  bindDashboardViewLinksV1120();
+  bindDashboardPaginationV1112?.();
+  cleanupCopyV1120(elements.pageContent);
+}
+
+const originalRenderCurrentPageV1120 = renderCurrentPage;
+renderCurrentPage = async function renderCurrentPageV1120(options = {}) {
+  if (redirectDeprecatedCustomerPageV1120()) return;
+  await originalRenderCurrentPageV1120(options);
+  cleanupCopyV1120(document);
+};
+
+function renderCustomersPage() {
+  location.hash = "#dashboard";
+}
+
+function renderCustomerTable() {
+  return `<div class="empty-state">เมนูลูกค้าถูกตัดออกแล้ว ข้อมูลลูกค้ายังคงอยู่ในใบเสนอราคาแต่ละใบ</div>`;
+}
+
+const originalRenderQuotationFormPageV1120 = typeof renderQuotationFormPage === "function" ? renderQuotationFormPage : null;
+if (originalRenderQuotationFormPageV1120) {
+  renderQuotationFormPage = async function renderQuotationFormPageV1120(args) {
+    await originalRenderQuotationFormPageV1120(args);
+    cleanupCopyV1120(elements.pageContent);
+    document.querySelectorAll("#draftQuantity, #draftUnitPrice, #draftOneTimePrice").forEach((input) => {
+      input.setAttribute("inputmode", "decimal");
+    });
+  };
+}
+
+const originalRenderProductsPageV1120 = typeof renderProductsPage === "function" ? renderProductsPage : null;
+if (originalRenderProductsPageV1120) {
+  renderProductsPage = async function renderProductsPageV1120() {
+    setCompactPageHeaderV1120("สินค้า/บริการ", "จัดการสินค้าและบริการสำหรับใบเสนอราคา");
+    await originalRenderProductsPageV1120();
+    setCompactPageHeaderV1120("สินค้า/บริการ", "จัดการสินค้าและบริการ");
+    cleanupCopyV1120(elements.pageContent);
+  };
+}
+
+const originalRenderCompanyPageV1120 = typeof renderCompanyPage === "function" ? renderCompanyPage : null;
+if (originalRenderCompanyPageV1120) {
+  renderCompanyPage = async function renderCompanyPageV1120() {
+    await originalRenderCompanyPageV1120();
+    setCompactPageHeaderV1120("ข้อมูลบริษัท", "ข้อมูลที่ใช้ในเอกสาร");
+    cleanupCopyV1120(elements.pageContent);
+  };
+}
+
+const originalRenderSettingsPageV1120 = typeof renderSettingsPage === "function" ? renderSettingsPage : null;
+if (originalRenderSettingsPageV1120) {
+  renderSettingsPage = async function renderSettingsPageV1120() {
+    await originalRenderSettingsPageV1120();
+    setCompactPageHeaderV1120("ตั้งค่า", "ตั้งค่าระบบ");
+    cleanupCopyV1120(elements.pageContent);
+  };
+}
+
+if (Array.isArray(FI_ROUTES_V19)) {
+  for (let index = FI_ROUTES_V19.length - 1; index >= 0; index -= 1) {
+    if (FI_ROUTES_V19[index]?.key === "customers") FI_ROUTES_V19.splice(index, 1);
+  }
+  FI_ROUTES_V19.forEach((route) => {
+    if (route.key === "dashboard") route.label = "แดชบอร์ด";
+    if (route.key === "company") route.label = "ข้อมูลบริษัท";
+    if (route.key === "quotation-print") route.label = "ตัวอย่างเอกสาร / พิมพ์";
+  });
+}
+
+const originalDebugV1120 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1120() {
+  const result = typeof originalDebugV1120 === "function" ? await originalDebugV1120() : {};
+  return {
+    ...result,
+    version: FI_V1120_VERSION,
+    customerFeatureRemoved: CUSTOMER_FEATURE_DEPRECATED_V1120,
+    dashboardReadOnly: DASHBOARD_READ_ONLY_V1120,
+    mobilePolish: true,
+    resetSqlUpdated: true,
+    sqlSchemaChanged: false,
+    appsScriptChanged: false,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1120_VERSION;
