@@ -20782,3 +20782,229 @@ window.FI_DEBUG = async function FI_DEBUG_V1114() {
 };
 
 window.FI_APP_VERSION = FI_V1114_VERSION;
+
+// =======================================================
+// v1.11.5 Payment Modal UX + Paid Delivery Status Fix
+// Scope:
+// - Payment status dialog uses the same structured modal layout as delivery modal.
+// - Paid quotations are treated as delivery/email completed in the print workflow panel.
+// - No database or Apps Script change required beyond v1.11.4.
+// =======================================================
+
+const FI_V1115_VERSION = "1.11.5";
+window.FI_APP_VERSION = FI_V1115_VERSION;
+
+function isQuotationSentV1104(quotation) {
+  const status = String(quotation?.status || quotation?.effective_status || "");
+  return status === "sent" || status === "paid";
+}
+
+function isQuotationDeliveryFinalizedV1115(quotation) {
+  const status = String(quotation?.status || quotation?.effective_status || "");
+  return status === "sent" || status === "paid" || Boolean(quotation?.sent_email_sent_at);
+}
+
+function renderSentInfoHtmlV1104(quotation) {
+  const hasDeliveryInfo = Boolean(
+    quotation?.sent_at ||
+    quotation?.sent_recipient_email ||
+    quotation?.sent_recipient_name ||
+    quotation?.sent_recipient_position ||
+    quotation?.delivery_planned_sent_at ||
+    quotation?.delivery_recipient_email ||
+    quotation?.delivery_recipient_name ||
+    quotation?.delivery_recipient_position ||
+    quotation?.sent_email_sent_at ||
+    quotation?.status === "paid"
+  );
+  if (!hasDeliveryInfo) return "";
+
+  const status = String(quotation?.status || quotation?.effective_status || "");
+  const deliveryFinalized = isQuotationDeliveryFinalizedV1115(quotation);
+  const rawSentDate = quotation?.sent_at || quotation?.delivery_planned_sent_at;
+  const sentAt = rawSentDate ? formatDate(rawSentDate) : "-";
+  const email = quotation?.sent_recipient_email || quotation?.delivery_recipient_email || "-";
+  const name = quotation?.sent_recipient_name || quotation?.delivery_recipient_name || "-";
+  const position = quotation?.sent_recipient_position || quotation?.delivery_recipient_position || "-";
+  const emailSentAt = quotation?.sent_email_sent_at ? formatDate(quotation.sent_email_sent_at) : "-";
+  const paidAt = quotation?.paid_at ? formatDate(quotation.paid_at) : "-";
+
+  let subtitle = "บันทึกข้อมูลผู้รับแล้ว แต่ยังไม่ได้ส่งอีเมล";
+  if (status === "paid") subtitle = "ส่งอีเมลแล้ว และบันทึกสถานะชำระเงินแล้ว";
+  else if (deliveryFinalized) subtitle = "ส่งอีเมลและเปลี่ยนสถานะเป็นส่งแล้ว";
+
+  return `
+    <div class="sent-summary-v1111 sent-summary-v1113 sent-summary-v1115 ${deliveryFinalized ? "is-sent" : "is-draft"} ${status === "paid" ? "is-paid" : ""}">
+      <div class="sent-summary-head-v1111">
+        <span class="sent-summary-icon-v1111">${deliveryFinalized ? "✓" : "•"}</span>
+        <div>
+          <strong>ข้อมูลการส่งใบเสนอราคา</strong>
+          <small>${escapeHTML(subtitle)}</small>
+        </div>
+      </div>
+      <div class="sent-summary-grid-v1111 sent-summary-grid-v1115">
+        <div><span>วันที่ส่ง</span><b>${escapeHTML(sentAt)}</b></div>
+        <div><span>อีเมลผู้รับ</span><b>${escapeHTML(email)}</b></div>
+        <div><span>ผู้รับ</span><b>${escapeHTML(name)}</b></div>
+        <div><span>ตำแหน่ง</span><b>${escapeHTML(position)}</b></div>
+        ${deliveryFinalized ? `<div><span>ส่งอีเมลเมื่อ</span><b>${escapeHTML(emailSentAt)}</b></div>` : ""}
+        ${status === "paid" ? `<div><span>วันที่ชำระเงิน</span><b>${escapeHTML(paidAt)}</b></div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderPaymentStatusDialogBodyV1115({ today, skippedText, title }) {
+  return `
+    <div class="modal-card-v1104 payment-modal-v1115" role="dialog" aria-modal="true">
+      <div class="modal-header-v1104 payment-modal-header-v1115">
+        <div>
+          <span class="modal-eyebrow-v1114">ข้อมูลการชำระเงิน</span>
+          <h3>${escapeHTML(title)}</h3>
+          <p>เลือกส่วนของยอดเงินที่ได้รับชำระจริง เพื่อใช้คำนวณยอดรับชำระบนแดชบอร์ด</p>
+        </div>
+        <button type="button" class="icon-button" data-dialog-cancel>×</button>
+      </div>
+
+      <div class="payment-form-v1115">
+        ${skippedText}
+
+        <section class="delivery-section-v1114 payment-section-v1115">
+          <h4>วันที่ชำระเงิน</h4>
+          <div class="delivery-grid-v1114 two-cols payment-grid-v1115">
+            <div class="field">
+              <label for="statusEffectiveDate">วันที่ชำระเงิน <span class="required-star">*</span></label>
+              <input id="statusEffectiveDate" type="date" value="${escapeHTML(today)}" required />
+            </div>
+            <div class="payment-inline-summary-v1115">
+              <span>สถานะหลังบันทึก</span>
+              <strong>ชำระเงินแล้ว</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="delivery-section-v1114 soft payment-section-v1115">
+          <h4>ยอดที่ได้รับชำระ</h4>
+          <p class="payment-section-desc-v1115">เลือกอย่างน้อย 1 รายการ ระบบจะคำนวณยอดรับชำระจากส่วนที่เลือกเท่านั้น</p>
+          <div class="payment-option-grid-v1115">
+            <label class="payment-option-card-v1115">
+              <input type="checkbox" id="paidComponentRecurringV1114" checked />
+              <span>
+                <strong>ค่าบริการชำระรายเดือน / รายปี</strong>
+                <small>ใช้ยอดจากรายการ recurring ของใบเสนอราคา</small>
+              </span>
+            </label>
+            <label class="payment-option-card-v1115">
+              <input type="checkbox" id="paidComponentOneTimeV1114" checked />
+              <span>
+                <strong>ค่าบริการชำระครั้งเดียวจบ</strong>
+                <small>ใช้ยอดจากรายการ setup / one-time ของใบเสนอราคา</small>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section class="payment-note-v1115">
+          <strong>หมายเหตุ</strong>
+          <span>หลังบันทึกแล้ว ใบเสนอราคาจะถูกเปลี่ยนเป็นสถานะ “ชำระเงินแล้ว” และจะไม่สามารถยกเลิกได้</span>
+        </section>
+
+        <div class="confirm-actions payment-actions-v1115">
+          <button type="button" class="btn btn-ghost" data-dialog-cancel>ยกเลิก</button>
+          <button type="button" class="btn btn-primary" data-dialog-confirm>บันทึก</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDefaultStatusDialogBodyV1115({ status, today, needsDate, needsReason, skippedText, title }) {
+  return `
+    <div class="confirm-dialog status-dialog status-dialog-v1114">
+      <h3>${escapeHTML(title)}</h3>
+      ${skippedText}
+      ${needsDate ? `
+        <div class="field">
+          <label>${status === "sent" ? "วันที่ส่งใบเสนอราคา" : "วันที่ชำระเงิน"}</label>
+          <input id="statusEffectiveDate" type="date" value="${escapeHTML(today)}" />
+        </div>
+      ` : ""}
+      ${needsReason ? `
+        <div class="field">
+          <label>เหตุผลการยกเลิก (ไม่บังคับ)</label>
+          <textarea id="statusReason" rows="4" placeholder="ระบุเหตุผลการยกเลิก ถ้ามี"></textarea>
+        </div>
+      ` : ""}
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-ghost" data-dialog-cancel>ยกเลิก</button>
+        <button type="button" class="btn ${needsReason ? "danger-soft" : "btn-primary"}" data-dialog-confirm>บันทึก</button>
+      </div>
+    </div>
+  `;
+}
+
+function showStatusChangeDialog({ status, count, skipped = 0 }) {
+  const today = toDateInputValue(new Date());
+  const needsDate = ["sent", "paid"].includes(status);
+  const needsReason = status === "cancelled";
+  const needsPaymentComponent = status === "paid";
+  const title = count > 1 ? `ปรับสถานะ ${number(count)} รายการ` : `เปลี่ยนสถานะเป็น${statusLabel(status)}`;
+  const skippedText = skipped > 0 ? `<div class="alert alert-warning">ข้าม ${number(skipped)} รายการที่ไม่เข้าเงื่อนไขสถานะนี้</div>` : "";
+
+  return new Promise((resolve) => {
+    const dialog = document.createElement("div");
+    dialog.className = needsPaymentComponent ? "modal-backdrop-v1104 payment-backdrop-v1115" : "modal-backdrop";
+    dialog.innerHTML = needsPaymentComponent
+      ? renderPaymentStatusDialogBodyV1115({ today, skippedText, title })
+      : renderDefaultStatusDialogBodyV1115({ status, today, needsDate, needsReason, skippedText, title });
+
+    document.body.appendChild(dialog);
+
+    const cleanup = (value) => {
+      dialog.remove();
+      resolve(value);
+    };
+
+    dialog.querySelectorAll("[data-dialog-cancel]").forEach((button) => {
+      button.addEventListener("click", () => cleanup(null));
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) cleanup(null);
+    });
+    dialog.querySelector("[data-dialog-confirm]")?.addEventListener("click", () => {
+      const effectiveDate = needsDate ? dialog.querySelector("#statusEffectiveDate")?.value : today;
+      const note = needsReason ? dialog.querySelector("#statusReason")?.value.trim() : "";
+      const paidComponents = [];
+      if (needsPaymentComponent) {
+        if (dialog.querySelector("#paidComponentRecurringV1114")?.checked) paidComponents.push(PAYMENT_COMPONENTS_V1114.recurring);
+        if (dialog.querySelector("#paidComponentOneTimeV1114")?.checked) paidComponents.push(PAYMENT_COMPONENTS_V1114.oneTime);
+        if (!paidComponents.length) {
+          showToast("กรุณาเลือกอย่างน้อย 1 ส่วนของยอดที่ได้รับชำระ", "warning");
+          return;
+        }
+      }
+      if (needsDate && !effectiveDate) {
+        showToast("กรุณาระบุวันที่", "warning");
+        return;
+      }
+      cleanup({ effectiveDate, note, paidComponents });
+    });
+
+    dialog.querySelector("#statusEffectiveDate")?.focus();
+  });
+}
+
+const originalDebugV1115 = window.FI_DEBUG;
+window.FI_DEBUG = async function FI_DEBUG_V1115() {
+  const result = typeof originalDebugV1115 === "function" ? await originalDebugV1115() : {};
+  return {
+    ...result,
+    version: FI_V1115_VERSION,
+    paymentModalMatchesDeliveryLayout: true,
+    paidPrintDeliveryStatusFixed: true,
+    sqlChanged: false,
+    appsScriptChanged: false,
+  };
+};
+
+window.FI_APP_VERSION = FI_V1115_VERSION;

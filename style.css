@@ -5886,3 +5886,136 @@ body {
     width: 100%;
   }
 }
+
+/* =======================================================
+   v1.11.5 Payment Modal UX + Paid Delivery Status Fix
+   ======================================================= */
+
+.payment-backdrop-v1115 {
+  z-index: 120;
+}
+
+.payment-modal-v1115 {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.payment-modal-header-v1115 {
+  align-items: flex-start;
+}
+
+.payment-form-v1115 {
+  display: grid;
+  gap: 14px;
+}
+
+.payment-section-v1115 {
+  margin: 0;
+}
+
+.payment-grid-v1115 {
+  align-items: end;
+}
+
+.payment-inline-summary-v1115 {
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  display: grid;
+  gap: 2px;
+}
+
+.payment-inline-summary-v1115 span,
+.payment-section-desc-v1115,
+.payment-option-card-v1115 small,
+.payment-note-v1115 span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.payment-inline-summary-v1115 strong {
+  color: var(--success-text);
+}
+
+.payment-section-desc-v1115 {
+  margin: -4px 0 10px;
+}
+
+.payment-option-grid-v1115 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.payment-option-card-v1115 {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 13px;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.payment-option-card-v1115:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+}
+
+.payment-option-card-v1115 input {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+
+.payment-option-card-v1115 strong,
+.payment-option-card-v1115 small {
+  display: block;
+}
+
+.payment-note-v1115 {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 4px;
+}
+
+.payment-note-v1115 strong {
+  color: var(--info-text);
+}
+
+.payment-actions-v1115 {
+  margin-top: 2px;
+}
+
+.sent-summary-v1115.is-paid {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.sent-summary-v1115.is-paid .sent-summary-icon-v1111 {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+@media (max-width: 720px) {
+  .payment-option-grid-v1115,
+  .payment-grid-v1115 {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-actions-v1115 {
+    display: grid;
+  }
+
+  .payment-actions-v1115 .btn {
+    width: 100%;
+  }
+}
