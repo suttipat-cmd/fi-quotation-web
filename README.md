@@ -1,44 +1,36 @@
-# FI Quotation Web App v1.12.0
+# FI Quotation Web App v1.12.1
 
-## v1.12.0 Production Readiness Cleanup
+## v1.12.1 Quotation Workflow + Dashboard Chart Refinement
 
-Release นี้ต่อยอดจาก v1.11.5 เพื่อเตรียมให้ผู้ใช้งานจริงเริ่มใช้งาน โดยโฟกัสที่ความเสถียร ความถูกต้อง UX บนมือถือ และการลดความซับซ้อนของหน้าจอ
+Release นี้ต่อยอดจาก v1.12.0 เพื่อปรับ UX ของ flow ใบเสนอราคาและ Dashboard ให้ตรงกับการใช้งานจริงมากขึ้น โดยยังคง schema และ Google Apps Script เดิมจาก v1.11.4/v1.11.5
 
-## สิ่งที่เปลี่ยนใน v1.12.0
+## สิ่งที่เปลี่ยนใน v1.12.1
 
-- อัปเดต cache busting เป็น `style.css?v=1.12.0` และ `script.js?v=1.12.0`
-- อัปเดต `window.FI_APP_VERSION = "1.12.0"`
-- ตัดเมนู/หน้า `ลูกค้า` ออกจากระบบ
-  - ยังเก็บ `customer_name` และ `customer_address` ในใบเสนอราคา เพราะเป็นข้อมูลจำเป็นของเอกสาร
-  - เลิกใช้หน้า derived customer list จาก `v_customers_from_quotations`
-- ปรับ Dashboard เป็น read-only
-  - ไม่มีปุ่มที่เปลี่ยนข้อมูล เช่น ส่งแล้ว / ชำระเงินแล้ว / ยกเลิก / bulk action
-  - อนุญาตให้กดดูรายละเอียดใบเสนอราคาได้
-- ปรับ Dashboard เป็นข้อมูลเชิงวิเคราะห์มากขึ้น
-  - Summary cards
-  - สัดส่วนสถานะใบเสนอราคา
-  - Funnel ร่าง → ยืนยันแล้ว → ส่งแล้ว → ชำระเงินแล้ว
-  - ใบใกล้หมดอายุ
-  - ส่งแล้วแต่ยังไม่ชำระเงิน
-  - ชำระเงินล่าสุด
-  - แนวโน้มยอดรับชำระ
-  - สินค้า/บริการที่ถูกเสนอมากที่สุด
-  - ยอดรวมตามฝ่ายขาย สำหรับ admin/manager
-- ตัด/ย่อข้อความที่ไม่จำเป็นบนหน้าเว็บ
-  - ข้อความเชิง technical เช่น Database, snapshot, MVP ถูกซ่อนจาก UI
-  - ข้อความช่วยที่ยังมีประโยชน์ถูกย้ายเป็น tooltip/help
-- ปรับ responsive/mobile layout
-  - Header และ mobile menu กระชับขึ้น
-  - Form, table, modal, action bar และ dashboard widgets รองรับจอมือถือดีขึ้น
-  - ปุ่มใน modal/action area เป็น full-width บนจอเล็ก
-- อัปเดต SQL reset usage data
-  - เพิ่มการล้าง `quotation_drive_files`
-  - ระบุลำดับการล้าง table เพื่อกันปัญหา foreign key
-- เพิ่มเอกสาร audit สำหรับสิ่งที่ตรวจพบและข้อควรติดตามต่อ
+- อัปเดต cache busting เป็น `style.css?v=1.12.1` และ `script.js?v=1.12.1`
+- อัปเดต `window.FI_APP_VERSION = "1.12.1"`
+- ย้าย action หลักของใบเสนอราคามาไว้หน้า `#quotation-view`
+  - `บันทึกไป Google Drive`
+  - `เปิดไฟล์ใน Google Drive`
+  - `ส่งแล้ว`
+  - `ชำระเงินแล้ว`
+- หน้า `#quotation-print` เหลือไว้สำหรับตรวจเอกสารและ `พิมพ์ / บันทึกเป็น PDF` เท่านั้น
+- ปรับ Funnel บน Dashboard ให้คำนวณความยาวหลอดจากจำนวนใบเสนอราคาทั้งหมด ไม่ใช่จากสถานะที่มีจำนวนมากที่สุด
+- เปลี่ยนกราฟ `แนวโน้มยอดรับชำระ` เป็นแผนภูมิแท่ง เพื่อให้อ่านและเปรียบเทียบยอดได้ง่ายขึ้น
+- ปรับสี Pie Chart สัดส่วนสถานะให้แยกสถานะชัดเจนขึ้น
+- เปลี่ยนการแสดงชื่อสินค้า/บริการในใบเสนอราคาให้ดึงชื่อปัจจุบันจาก Product Master ผ่าน `product_id`
+  - หน้า View
+  - หน้า Print / PDF
+  - Dashboard Top Products
+  - Email template
+  - หากเป็นรายการ one-time ที่ไม่มี `product_id` จะใช้ชื่อรายการที่กรอกไว้เป็น fallback
+- ปรับตารางหน้า `#quotations`
+  - เพิ่มคอลัมน์ `สินค้า/บริการ` ต่อจาก `ประเภท`
+  - ตัดคอลัมน์ `วันที่สร้าง` ออก
+- เพิ่ม Filter `สินค้า/บริการ` แบบ Dropdown โดยดึงข้อมูลจาก Product Master
 
 ## SQL
 
-v1.12.0 **ไม่มี schema patch ใหม่**
+v1.12.1 **ไม่มี schema patch ใหม่**
 
 ต้องเคยรัน SQL เหล่านี้จากเวอร์ชันก่อนหน้าแล้ว:
 
@@ -55,28 +47,9 @@ supabase/patch_v1_11_4.sql
 supabase/reset_usage_data_keep_master.sql
 ```
 
-ไฟล์ reset จะล้างตามลำดับ:
-
-```text
-1. quotation_status_logs / quotation_audit_logs / quotation_attachments / quotation_files ถ้ามี
-2. quotation_drive_files
-3. quotation_items
-4. quotations
-```
-
-ข้อมูลที่ยังคงอยู่:
-
-```text
-products
-profiles / auth.users
-company_profile
-app_settings
-Supabase Storage buckets/files
-```
-
 ## Google Apps Script
 
-v1.12.0 **ไม่ต้องอัปเดต Apps Script ใหม่** หากใช้งาน v1.11.4/v1.11.5 อยู่แล้ว
+v1.12.1 **ไม่ต้องอัปเดต Apps Script ใหม่** หากใช้งาน v1.11.4/v1.11.5 อยู่แล้ว
 
 ยังต้องเคยทำขั้นตอนนี้แล้ว:
 
@@ -89,14 +62,14 @@ Deploy Web App version ใหม่
 
 1. แตก ZIP
 2. Copy ไฟล์ทั้งหมดในโฟลเดอร์ package ไปทับ repo `fi-quotation-web`
-3. ไม่ต้องรัน SQL ใหม่ ยกเว้นต้องการล้างข้อมูลการใช้งาน
+3. ไม่ต้องรัน SQL ใหม่
 4. ไม่ต้องแก้ Google Apps Script ถ้าใช้งาน v1.11.4 ขึ้นไปอยู่แล้ว
 5. Push ขึ้น GitHub Pages
 
 ```bash
 git status
 git add .
-git commit -m "Release v1.12.0 production readiness cleanup"
+git commit -m "Release v1.12.1 quotation workflow dashboard refinement"
 git push origin main
 ```
 
@@ -125,23 +98,22 @@ window.FI_APP_VERSION
 ต้องได้:
 
 ```text
-1.12.0
+1.12.1
 ```
 
 ## จุดที่ต้องทดสอบทันที
 
 ```text
-1. เมนู “ลูกค้า” ต้องไม่แสดง
-2. เข้า #customers แล้วต้องถูกพากลับแดชบอร์ด
-3. Dashboard ต้องไม่มี action ที่เปลี่ยนข้อมูล
-4. Dashboard ยังต้องกดดูรายละเอียดใบเสนอราคาได้
-5. Dashboard widgets ต้องแสดงครบและไม่ทำให้หน้าจอยาวเกินไป
-6. Mobile header/menu ต้องใช้งานได้และ logout ได้
-7. หน้าใบเสนอราคา list/search/filter/sort/bulk ยังทำงานเหมือนเดิม
-8. สร้าง/แก้ไข/ยืนยัน/สร้างสำเนาใบเสนอราคายังทำงาน
-9. บันทึก PDF ไป Google Drive ยังทำงาน
-10. ส่งอีเมลและข้อมูลการส่งยังทำงาน
-11. ชำระเงินแล้วและยอดรับชำระเดือนนี้ยังถูกต้อง
-12. ใบสถานะส่งแล้ว/ชำระเงินแล้วยังยกเลิกไม่ได้
-13. reset_usage_data_keep_master.sql ล้าง usage data โดยไม่ลบ master data
+1. หน้า View ต้องมีปุ่ม/แผงสำหรับบันทึก PDF ไป Google Drive
+2. หลังบันทึก Drive แล้ว หน้า View ต้องกดส่งแล้วได้
+3. หน้า Print ต้องไม่มีปุ่ม Drive / ส่งแล้ว เหลือเฉพาะกลับและพิมพ์/PDF
+4. PDF ต้องแสดงชื่อสินค้า/บริการล่าสุดจาก Product Master หากรายการมี product_id
+5. Email template ต้องใช้ชื่อสินค้า/บริการล่าสุดจาก Product Master
+6. Funnel ต้องคิดความยาวหลอดจากจำนวนใบเสนอราคาทั้งหมด
+7. แนวโน้มยอดรับชำระต้องแสดงเป็น Bar Chart
+8. Pie Chart ต้องแยกสีแต่ละสถานะชัดเจน
+9. หน้าใบเสนอราคาต้องมีคอลัมน์สินค้า/บริการ
+10. หน้าใบเสนอราคาต้องไม่มีคอลัมน์วันที่สร้าง
+11. Filter สินค้า/บริการต้องดึงจาก Product Master และกรองรายการได้
+12. Flow เดิม: สร้าง/แก้ไข/ยืนยัน/สำเนา/ส่งอีเมล/ชำระเงิน ต้องยังทำงาน
 ```
