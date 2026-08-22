@@ -897,10 +897,7 @@ button:disabled {
   line-height: 1.25;
 }
 .quotation-paper .price-block {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  min-height: 170px;
+  display: block;
   margin: 8px 0;
 }
 .quotation-paper .price-title h3 {
@@ -912,11 +909,11 @@ button:disabled {
   padding: 3px 5px;
 }
 .quotation-paper .price-rows {
-  flex: 1;
+  display: block;
 }
 .quotation-paper .price-summary {
   width: 49%;
-  margin-top: auto;
+  margin-top: 5px;
 }
 .quotation-paper .price-summary-card {
   border: 0;
