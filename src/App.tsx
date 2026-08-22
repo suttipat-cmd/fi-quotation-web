@@ -1872,7 +1872,17 @@ function QuotePaper({
       <div className="document-footer-grid">
         <section className="document-notes">
           <h3>หมายเหตุ</h3>
-          <p className="multiline">{form.notes || "-"}</p>
+          {form.notes ? (
+            <p className="multiline">{form.notes}</p>
+          ) : (
+            <div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </div>
+          )}
         </section>
         <section className="document-payment-terms">
           <h3>เงื่อนไขการชำระเงิน</h3>
@@ -1929,7 +1939,7 @@ function PriceBlock({
   const recurring = category === "RECURRING";
   const main = rows[0];
   return (
-    <section className="price-block">
+    <section className={`price-block ${recurring ? "recurring-price-block" : "one-time-price-block"}`}>
       <div className="price-title">
         <h3>
           {recurring

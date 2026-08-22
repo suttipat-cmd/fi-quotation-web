@@ -899,11 +899,17 @@ button:disabled {
 .quotation-paper .price-block {
   display: block;
   margin: 10px 0 0;
-  padding-bottom: 10px;
+  padding-bottom: 8px;
 }
 .quotation-paper .price-block + .price-block {
-  border-top: 1px solid #d8e2ec;
-  padding-top: 9px;
+  margin-top: 16px;
+  padding-top: 0;
+}
+.quotation-paper .recurring-price-block {
+  min-height: 170px;
+}
+.quotation-paper .one-time-price-block {
+  min-height: 205px;
 }
 .quotation-paper .price-title h3 {
   font-size: 11.5px;
@@ -917,14 +923,14 @@ button:disabled {
   display: block;
 }
 .quotation-paper .price-summary {
-  width: 46%;
+  width: 45%;
   margin-top: 6px;
 }
 .quotation-paper .price-summary-card {
-  border: 1px solid #d4dfeb;
-  border-top: 2px solid #315f92;
-  padding: 4px 7px 3px;
-  background: #fbfdff;
+  border: 0;
+  border-top: 1px solid #8ca7c3;
+  padding: 4px 0 2px;
+  background: transparent;
 }
 .summary-kicker {
   display: block;
@@ -952,12 +958,14 @@ button:disabled {
 }
 .document-footer-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.45fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  grid-template-areas:
+    "notes notes"
+    "terms payment";
   gap: 0;
-  margin-top: 10px;
-  padding: 8px 0 7px;
+  margin-top: 8px;
+  padding: 0;
   border-top: 1px solid #b8cbdf;
-  border-bottom: 1px solid #b8cbdf;
 }
 .document-footer-grid h3 {
   margin: 0 0 3px;
@@ -970,16 +978,34 @@ button:disabled {
 }
 .document-footer-grid section {
   min-width: 0;
-  padding: 0 9px;
+  padding: 8px 10px 7px;
 }
 .document-footer-grid section:first-child {
   padding-left: 0;
 }
-.document-footer-grid section + section {
-  border-left: 1px solid #d8e2ec;
+.document-notes {
+  grid-area: notes;
+  min-height: 126px;
+  padding-right: 0 !important;
+  border-bottom: 1px solid #b8cbdf;
+}
+.document-payment-terms {
+  grid-area: terms;
+  padding-left: 0 !important;
 }
 .document-payment-info {
+  grid-area: payment;
+  border-left: 1px solid #d8e2ec;
   padding-right: 0 !important;
+}
+.blank-note-lines {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+.blank-note-lines i {
+  display: block;
+  border-bottom: 1px dashed #aebfd1;
 }
 .compact-signatures {
   margin-top: auto;
