@@ -1819,10 +1819,14 @@ function QuotePaper({
         </dl>
       </div>
       <div className="document-customer">
-        <span>ชื่อลูกค้า</span>
-        <p>{form.customer_name || "ชื่อลูกค้า"}</p>
-        <span>ที่อยู่ลูกค้า</span>
-        <p>{form.customer_address || "ที่อยู่ลูกค้า"}</p>
+        <div>
+          <span>ลูกค้า</span>
+          <p>{form.customer_name || "ชื่อลูกค้า"}</p>
+        </div>
+        <div>
+          <span>ที่อยู่</span>
+          <p>{form.customer_address || "ที่อยู่ลูกค้า"}</p>
+        </div>
       </div>
       <PriceBlock
         category="RECURRING"
@@ -1841,20 +1845,22 @@ function QuotePaper({
         wht={form.wht_rate}
       />
       <div className="document-footer-grid">
-        <section>
-          <h3>หมายเหตุ</h3>
-          <p className="multiline">
-            {form.notes || form.promotion_terms || "-"}
-          </p>
-        </section>
-        <section>
+        <section className="payment-terms">
           <h3>เงื่อนไขการชำระเงิน</h3>
           <p className="multiline">{form.payment_terms}</p>
         </section>
-        <section>
-          <h3>ข้อมูลการชำระเงิน</h3>
-          <p className="multiline">{company.payment}</p>
-        </section>
+        <div className="document-supporting-info">
+          <section>
+            <h3>ข้อมูลการชำระเงิน</h3>
+            <p className="multiline">{company.payment}</p>
+          </section>
+          <section>
+            <h3>หมายเหตุ</h3>
+            <p className="multiline">
+              {form.notes || form.promotion_terms || "-"}
+            </p>
+          </section>
+        </div>
       </div>
       <div className="signatures compact-signatures">
         <div>
@@ -1938,7 +1944,8 @@ function PriceBlock({
           <b>—</b>
         </div>
       )}
-      <div className="price-summary">
+      <div className="price-summary price-summary-card">
+        <span className="summary-kicker">สรุปค่าบริการ</span>
         <p>
           <span>รวมก่อนภาษี</span>
           <b>{money(summary.subtotal)}</b>
@@ -1961,8 +1968,8 @@ function PriceBlock({
           <span>ยอดรวมสุทธิ</span>
           <b>{money(summary.net)}</b>
         </p>
+        <p className="amount-in-words">{thaiBaht(summary.net)}</p>
       </div>
-      <p className="amount-in-words">{thaiBaht(summary.net)}</p>
     </section>
   );
 }

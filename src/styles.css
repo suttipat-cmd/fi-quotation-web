@@ -782,18 +782,19 @@ button:disabled {
   padding: 1px 0;
 }
 .quotation-paper {
-  padding: 13px 16px;
+  padding: 13px 17px;
   font-family: "Sarabun", "Noto Sans Thai", sans-serif;
   font-size: 8.5px;
+  color: #26384f;
 }
 .document-company {
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 38px 1fr;
   align-items: center;
-  gap: 7px;
-  padding-bottom: 5px;
+  gap: 8px;
+  padding: 1px 2px 6px;
   border-bottom: 1px solid #bfd0e1;
-  text-align: center;
+  text-align: left;
 }
 .document-company .brand {
   justify-content: center;
@@ -817,11 +818,11 @@ button:disabled {
   color: #3f4d60;
 }
 .document-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 6px 0 5px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 14px;
+  padding: 7px 0 6px;
 }
 .document-title h2 {
   margin: 0;
@@ -835,8 +836,8 @@ button:disabled {
 }
 .document-title dl {
   display: grid;
-  grid-template-columns: repeat(3, auto);
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(42px, auto));
+  gap: 9px;
   margin: 0;
   text-align: right;
 }
@@ -853,40 +854,68 @@ button:disabled {
 }
 .document-customer {
   display: grid;
-  grid-template-columns: 54px 1fr;
-  gap: 1px 5px;
-  padding: 5px 0;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 10px;
+  padding: 6px 0;
   border-top: 1px solid #d8e2ec;
   border-bottom: 1px solid #d8e2ec;
 }
+.document-customer > div {
+  min-width: 0;
+}
 .document-customer span {
+  display: block;
   color: #718097;
+  font-size: 7.5px;
 }
 .document-customer p {
-  margin: 0;
+  margin: 1px 0 0;
   font-weight: 400;
+  line-height: 1.25;
 }
 .quotation-paper .price-block {
-  margin: 5px 0;
+  margin: 7px 0;
 }
 .quotation-paper .price-title h3 {
   font-size: 9.5px;
 }
 .quotation-paper .mini-head,
 .quotation-paper .mini-row {
-  grid-template-columns: 1fr 56px 72px;
-  padding: 2px 3px;
+  grid-template-columns: minmax(0, 1fr) 58px 76px;
+  padding: 2px 4px;
 }
 .quotation-paper .price-summary {
-  width: 52%;
-  margin-top: 2px;
+  width: 46%;
+  margin-top: 4px;
+}
+.quotation-paper .price-summary-card {
+  border: 1px solid #d3dfeb;
+  border-top: 2px solid #315f92;
+  padding: 3px 5px 4px;
+  background: #fbfdff;
+}
+.summary-kicker {
+  display: block;
+  margin-bottom: 1px;
+  color: #61748a;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.quotation-paper .price-summary-card .amount-in-words {
+  margin: 3px 0 0;
+  padding-top: 2px;
+  border-top: 1px dashed #cbd8e5;
+  color: #586b80;
+  font-size: 7.5px;
+  text-align: right;
 }
 .document-footer-grid {
   display: grid;
-  grid-template-columns: 1fr 1.5fr 1fr;
-  gap: 6px;
-  margin-top: 5px;
-  padding-top: 4px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 7px;
+  padding-top: 6px;
   border-top: 1px solid #cbd8e5;
 }
 .document-footer-grid h3 {
@@ -898,13 +927,20 @@ button:disabled {
   margin: 0;
   line-height: 1.25;
 }
+.document-supporting-info {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding-left: 8px;
+  border-left: 1px solid #d8e2ec;
+}
 .compact-signatures {
-  margin-top: 5px;
-  padding-top: 4px;
-  gap: 10px;
+  margin-top: 7px;
+  padding-top: 6px;
+  gap: 18px;
 }
 .compact-signatures h3 {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-size: 8.5px;
 }
 .compact-signatures span {
