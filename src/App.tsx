@@ -33,7 +33,9 @@ type Form = {
   customer_name: string;
   customer_address: string;
   contact_name: string;
+  contact_position: string;
   contact_email: string;
+  recipient_emails: string[];
   sales_name: string;
   issued_at: string;
   valid_until: string;
@@ -99,13 +101,26 @@ const plusDays = (days: number) => {
 };
 const money = (value = 0) =>
   new Intl.NumberFormat("th-TH", {
-    style: "currency",
-    currency: "THB",
     minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format((value || 0) / 100);
 const fromBaht = (value: string | number) =>
   Math.round(Number(value || 0) * 100);
 const toBaht = (value = 0) => ((value || 0) / 100).toFixed(2);
+const displayDate = (value?: string) => {
+  const [year, month, day] = String(value || "").split("-");
+  return year && month && day ? `${day}-${month}-${year}` : "—";
+};
+const edgeErrorMessage = async (error: unknown) => {
+  const context = (error as { context?: { clone?: () => Response } })?.context;
+  try {
+    const payload = await context?.clone?.().json();
+    if (payload && typeof payload.message === "string") return payload.message;
+  } catch {
+    // The response is not JSON; fall back to the client message below.
+  }
+  return error instanceof Error ? error.message : "ไม่สามารถดำเนินการได้";
+};
 const categoryText = (category: Category) =>
   category === "RECURRING"
     ? softwareServiceLabel
@@ -123,7 +138,9 @@ const initialForm = (salesName = ""): Form => ({
   customer_name: "",
   customer_address: "",
   contact_name: "",
+  contact_position: "",
   contact_email: "",
+  recipient_emails: [],
   sales_name: salesName,
   issued_at: today(),
   valid_until: plusDays(30),
@@ -134,7 +151,7 @@ const initialForm = (salesName = ""): Form => ({
   quotation_discount_type: "NONE",
   quotation_discount_value: 0,
   package_reference_quantity: 0,
-  package_reference_unit: "รถ",
+  package_reference_unit: "คัน",
   included_users: 0,
   billing_cycles: ["ค่าบริการชำระรายเดือน"],
   recurring_addons: [],
@@ -160,7 +177,7 @@ const makeRecurringItem = (): Item => ({
   ...makeItem("RECURRING"),
   service_name: softwareServiceLabel,
   quantity: 1,
-  unit: "รถ",
+  unit: "คัน",
 });
 const makeServiceItem = (service: Service, quantity = 1): Item => ({
   ...makeItem("ONE_TIME"),
@@ -205,7 +222,13 @@ const formFromQuote = (quote: Quote): Form => ({
   customer_name: quote.customer_name || "",
   customer_address: quote.customer_address || "",
   contact_name: quote.contact_name || "",
+  contact_position: quote.contact_position || "",
   contact_email: quote.contact_email || "",
+  recipient_emails: Array.isArray(quote.recipient_emails)
+    ? quote.recipient_emails
+    : quote.contact_email
+      ? [quote.contact_email]
+      : [],
   sales_name: quote.sales_name || "",
   issued_at: quote.issued_at || today(),
   valid_until: quote.valid_until || plusDays(30),
@@ -216,7 +239,7 @@ const formFromQuote = (quote: Quote): Form => ({
   quotation_discount_type: quote.quotation_discount_type || "NONE",
   quotation_discount_value: Number(quote.quotation_discount_value || 0),
   package_reference_quantity: Number(quote.package_reference_quantity || 0),
-  package_reference_unit: quote.package_reference_unit || "รถ",
+  package_reference_unit: quote.package_reference_unit || "คัน",
   included_users: Number(quote.included_users || 0),
   billing_cycles:
     Array.isArray(quote.billing_cycles) && quote.billing_cycles.length
@@ -684,7 +707,9 @@ function App() {
         customer_name: form.customer_name.trim(),
         customer_address: form.customer_address || null,
         contact_name: form.contact_name || null,
+        contact_position: form.contact_position || null,
         contact_email: form.contact_email || null,
+        recipient_emails: form.recipient_emails,
         sales_name: form.sales_name || profile?.display_name || null,
         issued_at: form.issued_at,
         valid_until: form.valid_until,
@@ -766,7 +791,9 @@ function App() {
         customer_name: form.customer_name.trim(),
         customer_address: form.customer_address || null,
         contact_name: form.contact_name || null,
+        contact_position: form.contact_position || null,
         contact_email: form.contact_email || null,
+        recipient_emails: form.recipient_emails,
         sales_name: form.sales_name || profile?.display_name || null,
         issued_at: form.issued_at,
         valid_until: form.valid_until,
@@ -871,10 +898,15 @@ function App() {
   }
   async function documentAction(action: "generate_pdf" | "send_email") {
     if (!selected) return;
+    const recipients = Array.isArray(selected.recipient_emails)
+      ? selected.recipient_emails
+      : selected.contact_email
+        ? [selected.contact_email]
+        : [];
     const question =
       action === "generate_pdf"
         ? "ยืนยันสร้าง PDF และบันทึกใน Google Drive ใช่หรือไม่?"
-        : `ยืนยันส่งอีเมลพร้อม PDF ไปที่ ${selected.contact_email || "ผู้รับที่ระบุ"} ใช่หรือไม่?`;
+        : `ยืนยันส่งอีเมลพร้อม PDF ไปที่ ${recipients.join(", ") || "ผู้รับที่ระบุ"} ใช่หรือไม่?`;
     if (!window.confirm(question)) return;
     await run(
       action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
@@ -885,14 +917,14 @@ function App() {
             : {
                 action,
                 quotation_id: selected.id,
-                to: selected.contact_email ? [selected.contact_email] : [],
+                to: recipients,
                 subject: `ใบเสนอราคา ${selected.document_no}`,
                 message: `เรียน ${selected.contact_name || ""}\n\nขอส่งใบเสนอราคา ${selected.document_no} ตามเอกสารแนบ\n\nขอบคุณค่ะ\nForward Insight`,
               };
         const result = await supabase.functions.invoke("quotation-operations", {
           body,
         });
-        if (result.error) throw result.error;
+        if (result.error) throw new Error(await edgeErrorMessage(result.error));
         if (action === "generate_pdf") {
           if (!result.data?.pdf_drive_url)
             throw new Error(result.data?.message || "สร้าง PDF ไม่สำเร็จ");
@@ -989,7 +1021,7 @@ function App() {
     <div className="app-shell">
       {nav}
       <main
-        className={`work ${view === "create" || view === "edit" ? "editor-work" : ""}`}
+        className={`work ${view === "create" || view === "edit" || view === "detail" ? "editor-work" : ""}`}
       >
         {view === "dashboard" && (
           <Dashboard
@@ -1120,6 +1152,55 @@ function MoneyInput({
     />
   );
 }
+function EmailTags({
+  emails,
+  onChange,
+}: {
+  emails: string[];
+  onChange: (emails: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const value = draft.trim().toLowerCase();
+    if (!value) return;
+    if (!/^\S+@\S+\.\S+$/.test(value)) return;
+    if (!emails.includes(value)) onChange([...emails, value]);
+    setDraft("");
+  };
+  return (
+    <label className="field">
+      <span>อีเมลผู้รับเอกสาร</span>
+      <div className="email-tags" onClick={(event) => event.currentTarget.querySelector("input")?.focus()}>
+        {emails.map((email) => (
+          <span key={email}>
+            {email}
+            <button
+              type="button"
+              aria-label={`ลบ ${email}`}
+              onClick={() => onChange(emails.filter((item) => item !== email))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="email"
+          value={draft}
+          placeholder={emails.length ? "เพิ่มอีเมลแล้วกด Enter" : "พิมพ์อีเมลแล้วกด Enter"}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === ",") {
+              event.preventDefault();
+              add();
+            }
+          }}
+          onBlur={add}
+        />
+      </div>
+      <small className="field-help">กด Enter เพื่อเพิ่มอีเมลได้มากกว่าหนึ่งรายการ</small>
+    </label>
+  );
+}
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="form-section">
@@ -1142,7 +1223,7 @@ function Dashboard({
   const drafts = quotes.filter((quote) => quote.status === "DRAFT").length;
   return (
     <>
-      <header className="topbar">
+      <header className="topbar editor-topbar">
         <div>
           <p className="eyebrow">ภาพรวมระบบ</p>
           <h1>ใบเสนอราคาของคุณ</h1>
@@ -1193,7 +1274,7 @@ function Dashboard({
                   </small>
                 </b>
                 <span>{quote.customer_name}</span>
-                <span>{quote.valid_until}</span>
+                <span>{displayDate(quote.valid_until)}</span>
                 <span>
                   <i className={`badge ${quote.status.toLowerCase()}`}>
                     {statusText[quote.status] || quote.status}
@@ -1327,8 +1408,10 @@ function Editor({
                 }
               />
             </Field>
+          </Section>
+          <Section title="ข้อมูลผู้รับเอกสาร">
             <div className="two">
-              <Field label="ผู้ติดต่อ">
+              <Field label="ผู้รับ">
                 <input
                   value={form.contact_name}
                   onChange={(event) =>
@@ -1336,16 +1419,24 @@ function Editor({
                   }
                 />
               </Field>
-              <Field label="อีเมลผู้ติดต่อ">
+              <Field label="ตำแหน่ง">
                 <input
-                  type="email"
-                  value={form.contact_email}
+                  value={form.contact_position}
                   onChange={(event) =>
-                    patch({ contact_email: event.target.value })
+                    patch({ contact_position: event.target.value })
                   }
                 />
               </Field>
             </div>
+            <EmailTags
+              emails={form.recipient_emails}
+              onChange={(recipient_emails) =>
+                patch({
+                  recipient_emails,
+                  contact_email: recipient_emails[0] || "",
+                })
+              }
+            />
           </Section>
           <RecurringPlan
             form={form}
@@ -1544,7 +1635,7 @@ function RecurringPlan({
             onChange={(event) =>
               patch({
                 package_reference_quantity: Number(event.target.value),
-                package_reference_unit: "รถ",
+                package_reference_unit: "คัน",
               })
             }
           />
@@ -1604,7 +1695,11 @@ function OneTimeItems({
             {item.service_name === setupLabel && (
               <p className="item-detail">รวม: ทะเบียนรถ และข้อมูลทั่วไป</p>
             )}
-            <div className="three">
+            <div
+              className={
+                item.service_name === onsiteTrainingLabel ? "two" : "three"
+              }
+            >
               <Field label="จำนวน">
                 <input
                   type="number"
@@ -1626,20 +1721,22 @@ function OneTimeItems({
                   }
                 />
               </Field>
-              <Field label="ราคา/หน่วย">
-                <MoneyInput
-                  value={item.unit_price_satang}
-                  onChange={(unit_price_satang) =>
-                    onUpdate(item.id, {
-                      unit_price_satang,
-                      calculation_mode:
-                        item.quantity > 1
-                          ? "QUANTITY_X_UNIT_PRICE"
-                          : "FIXED_PRICE",
-                    })
-                  }
-                />
-              </Field>
+              {item.service_name !== onsiteTrainingLabel && (
+                <Field label="ราคา/หน่วย">
+                  <MoneyInput
+                    value={item.unit_price_satang}
+                    onChange={(unit_price_satang) =>
+                      onUpdate(item.id, {
+                        unit_price_satang,
+                        calculation_mode:
+                          item.quantity > 1
+                            ? "QUANTITY_X_UNIT_PRICE"
+                            : "FIXED_PRICE",
+                      })
+                    }
+                  />
+                </Field>
+              )}
             </div>
           </div>
           <div className="item-total">
@@ -1714,11 +1811,11 @@ function QuotePaper({
           </div>
           <div>
             <dt>วันที่</dt>
-            <dd>{form.issued_at}</dd>
+            <dd>{displayDate(form.issued_at)}</dd>
           </div>
           <div>
             <dt>ใช้ได้ถึง</dt>
-            <dd>{form.valid_until}</dd>
+            <dd>{displayDate(form.valid_until)}</dd>
           </div>
         </dl>
       </div>
@@ -1769,7 +1866,7 @@ function QuotePaper({
         <div>
           <h3>ผู้เสนอราคา</h3>
           <span>ลงชื่อ {form.sales_name || "______________________"}</span>
-          <span>วันที่ {form.issued_at}</span>
+          <span>วันที่ {displayDate(form.issued_at)}</span>
         </div>
       </div>
     </article>
@@ -1800,12 +1897,9 @@ function PriceBlock({
       <div className="price-title">
         <h3>
           {recurring
-            ? `1. ${softwareServiceLabel}`
+            ? `1. ${form.billing_cycles.join(" / ") || "ค่าบริการซอฟแวร์ระบบ"}`
             : "2. ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)"}
         </h3>
-        {recurring && (
-          <span>{form.billing_cycles.join(" · ") || "รอบชำระยังไม่ระบุ"}</span>
-        )}
       </div>
       <div className="mini-head">
         <span>รายละเอียด</span>
@@ -1817,12 +1911,10 @@ function PriceBlock({
           <span className="service-cell">
             {main?.service_name || softwareServiceLabel}
             {form.recurring_addons.length > 0 && (
-              <small>
-                {form.recurring_addons.map((name) => `• ${name}`).join("\n")}
-              </small>
+              <small>{form.recurring_addons.join(", ")}</small>
             )}
           </span>
-          <span>{form.package_reference_quantity || "—"} รถ</span>
+          <span>{form.package_reference_quantity || "—"} คัน</span>
           <b>{money(summary.subtotal)}</b>
         </div>
       ) : rows.length ? (
@@ -1831,7 +1923,7 @@ function PriceBlock({
             <span className="service-cell">
               {index + 1}. {item.service_name}
               {item.service_name === setupLabel && (
-                <small>ทะเบียนรถ · ข้อมูลทั่วไป</small>
+                <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>
               )}
             </span>
             <span>
@@ -1871,6 +1963,7 @@ function PriceBlock({
           <b>{money(summary.net)}</b>
         </p>
       </div>
+      <p className="amount-in-words">{thaiBaht(summary.net)}</p>
     </section>
   );
 }
@@ -1949,19 +2042,24 @@ function Detail({
             ยืนยันสร้าง PDF
           </button>
           <button
-            disabled={busy || !quote.contact_email || !quote.pdf_drive_url}
+            disabled={
+              busy ||
+              !quote.pdf_drive_url ||
+              !(quote.recipient_emails?.length || quote.contact_email)
+            }
             onClick={onEmail}
           >
             ยืนยันส่งอีเมล
           </button>
         </div>
       </header>
-      <section className="detail-grid">
-        <article className="card quote-summary">
+      <div className="editor detail-editor">
+        <section className="form-panel">
+          <Section title="สถานะเอกสาร">
           <i className={`badge ${quote.status.toLowerCase()}`}>
             {statusText[quote.status] || quote.status}
           </i>
-          <h2>{money(quote.net_amount_satang)}</h2>
+          <h2 className="detail-total">{money(quote.net_amount_satang)}</h2>
           <p className="muted">ยอดสุทธิของเอกสาร</p>
           <hr />
           <dl>
@@ -1969,8 +2067,14 @@ function Detail({
             <dd>{quote.customer_name}</dd>
             <dt>ผู้ติดต่อ</dt>
             <dd>{quote.contact_name || "—"}</dd>
+            <dt>ตำแหน่ง</dt>
+            <dd>{quote.contact_position || "—"}</dd>
             <dt>อีเมล</dt>
-            <dd>{quote.contact_email || "—"}</dd>
+            <dd>
+              {Array.isArray(quote.recipient_emails) && quote.recipient_emails.length
+                ? quote.recipient_emails.join(", ")
+                : quote.contact_email || "—"}
+            </dd>
             <dt>ไฟล์ PDF</dt>
             <dd>
               {quote.pdf_drive_url ? (
@@ -1982,10 +2086,8 @@ function Detail({
               )}
             </dd>
           </dl>
-        </article>
-        <article className="card">
-          <h2>เปลี่ยนสถานะ</h2>
-          <p className="muted">เปลี่ยนได้เฉพาะเอกสารที่คุณเป็นเจ้าของ</p>
+          </Section>
+          <Section title="เปลี่ยนสถานะ">
           <div className="status-actions">
             {quote.status === "DRAFT" && (
               <button disabled={busy} onClick={() => onStatus("READY")}>
@@ -2016,14 +2118,10 @@ function Detail({
               </>
             )}
           </div>
-        </article>
-      </section>
-      <section className="detail-preview">
-        <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
-        <div className="detail-preview-scroll">
-          <QuotePaper form={form} items={items} totals={totals} group={group} />
-        </div>
-      </section>
+          </Section>
+        </section>
+        <Preview form={form} items={items} totals={totals} group={group} />
+      </div>
     </>
   );
 }

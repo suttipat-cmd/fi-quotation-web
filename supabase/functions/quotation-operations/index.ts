@@ -2,6 +2,24 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const cors = { 'Access-Control-Allow-Origin': 'https://suttipat-cmd.github.io', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Content-Type': 'application/json' }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors })
+const callAppsScript = async (scriptUrl: string, payload: unknown) => {
+  const response = await fetch(scriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const raw = await response.text()
+  let result: { ok?: boolean; message?: string; [key: string]: any }
+  try {
+    result = JSON.parse(raw)
+  } catch {
+    throw new Error(`Google Apps Script ตอบกลับไม่ถูกต้อง (HTTP ${response.status}): ${raw.slice(0, 240)}`)
+  }
+  if (!response.ok || !result.ok) {
+    throw new Error(result.message || `Google Apps Script ทำงานไม่สำเร็จ (HTTP ${response.status})`)
+  }
+  return result
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -27,9 +45,7 @@ Deno.serve(async (req) => {
     if (payload.action === 'generate_pdf') {
       if (existing?.pdf_drive_url) return json({ message: 'ใช้ไฟล์ PDF ที่สร้างไว้แล้ว', pdf_drive_url: existing.pdf_drive_url, reused: true })
       const snapshot = { quotation: quote, items: items || [] }
-      const response = await fetch(scriptUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'generate_pdf', secret, snapshot }) })
-      const result = await response.json()
-      if (!response.ok || !result.ok) throw new Error(result.message || 'สร้าง PDF ไม่สำเร็จ')
+      const result = await callAppsScript(scriptUrl, { action: 'generate_pdf', secret, snapshot })
       const { error: revisionError } = await adminDb.from('quotation_revisions').upsert({ quotation_id: quote.id, revision_no: quote.revision_no, snapshot, pdf_drive_file_id: result.fileId, pdf_drive_url: result.url, pdf_generated_at: new Date().toISOString(), generated_by: user.id }, { onConflict: 'quotation_id,revision_no' })
       if (revisionError) throw revisionError
       await adminDb.from('quotations').update({ status: quote.status === 'DRAFT' ? 'READY' : quote.status, updated_by: user.id }).eq('id', quote.id)
@@ -38,9 +54,7 @@ Deno.serve(async (req) => {
     }
     if (payload.action === 'send_email') {
       if (!existing?.pdf_drive_file_id) return json({ message: 'กรุณาสร้างและยืนยัน PDF ก่อนส่งอีเมล' }, 422)
-      const response = await fetch(scriptUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send_email', secret, email: { to: payload.to || [], cc: payload.cc || [], bcc: payload.bcc || [], subject: payload.subject, message: payload.message }, pdfFileId: existing.pdf_drive_file_id }) })
-      const result = await response.json()
-      if (!response.ok || !result.ok) throw new Error(result.message || 'ส่งอีเมลไม่สำเร็จ')
+      await callAppsScript(scriptUrl, { action: 'send_email', secret, email: { to: payload.to || [], cc: payload.cc || [], bcc: payload.bcc || [], subject: payload.subject, message: payload.message }, pdfFileId: existing.pdf_drive_file_id })
       await adminDb.from('email_logs').insert({ quotation_id: quote.id, revision_id: existing.id, recipient_to: payload.to || [], recipient_cc: payload.cc || [], recipient_bcc: payload.bcc || [], subject: payload.subject, message: payload.message, status: 'SENT', sent_by: user.id })
       await adminDb.from('audit_logs').insert({ quotation_id: quote.id, actor_id: user.id, action: 'EMAIL_SENT', metadata: { revision: quote.revision_no } })
       return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว' })

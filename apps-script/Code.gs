@@ -51,7 +51,7 @@ function money_(satang) {
 }
 function date_(value) {
   var p = String(value || "").split("-");
-  return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : "-";
+  return p.length === 3 ? p[2] + "-" + p[1] + "-" + p[0] : "-";
 }
 function lines_(text) {
   return String(text || "")
@@ -86,7 +86,7 @@ function cycles_(q) {
 }
 function serviceName_(item) {
   return item.service_name === "Setup"
-    ? "Setup\n• ทะเบียนรถ\n• ข้อมูลทั่วไป"
+    ? "Setup\nทะเบียนรถ, ข้อมูลทั่วไป"
     : item.service_name;
 }
 function recurringName_(item, q) {
@@ -95,7 +95,7 @@ function recurringName_(item, q) {
       return "• " + name;
     })
     .join("\n");
-  return "ค่าบริการซอฟแวร์ระบบ" + (selected ? "\n" + selected : "");
+  return "ค่าบริการซอฟแวร์ระบบ" + (selected ? "\n" + selected.replace(/• /g, "").replace(/\n/g, ", ") : "");
 }
 function cell_(cell, text, options) {
   options = options || {};
@@ -262,13 +262,9 @@ function priceSection_(body, q, all, category, number) {
     number +
     ". " +
     (isRecurring
-      ? "ค่าบริการซอฟแวร์ระบบ"
+      ? cycles_(q)
       : "ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)");
-  var p = body.appendParagraph(
-    title +
-      "                                              " +
-      (isRecurring ? "RECURRING SERVICE" : "ONE-TIME SERVICE"),
-  );
+  var p = body.appendParagraph(title);
   p.setFontFamily("Sarabun")
     .setFontSize(14)
     .setBold(true)
@@ -314,7 +310,7 @@ function priceSection_(body, q, all, category, number) {
     cell_(
       row.appendTableCell(),
       isRecurring
-        ? (item.reference_quantity || q.package_reference_quantity || "") + " รถ"
+        ? (item.reference_quantity || q.package_reference_quantity || "") + " คัน"
         : (item.quantity || "") + " " + (item.unit || ""),
       { align: DocumentApp.HorizontalAlignment.RIGHT },
     );
@@ -327,12 +323,6 @@ function priceSection_(body, q, all, category, number) {
       align: DocumentApp.HorizontalAlignment.RIGHT,
     });
   });
-  if (isRecurring && q.recurring_addons && q.recurring_addons.length)
-    body
-      .appendParagraph("บริการหลักที่เลือก: " + q.recurring_addons.join(", "))
-      .setFontFamily("Sarabun")
-      .setFontSize(10)
-      .setForegroundColor(FI.gray);
   var total = body.appendTable();
   total.setBorderWidth(0);
   [
@@ -360,9 +350,7 @@ function priceSection_(body, q, all, category, number) {
   });
   body
     .appendParagraph(
-      "ยอดสุทธิ" +
-        (isRecurring ? "ค่าบริการประจำ" : "ค่าบริการครั้งเดียว") +
-        " (ตัวอักษร)\n" +
+      "ยอดสุทธิ (ตัวอักษร)\n" +
         thaiBaht_(sum.net),
     )
     .setFontFamily("Sarabun")
