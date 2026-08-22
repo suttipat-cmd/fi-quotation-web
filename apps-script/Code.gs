@@ -3,6 +3,14 @@
  * Optional: LOGO_FILE_ID, BANK_NAME, BANK_ACCOUNT_NAME, BANK_ACCOUNT_NUMBER
  */
 var FI = { navy: "#17477F", light: "#F0F4F8", gray: "#718097" };
+var COMPANY = {
+  name: "บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด",
+  address:
+    "38 ซอย เฉลิมพระเกียรติ ร.9 ซ.42 ถนนเฉลิมพระเกียรติ ร.9 แขวงหนองบอน เขตประเวศ กรุงเทพมหานคร 10250",
+  taxId: "0105565050099/สำนักงานใหญ่",
+  payment:
+    "ชื่อบัญชี บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด\nธ.ไทยพาณิชย์ (SCB) 015-465-8438",
+};
 
 function doPost(e) {
   try {
@@ -80,6 +88,14 @@ function serviceName_(item) {
   return item.service_name === "Setup"
     ? "Setup\n• ทะเบียนรถ\n• ข้อมูลทั่วไป"
     : item.service_name;
+}
+function recurringName_(item, q) {
+  var selected = (q.recurring_addons || [])
+    .map(function (name) {
+      return "• " + name;
+    })
+    .join("\n");
+  return "ค่าบริการซอฟแวร์ระบบ" + (selected ? "\n" + selected : "");
 }
 function cell_(cell, text, options) {
   options = options || {};
@@ -171,6 +187,15 @@ function documentHeader_(body, q, firstPage) {
       align: DocumentApp.HorizontalAlignment.RIGHT,
     });
   }
+  if (firstPage)
+    body
+      .appendParagraph(
+        COMPANY.name + "\n" + COMPANY.address + "\nเลขที่ประจำตัวผู้เสียภาษี " + COMPANY.taxId,
+      )
+      .setFontFamily("Sarabun")
+      .setFontSize(9)
+      .setAlignment(DocumentApp.HorizontalAlignment.CENTER)
+      .setSpacingAfter(3);
   rule_(body);
   if (!firstPage) return;
   var info = body.appendTable();
@@ -236,7 +261,9 @@ function priceSection_(body, q, all, category, number) {
   var title =
     number +
     ". " +
-    (isRecurring ? "ค่าบริการประจำ" : "ค่าบริการครั้งเดียว (ค่าแรกเข้า)");
+    (isRecurring
+      ? "ค่าบริการซอฟแวร์ระบบ"
+      : "ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)");
   var p = body.appendParagraph(
     title +
       "                                              " +
@@ -251,7 +278,7 @@ function priceSection_(body, q, all, category, number) {
   table.setBorderWidth(0);
   var header = table.appendTableRow();
   var heads = isRecurring
-    ? ["ลำดับ", "รายละเอียด", "จำนวนอ้างอิง", "รอบชำระ", "มูลค่าก่อนภาษี"]
+    ? ["ลำดับ", "รายละเอียด", "จำนวนรถ", "รอบชำระ", "มูลค่าก่อนภาษี"]
     : ["ลำดับ", "รายละเอียด", "จำนวน", "ราคา/หน่วย", "มูลค่าก่อนภาษี"];
   heads.forEach(function (x) {
     cell_(header.appendTableCell(), x, {
@@ -279,13 +306,15 @@ function priceSection_(body, q, all, category, number) {
     cell_(row.appendTableCell(), index + 1, {
       align: DocumentApp.HorizontalAlignment.RIGHT,
     });
-    cell_(row.appendTableCell(), serviceName_(item), { bold: true });
+    cell_(
+      row.appendTableCell(),
+      isRecurring ? recurringName_(item, q) : serviceName_(item),
+      { bold: true },
+    );
     cell_(
       row.appendTableCell(),
       isRecurring
-        ? (item.reference_quantity || q.package_reference_quantity || "") +
-            " " +
-            (item.unit || q.package_reference_unit || "")
+        ? (item.reference_quantity || q.package_reference_quantity || "") + " รถ"
         : (item.quantity || "") + " " + (item.unit || ""),
       { align: DocumentApp.HorizontalAlignment.RIGHT },
     );
@@ -436,6 +465,40 @@ function signatures_(body, q) {
     .setFontFamily("Sarabun")
     .setFontSize(10);
 }
+function documentFooter_(body, q) {
+  rule_(body);
+  var notes = body.appendTable();
+  notes.setBorderWidth(0);
+  var row = notes.appendTableRow();
+  cell_(row.appendTableCell(), "หมายเหตุ\n" + (q.notes || q.promotion_terms || "-"), {
+    bold: false,
+    size: 8,
+  });
+  cell_(row.appendTableCell(), "เงื่อนไขการชำระเงิน\n" + (q.payment_terms || "-"), {
+    bold: false,
+    size: 8,
+  });
+  cell_(row.appendTableCell(), "ข้อมูลการชำระเงิน\n" + COMPANY.payment, {
+    bold: false,
+    size: 8,
+  });
+  var signatures = body.appendTable();
+  signatures.setBorderWidth(0);
+  row = signatures.appendTableRow();
+  cell_(
+    row.appendTableCell(),
+    "ยืนยันรับข้อเสนอ\n\nลงชื่อ ______________________________\nวันที่ ______________________________",
+    { size: 8 },
+  );
+  cell_(
+    row.appendTableCell(),
+    "ผู้เสนอราคา\n\nลงชื่อ " +
+      (q.sales_name || "______________________") +
+      "\nวันที่ " +
+      date_(q.issued_at),
+    { size: 8 },
+  );
+}
 function footer_(body, q, page) {
   body
     .appendParagraph(
@@ -443,7 +506,7 @@ function footer_(body, q, page) {
         q.document_no +
         "                                              หน้า " +
         page +
-        " / 2",
+        " / 1",
     )
     .setFontFamily("Sarabun")
     .setFontSize(8)
@@ -469,12 +532,8 @@ function generatePdf_(snapshot) {
   customer_(body, q);
   priceSection_(body, q, all, "RECURRING", 1);
   priceSection_(body, q, all, "ONE_TIME", 2);
+  documentFooter_(body, q);
   footer_(body, q, 1);
-  body.appendPageBreak();
-  documentHeader_(body, q, false);
-  scope_(body, q);
-  signatures_(body, q);
-  footer_(body, q, 2);
   doc.saveAndClose();
   var source = DriveApp.getFileById(doc.getId());
   var pdf = source

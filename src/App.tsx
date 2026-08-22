@@ -52,16 +52,45 @@ type Form = {
   promotion_terms: string;
 };
 type Toast = { text: string; type: "success" | "error" | "info" } | null;
+type View = "dashboard" | "create" | "edit" | "detail";
+type Route = { view: View; id?: string };
+
+const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const routeFromLocation = (): Route => {
+  const path = window.location.pathname
+    .replace(appBasePath, "")
+    .replace(/^\/+|\/+$/g, "");
+  const [view, id] = path.split("/");
+  if (view === "create") return { view: "create" };
+  if (view === "detail" && id) return { view: "detail", id };
+  if (view === "edit" && id) return { view: "edit", id };
+  return { view: "dashboard" };
+};
+const routePath = (view: View, id?: string) =>
+  view === "dashboard"
+    ? `${appBasePath}/`
+    : `${appBasePath}/${view}${id ? `/${id}` : ""}`;
 
 const paymentOptions = [
   "ค่าบริการชำระรายเดือน",
   "ค่าบริการชำระราย 6 เดือน",
   "ค่าบริการชำระรายปี",
 ];
+const softwareServiceLabel = "ค่าบริการซอฟแวร์ระบบ";
 const setupChildServices = ["Setup ทะเบียนรถ", "Setup ข้อมูลทั่วไป"];
 const setupLabel = "Setup";
 const customFormLabel = "Custom Form";
 const onsiteTrainingLabel = "Onsite Training";
+const company = {
+  name: "บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด",
+  address:
+    "38 ซอย เฉลิมพระเกียรติ ร.9 ซ.42 ถนนเฉลิมพระเกียรติ ร.9 แขวงหนองบอน เขตประเวศ กรุงเทพมหานคร 10250",
+  taxId: "0105565050099/สำนักงานใหญ่",
+  payment:
+    "ชื่อบัญชี บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด\nธ.ไทยพาณิชย์ (SCB) 015-465-8438",
+};
+const defaultPaymentTerms =
+  "1. ค่าใช้โปรแกรมประเภทรายเดือน ชำระค่าใช้โปรแกรม ทุกวันที่ 1 ของเดือน โดยเริ่มชำระเมื่อทำการย้ายข้อมูล\n2. ค่านำข้อมูลเดิมเข้าในระบบใหม่และค่าฝึกอบรม ชำระ 100% เมื่อทำสัญญา (ค่าแรกเข้า)";
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (days: number) => {
   const date = new Date();
@@ -78,7 +107,9 @@ const fromBaht = (value: string | number) =>
   Math.round(Number(value || 0) * 100);
 const toBaht = (value = 0) => ((value || 0) / 100).toFixed(2);
 const categoryText = (category: Category) =>
-  category === "RECURRING" ? "ค่าบริการประจำ" : "ค่าบริการครั้งเดียว";
+  category === "RECURRING"
+    ? softwareServiceLabel
+    : "ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)";
 const statusText: Record<string, string> = {
   DRAFT: "ฉบับร่าง",
   READY: "พร้อมส่ง",
@@ -97,13 +128,13 @@ const initialForm = (salesName = ""): Form => ({
   issued_at: today(),
   valid_until: plusDays(30),
   notes: "",
-  payment_terms: "",
+  payment_terms: defaultPaymentTerms,
   vat_rate: 7,
   wht_rate: 3,
   quotation_discount_type: "NONE",
   quotation_discount_value: 0,
   package_reference_quantity: 0,
-  package_reference_unit: "คัน",
+  package_reference_unit: "รถ",
   included_users: 0,
   billing_cycles: ["ค่าบริการชำระรายเดือน"],
   recurring_addons: [],
@@ -127,9 +158,9 @@ const makeItem = (category: Category): Item => ({
 });
 const makeRecurringItem = (): Item => ({
   ...makeItem("RECURRING"),
-  service_name: "ค่าบริการประจำ",
+  service_name: softwareServiceLabel,
   quantity: 1,
-  unit: "แพ็กเกจ",
+  unit: "รถ",
 });
 const makeServiceItem = (service: Service, quantity = 1): Item => ({
   ...makeItem("ONE_TIME"),
@@ -179,13 +210,13 @@ const formFromQuote = (quote: Quote): Form => ({
   issued_at: quote.issued_at || today(),
   valid_until: quote.valid_until || plusDays(30),
   notes: quote.notes || "",
-  payment_terms: quote.payment_terms || "",
+  payment_terms: quote.payment_terms || defaultPaymentTerms,
   vat_rate: Number(quote.vat_rate || 0),
   wht_rate: Number(quote.wht_rate || 0),
   quotation_discount_type: quote.quotation_discount_type || "NONE",
   quotation_discount_value: Number(quote.quotation_discount_value || 0),
   package_reference_quantity: Number(quote.package_reference_quantity || 0),
-  package_reference_unit: quote.package_reference_unit || "คัน",
+  package_reference_unit: quote.package_reference_unit || "รถ",
   included_users: Number(quote.included_users || 0),
   billing_cycles:
     Array.isArray(quote.billing_cycles) && quote.billing_cycles.length
@@ -364,14 +395,14 @@ function Auth({ onSession }: { onSession: (value: Session) => void }) {
 }
 
 function App() {
+  const initialRoute = useRef<Route>(routeFromLocation());
+  const restoredRoute = useRef(false);
   const [session, setSession] = useState<Session | null>(null);
   const [booting, setBooting] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
-  const [view, setView] = useState<"dashboard" | "create" | "edit" | "detail">(
-    "dashboard",
-  );
+  const [view, setView] = useState<View>(initialRoute.current.view);
   const [selected, setSelected] = useState<Quote | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(initialForm());
@@ -379,12 +410,20 @@ function App() {
     makeItem("RECURRING"),
     makeItem("ONE_TIME"),
   ]);
+  const [detailItems, setDetailItems] = useState<Item[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const locked = useRef(false);
   const notify = (text: string, type: NonNullable<Toast>["type"] = "info") =>
     setToast({ text, type });
+  const navigate = (next: View, id?: string, replace = false) => {
+    const path = routePath(next, id);
+    if (window.location.pathname !== path) {
+      window.history[replace ? "replaceState" : "pushState"]({}, "", path);
+    }
+    setView(next);
+  };
   useEffect(() => {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
@@ -405,6 +444,25 @@ function App() {
   useEffect(() => {
     if (session) void load();
   }, [session]);
+  useEffect(() => {
+    if (!session || !profile || restoredRoute.current) return;
+    const route = initialRoute.current;
+    restoredRoute.current = true;
+    if (route.view === "dashboard") return;
+    if (route.view === "create") {
+      reset();
+      navigate("create", undefined, true);
+      return;
+    }
+    const quote = quotes.find((item) => item.id === route.id);
+    if (!quote) {
+      notify("ไม่พบใบเสนอราคาตามลิงก์ที่ระบุ", "error");
+      navigate("dashboard", undefined, true);
+      return;
+    }
+    if (route.view === "edit") void startEdit(quote);
+    else void openDetail(quote);
+  }, [session, profile, quotes]);
   async function load() {
     setLoading("กำลังโหลดข้อมูล");
     const [profileResult, servicesResult, quotesResult] = await Promise.all([
@@ -591,7 +649,25 @@ function App() {
       ]);
       setSelected(quote);
       setEditingId(quote.id);
-      setView("edit");
+      navigate("edit", quote.id);
+    });
+  }
+  async function openDetail(quote: Quote) {
+    await run("กำลังเปิดรายละเอียดใบเสนอราคา", async () => {
+      const result = await supabase
+        .from("quotation_items")
+        .select("*")
+        .eq("quotation_id", quote.id)
+        .order("sort_order");
+      if (result.error) throw result.error;
+      setDetailItems(
+        (result.data || []).map((item) => ({
+          ...item,
+          id: item.id || crypto.randomUUID(),
+        })),
+      );
+      setSelected(quote);
+      navigate("detail", quote.id);
     });
   }
   async function save() {
@@ -670,8 +746,9 @@ function App() {
         throw itemResult.error;
       }
       setSelected(quote.data);
+      setDetailItems(items);
       await load();
-      setView("detail");
+      navigate("detail", quote.data.id);
       notify(`${quote.data.document_no} บันทึกเป็นฉบับร่างแล้ว`, "success");
     });
   }
@@ -754,9 +831,10 @@ function App() {
       const inserted = await supabase.from("quotation_items").insert(rows);
       if (inserted.error) throw inserted.error;
       setSelected(quote.data);
+      setDetailItems(items);
       setEditingId(null);
       await load();
-      setView("detail");
+      navigate("detail", quote.data.id);
       notify("บันทึกการแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
@@ -865,7 +943,7 @@ function App() {
       <nav>
         <button
           className={view === "dashboard" ? "active" : ""}
-          onClick={() => setView("dashboard")}
+          onClick={() => navigate("dashboard")}
         >
           <span>▦</span>
           <b>ภาพรวม</b>
@@ -874,7 +952,7 @@ function App() {
           className={view === "create" ? "active" : ""}
           onClick={() => {
             reset();
-            setView("create");
+            navigate("create");
           }}
         >
           <span>＋</span>
@@ -919,12 +997,9 @@ function App() {
             busy={busy}
             onCreate={() => {
               reset();
-              setView("create");
+              navigate("create");
             }}
-            onSelect={(quote) => {
-              setSelected(quote);
-              setView("detail");
-            }}
+            onSelect={(quote) => void openDetail(quote)}
           />
         )}
         {view === "create" && (
@@ -938,7 +1013,7 @@ function App() {
             group={group}
             busy={busy}
             onSave={() => void save()}
-            onCancel={() => setView("dashboard")}
+            onCancel={() => navigate("dashboard")}
             onUpdate={updateItem}
             onAddCustomForm={addCustomForm}
             onRemoveItem={removeItem}
@@ -957,7 +1032,7 @@ function App() {
             onSave={() => void saveEdit()}
             onCancel={() => {
               setEditingId(null);
-              setView("detail");
+              navigate("detail", selected?.id);
             }}
             onUpdate={updateItem}
             onAddCustomForm={addCustomForm}
@@ -967,8 +1042,9 @@ function App() {
         {view === "detail" && selected && (
           <Detail
             quote={selected}
+            items={detailItems}
             busy={busy}
-            onBack={() => setView("dashboard")}
+            onBack={() => navigate("dashboard")}
             onEdit={() => void startEdit(selected)}
             onRevision={() => void revision()}
             onPdf={() => void documentAction("generate_pdf")}
@@ -1003,6 +1079,45 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+function MoneyInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [display, setDisplay] = useState(value ? toBaht(value) : "");
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setDisplay(value ? toBaht(value) : "");
+  }, [value]);
+  const normalize = (input: string) => {
+    const cleaned = input.replace(/[^0-9.]/g, "");
+    const [whole = "", ...decimals] = cleaned.split(".");
+    return decimals.length ? `${whole}.${decimals.join("").slice(0, 2)}` : whole;
+  };
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      placeholder="ระบุราคา"
+      value={display}
+      onFocus={() => {
+        focused.current = true;
+        setDisplay(value ? String(value / 100) : "");
+      }}
+      onChange={(event) => {
+        const next = normalize(event.target.value);
+        setDisplay(next);
+        onChange(fromBaht(next));
+      }}
+      onBlur={() => {
+        focused.current = false;
+        setDisplay(value ? toBaht(value) : "");
+      }}
+    />
   );
 }
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -1246,27 +1361,7 @@ function Editor({
             onRemoveItem={onRemoveItem}
           />
           <Section title="ข้อมูลแพ็กเกจและเงื่อนไข">
-            <div className="three">
-              <Field label="จำนวนอ้างอิง">
-                <input
-                  type="number"
-                  min="0"
-                  value={form.package_reference_quantity}
-                  onChange={(event) =>
-                    patch({
-                      package_reference_quantity: Number(event.target.value),
-                    })
-                  }
-                />
-              </Field>
-              <Field label="หน่วยอ้างอิง">
-                <input
-                  value={form.package_reference_unit}
-                  onChange={(event) =>
-                    patch({ package_reference_unit: event.target.value })
-                  }
-                />
-              </Field>
+            <div className="two">
               <Field label="ผู้ใช้งานที่รวม">
                 <input
                   type="number"
@@ -1400,10 +1495,10 @@ function RecurringPlan({
         : [...form[key], value],
     } as Partial<Form>);
   return (
-    <Section title="ค่าบริการประจำ">
+    <Section title={softwareServiceLabel}>
       <p className="muted section-note">
         เลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox โดยระบบจะแสดงเป็นราคา
-        ค่าบริการประจำหนึ่งรายการในใบเสนอราคา
+        ค่าบริการซอฟแวร์ระบบหนึ่งรายการในใบเสนอราคา
       </p>
       <fieldset className="check-field">
         <legend>รอบชำระค่าบริการ</legend>
@@ -1439,20 +1534,33 @@ function RecurringPlan({
           )}
         </div>
       </fieldset>
-      <Field label="ราคา (บาท)">
-        <input
-          type="number"
-          min="0"
-          placeholder="ระบุราคา"
-          value={item.unit_price_satang ? toBaht(item.unit_price_satang) : ""}
-          onChange={(event) =>
-            onUpdate(item.id, {
-              unit_price_satang: fromBaht(event.target.value),
-              calculation_mode: "FIXED_PRICE",
-            })
-          }
-        />
-      </Field>
+      <div className="two">
+        <Field label="จำนวนรถ">
+          <input
+            type="number"
+            min="0"
+            value={form.package_reference_quantity || ""}
+            placeholder="ระบุจำนวนรถ"
+            onChange={(event) =>
+              patch({
+                package_reference_quantity: Number(event.target.value),
+                package_reference_unit: "รถ",
+              })
+            }
+          />
+        </Field>
+        <Field label="ราคา (บาท)">
+          <MoneyInput
+            value={item.unit_price_satang}
+            onChange={(unit_price_satang) =>
+              onUpdate(item.id, {
+                unit_price_satang,
+                calculation_mode: "FIXED_PRICE",
+              })
+            }
+          />
+        </Field>
+      </div>
     </Section>
   );
 }
@@ -1519,14 +1627,11 @@ function OneTimeItems({
                 />
               </Field>
               <Field label="ราคา/หน่วย">
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="ระบุราคา"
-                  value={item.unit_price_satang ? toBaht(item.unit_price_satang) : ""}
-                  onChange={(event) =>
+                <MoneyInput
+                  value={item.unit_price_satang}
+                  onChange={(unit_price_satang) =>
                     onUpdate(item.id, {
-                      unit_price_satang: fromBaht(event.target.value),
+                      unit_price_satang,
                       calculation_mode:
                         item.quantity > 1
                           ? "QUANTITY_X_UNIT_PRICE"
@@ -1568,117 +1673,106 @@ function Preview({
 }) {
   return (
     <aside className="preview-panel">
-      <p className="preview-label">ตัวอย่างใบเสนอราคา (สัดส่วน A4)</p>
+      <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
       <div className="preview-scroll">
-        <article className="paper">
-          <div className="paper-head">
-            <Brand />
-            <div>
-              <h2>ใบเสนอราคา</h2>
-              <p>เลขที่จะออกเมื่อบันทึก</p>
-              <p>
-                {form.issued_at} - {form.valid_until}
-              </p>
-            </div>
-          </div>
-          <hr />
-          <div className="customer">
-            <span>เรียน</span>
-            <strong>{form.customer_name || "ชื่อลูกค้า"}</strong>
-            <span>ที่อยู่</span>
-            <p>{form.customer_address || "ที่อยู่ลูกค้า"}</p>
-          </div>
-          <PriceBlock
-            category="RECURRING"
-            form={form}
-            items={items}
-            summary={group("RECURRING")}
-            vat={form.vat_rate}
-            wht={form.wht_rate}
-          />
-          <PriceBlock
-            category="ONE_TIME"
-            form={form}
-            items={items}
-            summary={group("ONE_TIME")}
-            vat={form.vat_rate}
-            wht={form.wht_rate}
-          />
-          <div className="amount-text">
-            <span>ยอดสุทธิรวมตามเงื่อนไข (ตัวอักษร)</span>
-            <b>{thaiBaht(totals.net)}</b>
-          </div>
-        </article>
-        <article className="paper second">
-          <div className="paper-head">
-            <Brand />
-            <div>
-              <b>เลขที่เอกสาร: ร่าง</b>
-              <p>{form.customer_name || "ชื่อลูกค้า"}</p>
-            </div>
-          </div>
-          <hr />
-          <h2>รายละเอียดและเงื่อนไขข้อเสนอ</h2>
-          <p className="subheading">ขอบเขตและเงื่อนไขทางการค้า</p>
-          <div className="scope-grid">
-            <section>
-              <h3>1. ข้อมูลแพ็กเกจ</h3>
-              <dl>
-                <dt>จำนวนอ้างอิง</dt>
-                <dd>
-                  {form.package_reference_quantity || "—"}{" "}
-                  {form.package_reference_unit}
-                </dd>
-                <dt>ผู้ใช้งานที่รวม</dt>
-                <dd>{form.included_users || "—"} ผู้ใช้</dd>
-                <dt>รอบชำระ</dt>
-                <dd>{form.billing_cycles.join(", ") || "—"}</dd>
-                <dt>ใช้ได้ถึง</dt>
-                <dd>{form.valid_until}</dd>
-              </dl>
-            </section>
-            <section>
-              <h3>2. บริการหลักที่เลือก</h3>
-              <p className="multiline">
-                {form.recurring_addons.length
-                  ? form.recurring_addons.map((name) => `• ${name}`).join("\n")
-                  : "—"}
-              </p>
-            </section>
-          </div>
-          <section className="scope-section">
-            <h3>3. ค่าบริการเพิ่มเติม</h3>
-            <p className="multiline">{form.additional_fees || "—"}</p>
-          </section>
-          <section className="scope-section">
-            <h3>4. โปรโมชันและเงื่อนไขพิเศษ</h3>
-            <p className="multiline">
-              {form.promotion_terms || form.notes || "—"}
-            </p>
-          </section>
-          <section className="scope-section">
-            <h3>5. เงื่อนไขการชำระเงิน</h3>
-            <p className="multiline">{form.payment_terms || "—"}</p>
-          </section>
-          <div className="signatures">
-            <div>
-              <h3>ยืนยันรับข้อเสนอ</h3>
-              <span>ชื่อ-นามสกุล __________________</span>
-              <span>ตำแหน่ง __________________</span>
-              <span>วันที่ __________________</span>
-            </div>
-            <div>
-              <h3>ผู้เสนอราคา</h3>
-              <span>
-                ชื่อ-นามสกุล {form.sales_name || "__________________"}
-              </span>
-              <span>บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด</span>
-              <span>วันที่ {form.issued_at}</span>
-            </div>
-          </div>
-        </article>
+        <QuotePaper form={form} items={items} totals={totals} group={group} />
       </div>
     </aside>
+  );
+}
+
+function QuotePaper({
+  form,
+  items,
+  totals,
+  group,
+}: {
+  form: Form;
+  items: Item[];
+  totals: any;
+  group: (category: Category) => any;
+}) {
+  return (
+    <article className="paper quotation-paper">
+      <div className="document-company">
+        <Brand />
+        <div>
+          <b>{company.name}</b>
+          <span>{company.address}</span>
+          <span>เลขที่ประจำตัวผู้เสียภาษี {company.taxId}</span>
+        </div>
+      </div>
+      <div className="document-title">
+        <div>
+          <h2>ใบเสนอราคา</h2>
+          <span>QUOTATION</span>
+        </div>
+        <dl>
+          <div>
+            <dt>เลขที่</dt>
+            <dd>จะออกเมื่อบันทึก</dd>
+          </div>
+          <div>
+            <dt>วันที่</dt>
+            <dd>{form.issued_at}</dd>
+          </div>
+          <div>
+            <dt>ใช้ได้ถึง</dt>
+            <dd>{form.valid_until}</dd>
+          </div>
+        </dl>
+      </div>
+      <div className="document-customer">
+        <span>ชื่อลูกค้า</span>
+        <p>{form.customer_name || "ชื่อลูกค้า"}</p>
+        <span>ที่อยู่ลูกค้า</span>
+        <p>{form.customer_address || "ที่อยู่ลูกค้า"}</p>
+      </div>
+      <PriceBlock
+        category="RECURRING"
+        form={form}
+        items={items}
+        summary={group("RECURRING")}
+        vat={form.vat_rate}
+        wht={form.wht_rate}
+      />
+      <PriceBlock
+        category="ONE_TIME"
+        form={form}
+        items={items}
+        summary={group("ONE_TIME")}
+        vat={form.vat_rate}
+        wht={form.wht_rate}
+      />
+      <div className="document-footer-grid">
+        <section>
+          <h3>หมายเหตุ</h3>
+          <p className="multiline">
+            {form.notes || form.promotion_terms || "-"}
+          </p>
+        </section>
+        <section>
+          <h3>เงื่อนไขการชำระเงิน</h3>
+          <p className="multiline">{form.payment_terms}</p>
+        </section>
+        <section>
+          <h3>ข้อมูลการชำระเงิน</h3>
+          <p className="multiline">{company.payment}</p>
+        </section>
+      </div>
+      <div className="signatures compact-signatures">
+        <div>
+          <h3>ยืนยันรับข้อเสนอ</h3>
+          <span>ลงชื่อ ______________________________</span>
+          <span>วันที่ ______________________________</span>
+        </div>
+        <div>
+          <h3>ผู้เสนอราคา</h3>
+          <span>ลงชื่อ {form.sales_name || "______________________"}</span>
+          <span>วันที่ {form.issued_at}</span>
+        </div>
+      </div>
+    </article>
   );
 }
 function PriceBlock({
@@ -1704,25 +1798,31 @@ function PriceBlock({
   return (
     <section className="price-block">
       <div className="price-title">
-        <h3>{recurring ? "1. ค่าบริการประจำ" : "2. ค่าบริการครั้งเดียว"}</h3>
-        <span>
+        <h3>
           {recurring
-            ? form.billing_cycles.join(" · ") || "รอบชำระยังไม่ระบุ"
-            : "บริการครั้งเดียว"}
-        </span>
+            ? `1. ${softwareServiceLabel}`
+            : "2. ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)"}
+        </h3>
+        {recurring && (
+          <span>{form.billing_cycles.join(" · ") || "รอบชำระยังไม่ระบุ"}</span>
+        )}
       </div>
       <div className="mini-head">
         <span>รายละเอียด</span>
-        <span>จำนวน</span>
+        <span>{recurring ? "จำนวนรถ" : "จำนวน"}</span>
         <span>ราคา</span>
       </div>
       {recurring ? (
         <div className="mini-row">
-          <span>{main?.service_name || "ค่าบริการประจำ"}</span>
-          <span>
-            {form.package_reference_quantity || "—"}{" "}
-            {form.package_reference_unit}
+          <span className="service-cell">
+            {main?.service_name || softwareServiceLabel}
+            {form.recurring_addons.length > 0 && (
+              <small>
+                {form.recurring_addons.map((name) => `• ${name}`).join("\n")}
+              </small>
+            )}
           </span>
+          <span>{form.package_reference_quantity || "—"} รถ</span>
           <b>{money(summary.subtotal)}</b>
         </div>
       ) : rows.length ? (
@@ -1746,11 +1846,6 @@ function PriceBlock({
           <span>—</span>
           <b>—</b>
         </div>
-      )}
-      {recurring && form.recurring_addons.length > 0 && (
-        <p className="addons-preview">
-          <b>บริการหลักที่เลือก:</b> {form.recurring_addons.join(", ")}
-        </p>
       )}
       <div className="price-summary">
         <p>
@@ -1781,6 +1876,7 @@ function PriceBlock({
 }
 function Detail({
   quote,
+  items,
   busy,
   onBack,
   onEdit,
@@ -1790,6 +1886,7 @@ function Detail({
   onStatus,
 }: {
   quote: Quote;
+  items: Item[];
   busy: boolean;
   onBack: () => void;
   onEdit: () => void;
@@ -1798,6 +1895,29 @@ function Detail({
   onEmail: () => void;
   onStatus: (value: string) => void;
 }) {
+  const form = formFromQuote(quote);
+  const totals = items.reduce(
+    (sum, item) => {
+      const value = itemTotal(item);
+      return {
+        subtotal: sum.subtotal + value.net,
+        discount: sum.discount,
+        taxBase: sum.taxBase,
+        vat: sum.vat,
+        wht: sum.wht,
+        net: sum.net,
+      };
+    },
+    { subtotal: 0, discount: 0, taxBase: 0, vat: 0, wht: 0, net: 0 },
+  );
+  const group = (category: Category) => {
+    const subtotal = items
+      .filter((item) => item.category === category)
+      .reduce((sum, item) => sum + itemTotal(item).net, 0);
+    const vat = Math.round((subtotal * form.vat_rate) / 100);
+    const wht = Math.round((subtotal * form.wht_rate) / 100);
+    return { subtotal, discount: 0, vat, wht, net: subtotal + vat - wht };
+  };
   return (
     <>
       <header className="topbar">
@@ -1897,6 +2017,12 @@ function Detail({
             )}
           </div>
         </article>
+      </section>
+      <section className="detail-preview">
+        <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
+        <div className="detail-preview-scroll">
+          <QuotePaper form={form} items={items} totals={totals} group={group} />
+        </div>
       </section>
     </>
   );

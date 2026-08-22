@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <title>กำลังเปิดระบบใบเสนอราคา</title>
+    <script>
+      (function () {
+        var base = '/fi-quotation-web';
+        var route = window.location.pathname.slice(base.length) + window.location.search + window.location.hash;
+        window.sessionStorage.setItem('fi-quotation-web-route', route || '/');
+        window.location.replace(base + '/');
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
