@@ -76,6 +76,11 @@ function cycles_(q) {
     ? q.billing_cycles.join(", ")
     : q.billing_cycle || "-";
 }
+function serviceName_(item) {
+  return item.service_name === "Setup"
+    ? "Setup\n• ทะเบียนรถ\n• ข้อมูลทั่วไป"
+    : item.service_name;
+}
 function cell_(cell, text, options) {
   options = options || {};
   cell.clear();
@@ -274,7 +279,7 @@ function priceSection_(body, q, all, category, number) {
     cell_(row.appendTableCell(), index + 1, {
       align: DocumentApp.HorizontalAlignment.RIGHT,
     });
-    cell_(row.appendTableCell(), item.service_name, { bold: true });
+    cell_(row.appendTableCell(), serviceName_(item), { bold: true });
     cell_(
       row.appendTableCell(),
       isRecurring
@@ -464,7 +469,6 @@ function generatePdf_(snapshot) {
   customer_(body, q);
   priceSection_(body, q, all, "RECURRING", 1);
   priceSection_(body, q, all, "ONE_TIME", 2);
-  keyFacts_(body, q);
   footer_(body, q, 1);
   body.appendPageBreak();
   documentHeader_(body, q, false);

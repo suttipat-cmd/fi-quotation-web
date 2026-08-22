@@ -58,6 +58,10 @@ const paymentOptions = [
   "ค่าบริการชำระราย 6 เดือน",
   "ค่าบริการชำระรายปี",
 ];
+const setupChildServices = ["Setup ทะเบียนรถ", "Setup ข้อมูลทั่วไป"];
+const setupLabel = "Setup";
+const customFormLabel = "Custom Form";
+const onsiteTrainingLabel = "Onsite Training";
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (days: number) => {
   const date = new Date();
@@ -121,20 +125,50 @@ const makeItem = (category: Category): Item => ({
   discount_type: "NONE",
   discount_value: 0,
 });
+const makeRecurringItem = (): Item => ({
+  ...makeItem("RECURRING"),
+  service_name: "ค่าบริการประจำ",
+  quantity: 1,
+  unit: "แพ็กเกจ",
+});
+const makeServiceItem = (service: Service, quantity = 1): Item => ({
+  ...makeItem("ONE_TIME"),
+  service_id: service.id,
+  service_name: service.name,
+  billing_type: service.default_billing_type,
+  calculation_mode: service.default_calculation_mode,
+  quantity,
+  unit: service.default_unit || "ครั้ง",
+});
+const makeSetupItem = (services: Service[]): Item => {
+  const source = services.find((service) =>
+    setupChildServices.includes(service.name),
+  );
+  return {
+    ...makeItem("ONE_TIME"),
+    service_name: setupLabel,
+    billing_type: source?.default_billing_type || "ONE_TIME",
+    calculation_mode: "FIXED_PRICE",
+    quantity: 1,
+    unit: source?.default_unit || "ครั้ง",
+  };
+};
 const defaultItems = (services: Service[]) => [
-  makeItem("RECURRING"),
+  makeRecurringItem(),
+  makeSetupItem(services),
   ...services
-    .filter((service) => service.default_category === "ONE_TIME")
-    .map((service) => ({
-      ...makeItem("ONE_TIME"),
-      service_id: service.id,
-      service_name: service.name,
-      billing_type: service.default_billing_type,
-      calculation_mode: service.default_calculation_mode,
-      quantity: service.name === "Onsite Training" ? 0 : 1,
-      unit: service.default_unit || "ครั้ง",
-      unit_price_satang: service.suggested_price_satang || 0,
-    })),
+    .filter(
+      (service) =>
+        service.default_category === "ONE_TIME" &&
+        !setupChildServices.includes(service.name) &&
+        service.name !== customFormLabel,
+    )
+    .map((service) =>
+      makeServiceItem(
+        service,
+        service.name === onsiteTrainingLabel ? 0 : 1,
+      ),
+    ),
 ];
 const formFromQuote = (quote: Quote): Form => ({
   customer_name: quote.customer_name || "",
@@ -470,9 +504,24 @@ function App() {
         billing_type: service.default_billing_type,
         calculation_mode: service.default_calculation_mode,
         unit: service.default_unit || "",
-        unit_price_satang: service.suggested_price_satang || 0,
+        unit_price_satang: 0,
       });
   };
+  const addCustomForm = () => {
+    const customForm = services.find(
+      (service) => service.name === customFormLabel,
+    );
+    if (!customForm) {
+      notify("ไม่พบรายการ Custom Form ในรายการบริการ", "error");
+      return;
+    }
+    setItems((current) => [
+      ...current,
+      makeServiceItem(customForm, 1),
+    ]);
+  };
+  const removeItem = (id: string) =>
+    setItems((current) => current.filter((item) => item.id !== id));
   async function startEdit(quote: Quote) {
     if (quote.status !== "DRAFT") {
       notify("แก้ไขได้เฉพาะใบเสนอราคาฉบับร่าง", "error");
@@ -488,10 +537,35 @@ function App() {
       const saved = result.data || [];
       const recurring =
         saved.find((item) => item.category === "RECURRING") ||
-        makeItem("RECURRING");
+        makeRecurringItem();
       const savedOneTime = saved.filter((item) => item.category === "ONE_TIME");
-      const allOneTime = services
-        .filter((service) => service.default_category === "ONE_TIME")
+      const savedSetup = savedOneTime.find(
+        (item) => item.service_name === setupLabel,
+      );
+      const legacySetup = savedOneTime.filter((item) =>
+        setupChildServices.includes(item.service_name),
+      );
+      const setup = savedSetup
+        ? { ...savedSetup, id: savedSetup.id || crypto.randomUUID() }
+        : legacySetup.length
+          ? {
+              ...makeSetupItem(services),
+              unit_price_satang: legacySetup.reduce(
+                (sum, item) => sum + Number(item.line_net_satang || 0),
+                0,
+              ),
+              quantity: legacySetup.some((item) => Number(item.quantity) > 0)
+                ? 1
+                : 0,
+            }
+          : makeSetupItem(services);
+      const standardItems = services
+        .filter(
+          (service) =>
+            service.default_category === "ONE_TIME" &&
+            !setupChildServices.includes(service.name) &&
+            service.name !== customFormLabel,
+        )
         .map((service) => {
           const found = savedOneTime.find(
             (item) =>
@@ -500,21 +574,20 @@ function App() {
           );
           return found
             ? { ...found, id: found.id || crypto.randomUUID() }
-            : {
-                ...makeItem("ONE_TIME"),
-                service_id: service.id,
-                service_name: service.name,
-                billing_type: service.default_billing_type,
-                calculation_mode: service.default_calculation_mode,
-                quantity: service.name === "Onsite Training" ? 0 : 1,
-                unit: service.default_unit || "ครั้ง",
-                unit_price_satang: service.suggested_price_satang || 0,
-              };
+            : makeServiceItem(
+                service,
+                service.name === onsiteTrainingLabel ? 0 : 1,
+              );
         });
+      const customFormRows = savedOneTime
+        .filter((item) => item.service_name === customFormLabel)
+        .map((item) => ({ ...item, id: item.id || crypto.randomUUID() }));
       setForm(formFromQuote(quote));
       setItems([
         { ...recurring, id: recurring.id || crypto.randomUUID() },
-        ...allOneTime,
+        setup,
+        ...standardItems,
+        ...customFormRows,
       ]);
       setSelected(quote);
       setEditingId(quote.id);
@@ -837,7 +910,9 @@ function App() {
   return (
     <div className="app-shell">
       {nav}
-      <main className="work">
+      <main
+        className={`work ${view === "create" || view === "edit" ? "editor-work" : ""}`}
+      >
         {view === "dashboard" && (
           <Dashboard
             quotes={quotes}
@@ -865,6 +940,8 @@ function App() {
             onSave={() => void save()}
             onCancel={() => setView("dashboard")}
             onUpdate={updateItem}
+            onAddCustomForm={addCustomForm}
+            onRemoveItem={removeItem}
           />
         )}
         {view === "edit" && (
@@ -883,6 +960,8 @@ function App() {
               setView("detail");
             }}
             onUpdate={updateItem}
+            onAddCustomForm={addCustomForm}
+            onRemoveItem={removeItem}
           />
         )}
         {view === "detail" && selected && (
@@ -1045,6 +1124,8 @@ function Editor({
   onSave,
   onCancel,
   onUpdate,
+  onAddCustomForm,
+  onRemoveItem,
 }: {
   mode: "create" | "edit";
   form: Form;
@@ -1057,6 +1138,8 @@ function Editor({
   onSave: () => void;
   onCancel: () => void;
   onUpdate: (id: string, patch: Partial<Item>) => void;
+  onAddCustomForm: () => void;
+  onRemoveItem: (id: string) => void;
 }) {
   const patch = (value: Partial<Form>) => setForm({ ...form, ...value });
   return (
@@ -1159,9 +1242,11 @@ function Editor({
           <OneTimeItems
             items={items.filter((item) => item.category === "ONE_TIME")}
             onUpdate={onUpdate}
+            onAddCustomForm={onAddCustomForm}
+            onRemoveItem={onRemoveItem}
           />
           <Section title="ข้อมูลแพ็กเกจและเงื่อนไข">
-            <div className="two">
+            <div className="three">
               <Field label="จำนวนอ้างอิง">
                 <input
                   type="number"
@@ -1317,33 +1402,9 @@ function RecurringPlan({
   return (
     <Section title="ค่าบริการประจำ">
       <p className="muted section-note">
-        คิดราคาเป็นหนึ่งรายการ โดยเลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox
-        ด้านล่าง และไม่แยกแถวในใบเสนอราคา
+        เลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox โดยระบบจะแสดงเป็นราคา
+        ค่าบริการประจำหนึ่งรายการในใบเสนอราคา
       </p>
-      <div className="two">
-        <Field label="ชื่อแพ็กเกจ / ค่าบริการหลัก">
-          <input
-            value={item.service_name}
-            placeholder="เช่น ค่าบริการระบบ"
-            onChange={(event) =>
-              onUpdate(item.id, { service_name: event.target.value })
-            }
-          />
-        </Field>
-        <Field label="ราคา (บาท)">
-          <input
-            type="number"
-            min="0"
-            value={toBaht(item.unit_price_satang)}
-            onChange={(event) =>
-              onUpdate(item.id, {
-                unit_price_satang: fromBaht(event.target.value),
-                calculation_mode: "FIXED_PRICE",
-              })
-            }
-          />
-        </Field>
-      </div>
       <fieldset className="check-field">
         <legend>รอบชำระค่าบริการ</legend>
         <div className="check-grid">
@@ -1378,22 +1439,52 @@ function RecurringPlan({
           )}
         </div>
       </fieldset>
+      <Field label="ราคา (บาท)">
+        <input
+          type="number"
+          min="0"
+          placeholder="ระบุราคา"
+          value={item.unit_price_satang ? toBaht(item.unit_price_satang) : ""}
+          onChange={(event) =>
+            onUpdate(item.id, {
+              unit_price_satang: fromBaht(event.target.value),
+              calculation_mode: "FIXED_PRICE",
+            })
+          }
+        />
+      </Field>
     </Section>
   );
 }
 function OneTimeItems({
   items,
   onUpdate,
+  onAddCustomForm,
+  onRemoveItem,
 }: {
   items: Item[];
   onUpdate: (id: string, patch: Partial<Item>) => void;
+  onAddCustomForm: () => void;
+  onRemoveItem: (id: string) => void;
 }) {
+  const hasCustomForm = items.some(
+    (item) => item.service_name === customFormLabel,
+  );
   return (
     <Section title={categoryText("ONE_TIME")}>
       <div className="section-heading">
         <p className="muted">
-          แสดงทุกรายการจากรายการบริการ สามารถแก้ไขจำนวนและราคาได้
+          Setup มีทะเบียนรถและข้อมูลทั่วไปรวมอยู่ในรายการเดียว สามารถแก้ไขจำนวน
+          และราคาได้
         </p>
+        <button
+          className="small-button"
+          type="button"
+          disabled={hasCustomForm}
+          onClick={onAddCustomForm}
+        >
+          {hasCustomForm ? "เพิ่ม Custom Form แล้ว" : "+ เพิ่ม Custom Form"}
+        </button>
       </div>
       {items.map((item, index) => (
         <article className="item-editor" key={item.id}>
@@ -1402,6 +1493,9 @@ function OneTimeItems({
             <Field label="บริการ">
               <input value={item.service_name} readOnly />
             </Field>
+            {item.service_name === setupLabel && (
+              <p className="item-detail">รวม: ทะเบียนรถ และข้อมูลทั่วไป</p>
+            )}
             <div className="three">
               <Field label="จำนวน">
                 <input
@@ -1428,7 +1522,8 @@ function OneTimeItems({
                 <input
                   type="number"
                   min="0"
-                  value={toBaht(item.unit_price_satang)}
+                  placeholder="ระบุราคา"
+                  value={item.unit_price_satang ? toBaht(item.unit_price_satang) : ""}
                   onChange={(event) =>
                     onUpdate(item.id, {
                       unit_price_satang: fromBaht(event.target.value),
@@ -1444,6 +1539,15 @@ function OneTimeItems({
           </div>
           <div className="item-total">
             <strong>{money(itemTotal(item).net)}</strong>
+            {item.service_name === customFormLabel && (
+              <button
+                className="text-button danger-text"
+                type="button"
+                onClick={() => onRemoveItem(item.id)}
+              >
+                ลบ
+              </button>
+            )}
           </div>
         </article>
       ))}
@@ -1503,23 +1607,6 @@ function Preview({
           <div className="amount-text">
             <span>ยอดสุทธิรวมตามเงื่อนไข (ตัวอักษร)</span>
             <b>{thaiBaht(totals.net)}</b>
-          </div>
-          <div className="paper-key">
-            <div>
-              <span>จำนวนอ้างอิง</span>
-              <b>
-                {form.package_reference_quantity || "—"}{" "}
-                {form.package_reference_unit}
-              </b>
-            </div>
-            <div>
-              <span>ผู้ใช้งานที่รวม</span>
-              <b>{form.included_users || "—"} ผู้ใช้</b>
-            </div>
-            <div>
-              <span>รอบชำระ</span>
-              <b>{form.billing_cycles.join(", ") || "—"}</b>
-            </div>
           </div>
         </article>
         <article className="paper second">
@@ -1641,8 +1728,11 @@ function PriceBlock({
       ) : rows.length ? (
         rows.map((item, index) => (
           <div className="mini-row" key={item.id}>
-            <span>
+            <span className="service-cell">
               {index + 1}. {item.service_name}
+              {item.service_name === setupLabel && (
+                <small>ทะเบียนรถ · ข้อมูลทั่วไป</small>
+              )}
             </span>
             <span>
               {item.quantity} {item.unit}
