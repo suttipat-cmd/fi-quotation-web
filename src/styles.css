@@ -132,7 +132,7 @@ button:disabled {
 }
 .editor-work {
   height: 100vh;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
