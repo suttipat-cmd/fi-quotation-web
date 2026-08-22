@@ -1249,7 +1249,6 @@ function Dashboard({
         <div className="section-heading">
           <div>
             <h2>เอกสารล่าสุด</h2>
-            <p>แสดงเฉพาะเอกสารที่คุณมีสิทธิ์เข้าถึง</p>
           </div>
         </div>
         {quotes.length ? (
