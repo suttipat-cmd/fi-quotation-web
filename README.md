@@ -39,14 +39,21 @@ The `quotation-operations` Edge Function is already deployed. It verifies the ca
 1. Create a standalone Apps Script project using the Google account that should send mail and own Drive files.
 2. Copy `apps-script/Code.gs` into the project.
 3. Create a Google Drive folder for quotation PDFs.
-4. In **Project Settings > Script properties**, add:
+4. Upload the supplied Forward Insight PNG logo to Google Drive and copy its file ID.
+5. In **Project Settings > Script properties**, add:
 
 ```text
 DRIVE_FOLDER_ID=<the-folder-id>
 SCRIPT_SHARED_SECRET=<the-same-long-random-value-as-Supabase>
+LOGO_FILE_ID=<the-uploaded-logo-file-id>
+BANK_ACCOUNT_NAME=<account-name-to-display-on-the-PDF>
+BANK_NAME=<bank-name-to-display-on-the-PDF>
+BANK_ACCOUNT_NUMBER=<account-number-to-display-on-the-PDF>
 ```
 
-5. Deploy as **Web app**, execute as the owner, and grant access only as required for the Edge Function. Copy the `/exec` URL into `GOOGLE_APPS_SCRIPT_URL`.
+`LOGO_FILE_ID` and bank values can be changed later without editing code. The first two properties are required; the bank values are optional.
+
+6. Deploy a new **Web app version**, execute as the owner, and grant access only as required for the Edge Function. Copy the `/exec` URL into `GOOGLE_APPS_SCRIPT_URL`.
 
 ## Deploy web
 
