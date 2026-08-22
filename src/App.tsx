@@ -1874,6 +1874,10 @@ function QuotePaper({
           <h3>หมายเหตุ</h3>
           <p className="multiline">{form.notes || "-"}</p>
         </section>
+        <section className="document-payment-terms">
+          <h3>เงื่อนไขการชำระเงิน</h3>
+          <p className="multiline">{form.payment_terms || defaultPaymentTerms}</p>
+        </section>
         <section className="document-payment-info">
           <h3>ข้อมูลการชำระเงิน</h3>
           <p className="multiline">{company.payment}</p>
