@@ -1872,17 +1872,14 @@ function QuotePaper({
       <div className="document-footer-grid">
         <section className="document-notes">
           <h3>หมายเหตุ</h3>
-          {form.notes ? (
-            <p className="multiline">{form.notes}</p>
-          ) : (
-            <div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-          )}
+          {form.notes && <p className="multiline">{form.notes}</p>}
+          <div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
         </section>
         <section className="document-payment-terms">
           <h3>เงื่อนไขการชำระเงิน</h3>
