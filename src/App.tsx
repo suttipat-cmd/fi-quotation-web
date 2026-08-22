@@ -85,8 +85,8 @@ const customFormLabel = "Custom Form";
 const onsiteTrainingLabel = "Onsite Training";
 const company = {
   name: "บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด",
-  address:
-    "38 ซอย เฉลิมพระเกียรติ ร.9 ซ.42 ถนนเฉลิมพระเกียรติ ร.9 แขวงหนองบอน เขตประเวศ กรุงเทพมหานคร 10250",
+  addressLine1: "38 ซอย เฉลิมพระเกียรติ ร.9 ซ.42 ถนนเฉลิมพระเกียรติ ร.9",
+  addressLine2: "แขวงหนองบอน เขตประเวศ กรุงเทพมหานคร 10250",
   taxId: "0105565050099/สำนักงานใหญ่",
   payment:
     "ชื่อบัญชี บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด\nธ.ไทยพาณิชย์ (SCB) 015-465-8438",
@@ -1355,6 +1355,9 @@ function Editor({
           <button disabled={busy} onClick={onCancel}>
             ยกเลิก
           </button>
+          <button type="button" onClick={() => window.print()}>
+            พิมพ์
+          </button>
           <button className="primary" disabled={busy} onClick={onSave}>
             {busy && <Spinner />}
             {mode === "create" ? "บันทึกฉบับร่าง" : "บันทึกการแก้ไข"}
@@ -1539,19 +1542,11 @@ function Editor({
               </Field>
             </div>
           </Section>
-          <Section title="ข้อความในเอกสาร">
+          <Section title="หมายเหตุในเอกสาร">
             <Field label="หมายเหตุ">
               <textarea
                 value={form.notes}
                 onChange={(event) => patch({ notes: event.target.value })}
-              />
-            </Field>
-            <Field label="เงื่อนไขการชำระเงิน">
-              <textarea
-                value={form.payment_terms}
-                onChange={(event) =>
-                  patch({ payment_terms: event.target.value })
-                }
               />
             </Field>
           </Section>
@@ -1794,7 +1789,8 @@ function QuotePaper({
         <Brand />
         <div>
           <b>{company.name}</b>
-          <span>{company.address}</span>
+          <span>{company.addressLine1}</span>
+          <span>{company.addressLine2}</span>
           <span>เลขที่ประจำตัวผู้เสียภาษี {company.taxId}</span>
         </div>
       </div>
@@ -1845,33 +1841,35 @@ function QuotePaper({
         wht={form.wht_rate}
       />
       <div className="document-footer-grid">
-        <section className="payment-terms">
-          <h3>เงื่อนไขการชำระเงิน</h3>
-          <p className="multiline">{form.payment_terms}</p>
+        <section className="document-notes">
+          <h3>หมายเหตุ</h3>
+          <p className="multiline">
+            {form.notes || form.promotion_terms || "-"}
+          </p>
         </section>
-        <div className="document-supporting-info">
-          <section>
-            <h3>ข้อมูลการชำระเงิน</h3>
-            <p className="multiline">{company.payment}</p>
-          </section>
-          <section>
-            <h3>หมายเหตุ</h3>
-            <p className="multiline">
-              {form.notes || form.promotion_terms || "-"}
-            </p>
-          </section>
-        </div>
+        <section className="document-payment-info">
+          <h3>ข้อมูลการชำระเงิน</h3>
+          <p className="multiline">{company.payment}</p>
+        </section>
       </div>
       <div className="signatures compact-signatures">
         <div>
           <h3>ยืนยันรับข้อเสนอ</h3>
-          <span>ลงชื่อ ______________________________</span>
-          <span>วันที่ ______________________________</span>
+          <span>
+            <label>ลงชื่อ</label><i />
+          </span>
+          <span>
+            <label>วันที่</label><i />
+          </span>
         </div>
         <div>
           <h3>ผู้เสนอราคา</h3>
-          <span>ลงชื่อ {form.sales_name || "______________________"}</span>
-          <span>วันที่ {displayDate(form.issued_at)}</span>
+          <span>
+            <label>ลงชื่อ {form.sales_name || ""}</label><i />
+          </span>
+          <span>
+            <label>วันที่ {displayDate(form.issued_at)}</label><i />
+          </span>
         </div>
       </div>
     </article>
@@ -2044,6 +2042,9 @@ function Detail({
               สร้างฉบับแก้ไข
             </button>
           )}
+          <button type="button" onClick={() => window.print()}>
+            พิมพ์
+          </button>
           <button className="primary" disabled={busy} onClick={onPdf}>
             ยืนยันสร้าง PDF
           </button>

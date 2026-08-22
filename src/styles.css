@@ -819,10 +819,14 @@ button:disabled {
 }
 .document-title {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: end;
-  gap: 14px;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 3px;
   padding: 5px 0 4px;
+}
+.document-title > div {
+  justify-self: end;
+  text-align: right;
 }
 .document-title h2 {
   margin: 0;
@@ -836,10 +840,19 @@ button:disabled {
 }
 .document-title dl {
   display: grid;
-  grid-template-columns: repeat(3, minmax(42px, auto));
-  gap: 9px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
   margin: 0;
-  text-align: right;
+  padding: 3px 0;
+  border-top: 1px solid #d8e2ec;
+  border-bottom: 1px solid #d8e2ec;
+}
+.document-title dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px;
+  text-align: left;
 }
 .document-title dt,
 .document-title dd {
@@ -889,23 +902,31 @@ button:disabled {
   margin-top: 3px;
 }
 .quotation-paper .price-summary-card {
-  border: 1px solid #d3dfeb;
-  border-top: 2px solid #315f92;
-  padding: 3px 5px 4px;
-  background: #fbfdff;
+  border: 0;
+  border-top: 1px solid #8ca7c3;
+  padding: 3px 0 1px;
+  background: transparent;
 }
 .summary-kicker {
   display: block;
-  margin-bottom: 1px;
+  margin: 0 0 1px;
   color: #61748a;
   font-size: 7px;
   font-weight: 700;
-  letter-spacing: 0.03em;
+}
+.quotation-paper .price-summary-card p {
+  border-bottom: 0;
+  padding: 1px 0;
+}
+.quotation-paper .price-summary-card .net {
+  margin-top: 1px;
+  border-top: 1px solid #315f92;
+  border-bottom: 0;
 }
 .quotation-paper .price-summary-card .amount-in-words {
-  margin: 3px 0 0;
-  padding-top: 2px;
-  border-top: 1px dashed #cbd8e5;
+  margin: 1px 0 0;
+  padding-top: 1px;
+  border-top: 0;
   color: #586b80;
   font-size: 7.5px;
   text-align: right;
@@ -927,10 +948,7 @@ button:disabled {
   margin: 0;
   line-height: 1.25;
 }
-.document-supporting-info {
-  display: grid;
-  align-content: start;
-  gap: 5px;
+.document-payment-info {
   padding-left: 8px;
   border-left: 1px solid #d8e2ec;
 }
@@ -942,9 +960,20 @@ button:disabled {
 .compact-signatures h3 {
   margin: 0 0 8px;
   font-size: 8.5px;
+  text-align: center;
 }
 .compact-signatures span {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  border-bottom: 0;
+  padding: 1px 0;
   font-size: 8px;
+}
+.compact-signatures span i {
+  flex: 1;
+  min-width: 20px;
+  border-bottom: 1px dashed #8ea2b9;
 }
 .detail-grid {
   display: grid;
@@ -1215,5 +1244,57 @@ button:disabled {
     right: 16px;
     top: 15px;
     max-width: none;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  html,
+  body,
+  #root {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body * {
+    visibility: hidden !important;
+  }
+  .preview-panel,
+  .preview-panel * {
+    visibility: visible !important;
+  }
+  .preview-panel {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    display: block !important;
+    width: 210mm !important;
+    min-width: 210mm !important;
+  }
+  .preview-label {
+    display: none !important;
+  }
+  .preview-scroll {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .paper.quotation-paper {
+    box-sizing: border-box !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    aspect-ratio: auto !important;
   }
 }
