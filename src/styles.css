@@ -845,7 +845,7 @@ button:disabled {
   color: #19467d;
   font-size: 16px;
 }
-.document-title > div > span {
+.document-title > span {
   color: #718097;
   font-size: 7px;
   letter-spacing: 0.08em;
