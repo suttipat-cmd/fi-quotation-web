@@ -113,6 +113,15 @@ const displayDate = (value?: string) => {
   const [year, month, day] = String(value || "").split("-");
   return year && month && day ? `${day}-${month}-${year}` : "—";
 };
+const printQuotation = (documentNo?: string) => {
+  const previousTitle = document.title;
+  document.title = documentNo || "ใบเสนอราคา";
+  const restoreTitle = () => {
+    document.title = previousTitle;
+  };
+  window.addEventListener("afterprint", restoreTitle, { once: true });
+  window.print();
+};
 const edgeErrorMessage = async (error: unknown) => {
   const context = (error as { context?: { clone?: () => Response } })?.context;
   try {
@@ -1380,7 +1389,7 @@ function Editor({
           <button disabled={busy} onClick={onCancel}>
             ยกเลิก
           </button>
-          <button type="button" onClick={() => window.print()}>
+          <button type="button" onClick={() => printQuotation()}>
             พิมพ์
           </button>
           <button className="primary" disabled={busy} onClick={onSave}>
@@ -1478,38 +1487,6 @@ function Editor({
             onAddCustomForm={onAddCustomForm}
             onRemoveItem={onRemoveItem}
           />
-          <Section title="ข้อมูลแพ็กเกจและเงื่อนไข">
-            <div className="two">
-              <Field label="ผู้ใช้งานที่รวม">
-                <input
-                  type="number"
-                  min="0"
-                  value={form.included_users}
-                  onChange={(event) =>
-                    patch({ included_users: Number(event.target.value) })
-                  }
-                />
-              </Field>
-            </div>
-            <Field label="ค่าบริการเพิ่มเติม">
-              <textarea
-                value={form.additional_fees}
-                placeholder="ระบุเป็นข้อ ๆ"
-                onChange={(event) =>
-                  patch({ additional_fees: event.target.value })
-                }
-              />
-            </Field>
-            <Field label="โปรโมชันและเงื่อนไขพิเศษ">
-              <textarea
-                value={form.promotion_terms}
-                placeholder="ระบุสิทธิพิเศษหรือเงื่อนไขเพิ่มเติม"
-                onChange={(event) =>
-                  patch({ promotion_terms: event.target.value })
-                }
-              />
-            </Field>
-          </Section>
           <Section title="ส่วนลดและภาษี">
             <div className="two">
               <Field label="รูปแบบส่วนลด">
@@ -1868,9 +1845,7 @@ function QuotePaper({
       <div className="document-footer-grid">
         <section className="document-notes">
           <h3>หมายเหตุ</h3>
-          <p className="multiline">
-            {form.notes || form.promotion_terms || "-"}
-          </p>
+          <p className="multiline">{form.notes || "-"}</p>
         </section>
         <section className="document-payment-info">
           <h3>ข้อมูลการชำระเงิน</h3>
@@ -2067,7 +2042,7 @@ function Detail({
               สร้างฉบับแก้ไข
             </button>
           )}
-          <button type="button" onClick={() => window.print()}>
+          <button type="button" onClick={() => printQuotation(quote.document_no)}>
             พิมพ์
           </button>
           <button className="primary" disabled={busy} onClick={onPdf}>

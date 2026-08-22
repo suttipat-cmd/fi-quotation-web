@@ -782,6 +782,8 @@ button:disabled {
   padding: 1px 0;
 }
 .quotation-paper {
+  display: flex;
+  flex-direction: column;
   padding: 10px 17px;
   font-family: "Sarabun", "Noto Sans Thai", sans-serif;
   font-size: 8.5px;
@@ -841,9 +843,8 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin: 4px 0 0;
-  padding: 3px 0;
-  border-top: 1px solid #d8e2ec;
+  margin: 0;
+  padding: 4px 0 3px;
   border-bottom: 1px solid #d8e2ec;
 }
 .document-facts > div {
@@ -869,7 +870,6 @@ button:disabled {
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   gap: 10px;
   padding: 4px 0;
-  border-top: 1px solid #d8e2ec;
   border-bottom: 1px solid #d8e2ec;
 }
 .document-customer > div {
@@ -952,7 +952,7 @@ button:disabled {
   border-left: 1px solid #d8e2ec;
 }
 .compact-signatures {
-  margin-top: 4px;
+  margin-top: auto;
   padding-top: 3px;
   gap: 18px;
 }
@@ -1261,16 +1261,30 @@ button:disabled {
     overflow: visible !important;
     background: #fff !important;
   }
-  body * {
-    visibility: hidden !important;
+  .app-shell,
+  .work,
+  .editor,
+  .editor-work,
+  .detail-editor {
+    display: block !important;
+    width: 210mm !important;
+    min-width: 210mm !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
   }
-  .preview-panel,
-  .preview-panel * {
-    visibility: visible !important;
+  .sidebar,
+  .topbar,
+  .form-panel,
+  .preview-label,
+  .operation,
+  .toast {
+    display: none !important;
   }
   .preview-panel {
-    position: absolute !important;
-    inset: 0 auto auto 0 !important;
     display: block !important;
     width: 210mm !important;
     min-width: 210mm !important;
