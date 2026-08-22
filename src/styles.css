@@ -563,7 +563,18 @@ button:disabled {
   padding: 0 9px 12px 0;
   scrollbar-color: #9cb3cf transparent;
 }
+.preview-paper-frame {
+  position: relative;
+  overflow: hidden;
+}
+.preview-paper-scale {
+  width: 210mm;
+  height: 297mm;
+  transform-origin: top left;
+}
 .paper {
+  width: 210mm;
+  height: 297mm;
   background: #fff;
   box-shadow: 0 10px 24px #173c6b20;
   border-radius: 5px;
@@ -571,7 +582,7 @@ button:disabled {
   margin-bottom: 20px;
   color: #26354a;
   font-size: 9px;
-  aspect-ratio: 210 / 297;
+  aspect-ratio: auto;
   overflow: hidden;
 }
 .paper .brand img {
@@ -970,9 +981,22 @@ button:disabled {
   font-size: 8px;
 }
 .compact-signatures span i {
+  position: relative;
   flex: 1;
   min-width: 20px;
   border-bottom: 1px dashed #8ea2b9;
+}
+.compact-signatures span i b {
+  position: absolute;
+  right: 0;
+  bottom: -2px;
+  left: 0;
+  padding: 0 4px;
+  background: #fff;
+  color: #26384f;
+  font-style: normal;
+  font-weight: 400;
+  text-align: center;
 }
 .detail-grid {
   display: grid;
@@ -1225,7 +1249,7 @@ button:disabled {
     padding: 0;
     align-items: center;
   }
-  .paper {
+  .paper:not(.quotation-paper) {
     padding: 20px 18px;
   }
   .paper-key {
@@ -1298,6 +1322,13 @@ button:disabled {
     max-height: none !important;
     overflow: visible !important;
     padding: 0 !important;
+  }
+  .preview-paper-frame,
+  .preview-paper-scale {
+    width: 210mm !important;
+    height: 297mm !important;
+    overflow: visible !important;
+    transform: none !important;
   }
   .paper.quotation-paper {
     box-sizing: border-box !important;

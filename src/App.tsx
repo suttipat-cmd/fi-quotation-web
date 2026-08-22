@@ -60,6 +60,8 @@ type View = "dashboard" | "create" | "edit" | "detail";
 type Route = { view: View; id?: string };
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const A4_WIDTH_PX = (210 / 25.4) * 96;
+const A4_HEIGHT_PX = (297 / 25.4) * 96;
 const routeFromLocation = (): Route => {
   const path = window.location.pathname
     .replace(appBasePath, "")
@@ -1764,11 +1766,36 @@ function Preview({
   totals: any;
   group: (category: Category) => any;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const updateScale = () =>
+      setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   return (
     <aside className="preview-panel">
       <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
-      <div className="preview-scroll">
-        <QuotePaper form={form} items={items} totals={totals} group={group} />
+      <div className="preview-scroll" ref={scrollRef}>
+        <div
+          className="preview-paper-frame"
+          style={{
+            width: `${A4_WIDTH_PX * scale}px`,
+            height: `${A4_HEIGHT_PX * scale}px`,
+          }}
+        >
+          <div
+            className="preview-paper-scale"
+            style={{ transform: `scale(${scale})` }}
+          >
+            <QuotePaper form={form} items={items} totals={totals} group={group} />
+          </div>
+        </div>
       </div>
     </aside>
   );
@@ -1865,10 +1892,12 @@ function QuotePaper({
         <div>
           <h3>ผู้เสนอราคา</h3>
           <span>
-            <label>ลงชื่อ {form.sales_name || ""}</label><i />
+            <label>ลงชื่อ</label>
+            <i>{form.sales_name && <b>{form.sales_name}</b>}</i>
           </span>
           <span>
-            <label>วันที่ {displayDate(form.issued_at)}</label><i />
+            <label>วันที่</label>
+            <i><b>{displayDate(form.issued_at)}</b></i>
           </span>
         </div>
       </div>
