@@ -787,13 +787,19 @@ button:disabled {
   font-size: 8.5px;
   color: #26384f;
 }
+.document-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 1px 2px 4px;
+  border-bottom: 1px solid #bfd0e1;
+}
 .document-company {
   display: grid;
   grid-template-columns: 38px 1fr;
-  align-items: center;
+  align-items: start;
   gap: 8px;
-  padding: 1px 2px 4px;
-  border-bottom: 1px solid #bfd0e1;
   text-align: left;
 }
 .document-company .brand {
@@ -819,13 +825,6 @@ button:disabled {
 }
 .document-title {
   display: grid;
-  grid-template-columns: 1fr;
-  align-items: start;
-  gap: 3px;
-  padding: 5px 0 4px;
-}
-.document-title > div {
-  justify-self: end;
   text-align: right;
 }
 .document-title h2 {
@@ -838,30 +837,30 @@ button:disabled {
   font-size: 7px;
   letter-spacing: 0.08em;
 }
-.document-title dl {
+.document-facts {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 3px 0;
   border-top: 1px solid #d8e2ec;
   border-bottom: 1px solid #d8e2ec;
 }
-.document-title dl > div {
+.document-facts > div {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 4px;
   text-align: left;
 }
-.document-title dt,
-.document-title dd {
+.document-facts dt,
+.document-facts dd {
   margin: 0;
 }
-.document-title dt {
+.document-facts dt {
   color: #718097;
 }
-.document-title dd {
+.document-facts dd {
   color: #293b53;
   font-weight: 700;
 }

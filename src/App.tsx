@@ -3,6 +3,8 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import logo from "./assets/forward-insight-logo.png";
 
+declare const __APP_BUILD_ID__: string;
+
 type Category = "RECURRING" | "ONE_TIME";
 type Service = {
   id: string;
@@ -451,6 +453,29 @@ function App() {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+  useEffect(() => {
+    let cancelled = false;
+    const checkForNewBuild = async () => {
+      try {
+        const response = await fetch(
+          `${appBasePath}/version.json?cacheBust=${Date.now()}`,
+          { cache: "no-store" },
+        );
+        const latest = await response.json();
+        if (!cancelled && latest.build && latest.build !== __APP_BUILD_ID__) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("v", latest.build);
+          window.location.replace(url.toString());
+        }
+      } catch {
+        // A network issue must not block normal use of the app.
+      }
+    };
+    void checkForNewBuild();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -1785,35 +1810,35 @@ function QuotePaper({
 }) {
   return (
     <article className="paper quotation-paper">
-      <div className="document-company">
-        <Brand />
-        <div>
-          <b>{company.name}</b>
-          <span>{company.addressLine1}</span>
-          <span>{company.addressLine2}</span>
-          <span>เลขที่ประจำตัวผู้เสียภาษี {company.taxId}</span>
+      <div className="document-topline">
+        <div className="document-company">
+          <Brand />
+          <div>
+            <b>{company.name}</b>
+            <span>{company.addressLine1}</span>
+            <span>{company.addressLine2}</span>
+            <span>เลขที่ประจำตัวผู้เสียภาษี {company.taxId}</span>
+          </div>
         </div>
-      </div>
-      <div className="document-title">
-        <div>
+        <div className="document-title">
           <h2>ใบเสนอราคา</h2>
           <span>QUOTATION</span>
         </div>
-        <dl>
-          <div>
-            <dt>เลขที่</dt>
-            <dd>จะออกเมื่อบันทึก</dd>
-          </div>
-          <div>
-            <dt>วันที่</dt>
-            <dd>{displayDate(form.issued_at)}</dd>
-          </div>
-          <div>
-            <dt>ใช้ได้ถึง</dt>
-            <dd>{displayDate(form.valid_until)}</dd>
-          </div>
-        </dl>
       </div>
+      <dl className="document-facts">
+        <div>
+          <dt>เลขที่</dt>
+          <dd>จะออกเมื่อบันทึก</dd>
+        </div>
+        <div>
+          <dt>วันที่</dt>
+          <dd>{displayDate(form.issued_at)}</dd>
+        </div>
+        <div>
+          <dt>ใช้ได้ถึง</dt>
+          <dd>{displayDate(form.valid_until)}</dd>
+        </div>
+      </dl>
       <div className="document-customer">
         <div>
           <span>ลูกค้า</span>
