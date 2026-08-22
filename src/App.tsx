@@ -1938,39 +1938,41 @@ function PriceBlock({
         <span>{recurring ? "จำนวนรถ" : "จำนวน"}</span>
         <span>ราคา</span>
       </div>
-      {recurring ? (
-        <div className="mini-row">
-          <span className="service-cell">
-            {main?.service_name || softwareServiceLabel}
-            {form.recurring_addons.length > 0 && (
-              <small>{form.recurring_addons.join(", ")}</small>
-            )}
-          </span>
-          <span>{form.package_reference_quantity || "—"} คัน</span>
-          <b>{money(summary.subtotal)}</b>
-        </div>
-      ) : rows.length ? (
-        rows.map((item, index) => (
-          <div className="mini-row" key={item.id}>
+      <div className="price-rows">
+        {recurring ? (
+          <div className="mini-row">
             <span className="service-cell">
-              {index + 1}. {item.service_name}
-              {item.service_name === setupLabel && (
-                <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>
+              {main?.service_name || softwareServiceLabel}
+              {form.recurring_addons.length > 0 && (
+                <small>{form.recurring_addons.join(", ")}</small>
               )}
             </span>
-            <span>
-              {item.quantity} {item.unit}
-            </span>
-            <b>{money(itemTotal(item).net)}</b>
+            <span>{form.package_reference_quantity || "—"} คัน</span>
+            <b>{money(summary.subtotal)}</b>
           </div>
-        ))
-      ) : (
-        <div className="mini-row muted">
-          <span>ยังไม่มีรายการ</span>
-          <span>—</span>
-          <b>—</b>
-        </div>
-      )}
+        ) : rows.length ? (
+          rows.map((item, index) => (
+            <div className="mini-row" key={item.id}>
+              <span className="service-cell">
+                {index + 1}. {item.service_name}
+                {item.service_name === setupLabel && (
+                  <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>
+                )}
+              </span>
+              <span>
+                {item.quantity} {item.unit}
+              </span>
+              <b>{money(itemTotal(item).net)}</b>
+            </div>
+          ))
+        ) : (
+          <div className="mini-row muted">
+            <span>ยังไม่มีรายการ</span>
+            <span>—</span>
+            <b>—</b>
+          </div>
+        )}
+      </div>
       <div className="price-summary price-summary-card">
         <span className="summary-kicker">สรุปค่าบริการ</span>
         <p>
