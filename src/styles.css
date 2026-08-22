@@ -782,7 +782,7 @@ button:disabled {
   padding: 1px 0;
 }
 .quotation-paper {
-  padding: 13px 17px;
+  padding: 10px 17px;
   font-family: "Sarabun", "Noto Sans Thai", sans-serif;
   font-size: 8.5px;
   color: #26384f;
@@ -792,7 +792,7 @@ button:disabled {
   grid-template-columns: 38px 1fr;
   align-items: center;
   gap: 8px;
-  padding: 1px 2px 6px;
+  padding: 1px 2px 4px;
   border-bottom: 1px solid #bfd0e1;
   text-align: left;
 }
@@ -822,7 +822,7 @@ button:disabled {
   grid-template-columns: 1fr auto;
   align-items: end;
   gap: 14px;
-  padding: 7px 0 6px;
+  padding: 5px 0 4px;
 }
 .document-title h2 {
   margin: 0;
@@ -856,7 +856,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   gap: 10px;
-  padding: 6px 0;
+  padding: 4px 0;
   border-top: 1px solid #d8e2ec;
   border-bottom: 1px solid #d8e2ec;
 }
@@ -874,7 +874,7 @@ button:disabled {
   line-height: 1.25;
 }
 .quotation-paper .price-block {
-  margin: 7px 0;
+  margin: 5px 0;
 }
 .quotation-paper .price-title h3 {
   font-size: 9.5px;
@@ -886,7 +886,7 @@ button:disabled {
 }
 .quotation-paper .price-summary {
   width: 46%;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 .quotation-paper .price-summary-card {
   border: 1px solid #d3dfeb;
@@ -914,8 +914,8 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
   gap: 10px;
-  margin-top: 7px;
-  padding-top: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
   border-top: 1px solid #cbd8e5;
 }
 .document-footer-grid h3 {
@@ -935,8 +935,8 @@ button:disabled {
   border-left: 1px solid #d8e2ec;
 }
 .compact-signatures {
-  margin-top: 7px;
-  padding-top: 6px;
+  margin-top: 4px;
+  padding-top: 3px;
   gap: 18px;
 }
 .compact-signatures h3 {
