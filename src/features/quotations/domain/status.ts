@@ -7,5 +7,7 @@ export const quotationActions = (status: QuoteStatus) => ({
   canAccept: status === "READY",
   canCreateRevision: ["READY", "ACCEPTED", "EXPIRED"].includes(status),
   canCancel: ["DRAFT", "READY", "ACCEPTED", "EXPIRED"].includes(status),
-  canPrint: status === "READY" || status === "ACCEPTED",
+  // Printing is a local browser action and must remain available for reviewing
+  // both draft and completed quotations from the detail page.
+  canPrint: true,
 });
