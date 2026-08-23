@@ -904,14 +904,14 @@ button:disabled {
   padding-bottom: 8px;
 }
 .quotation-paper .price-block + .price-block {
-  margin-top: 16px;
+  margin-top: 12px;
   padding-top: 0;
 }
 .quotation-paper .recurring-price-block {
-  min-height: 132px;
+  min-height: 108px;
 }
 .quotation-paper .one-time-price-block {
-  min-height: 164px;
+  min-height: 152px;
 }
 .quotation-paper .price-title h3 {
   font-size: 12.5px;
@@ -992,7 +992,7 @@ button:disabled {
     "notes notes"
     "terms payment";
   gap: 0;
-  margin-top: 8px;
+  margin-top: 10px;
   padding: 0;
   border-top: 1px solid #b8cbdf;
 }
@@ -1020,6 +1020,11 @@ button:disabled {
   padding-right: 0 !important;
   border-bottom: 1px solid #b8cbdf;
 }
+.document-notes .multiline {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
 .document-payment-terms {
   grid-area: terms;
   padding-left: 0 !important;
@@ -1035,6 +1040,9 @@ button:disabled {
   flex-direction: column;
   justify-content: space-between;
   margin-top: 8px;
+}
+.document-notes .multiline + .blank-note-lines {
+  margin-top: 0;
 }
 .blank-note-lines i {
   display: block;

@@ -1812,6 +1812,10 @@ function QuotePaper({
   totals: any;
   group: (category: Category) => any;
 }) {
+  const usedNoteLines = form.notes
+    .split(/\r?\n/)
+    .filter((line) => line.trim()).length;
+  const remainingNoteLines = Math.max(0, 5 - usedNoteLines);
   return (
     <article className="paper quotation-paper">
       <div className="document-topline">
@@ -1874,11 +1878,9 @@ function QuotePaper({
           <h3>หมายเหตุ</h3>
           {form.notes && <p className="multiline">{form.notes}</p>}
           <div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
+            {Array.from({ length: remainingNoteLines }, (_, index) => (
+              <i key={index} />
+            ))}
           </div>
         </section>
         <section className="document-payment-terms">
