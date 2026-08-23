@@ -43,20 +43,33 @@ Deno.serve(async (req) => {
     const secret = Deno.env.get('GOOGLE_APPS_SCRIPT_SHARED_SECRET')
     if (!scriptUrl || !secret) return json({ message: 'ยังไม่ได้ตั้งค่า Google Apps Script สำหรับสร้าง PDF และส่งอีเมล' }, 422)
     if (payload.action === 'generate_pdf') {
+      if (quote.status !== 'DRAFT') return json({ message: 'สร้าง PDF ได้เฉพาะใบเสนอราคาฉบับร่างเท่านั้น' }, 409)
       if (existing?.pdf_drive_url) return json({ message: 'ใช้ไฟล์ PDF ที่สร้างไว้แล้ว', pdf_drive_url: existing.pdf_drive_url, reused: true })
       const snapshot = { quotation: quote, items: items || [] }
       const result = await callAppsScript(scriptUrl, { action: 'generate_pdf', secret, snapshot })
       const { error: revisionError } = await adminDb.from('quotation_revisions').upsert({ quotation_id: quote.id, revision_no: quote.revision_no, snapshot, pdf_drive_file_id: result.fileId, pdf_drive_url: result.url, pdf_generated_at: new Date().toISOString(), generated_by: user.id }, { onConflict: 'quotation_id,revision_no' })
       if (revisionError) throw revisionError
-      await adminDb.from('quotations').update({ status: quote.status === 'DRAFT' ? 'READY' : quote.status, updated_by: user.id }).eq('id', quote.id)
-      await adminDb.from('audit_logs').insert({ quotation_id: quote.id, actor_id: user.id, action: 'PDF_GENERATED', metadata: { drive_file_id: result.fileId } })
-      return json({ message: 'สร้าง PDF เรียบร้อยแล้ว', pdf_drive_url: result.url })
+      const { data: confirmedQuote, error: quoteError } = await adminDb
+        .from('quotations')
+        .update({ status: 'READY', updated_by: user.id })
+        .eq('id', quote.id)
+        .eq('status', 'DRAFT')
+        .select('id')
+        .maybeSingle()
+      if (quoteError) throw quoteError
+      if (!confirmedQuote) throw new Error('สถานะใบเสนอราคาเปลี่ยนระหว่างการสร้าง PDF กรุณาตรวจสอบเอกสารอีกครั้ง')
+      const { error: auditError } = await adminDb.from('audit_logs').insert({ quotation_id: quote.id, actor_id: user.id, action: 'PDF_GENERATED', metadata: { drive_file_id: result.fileId } })
+      if (auditError) throw auditError
+      return json({ message: 'สร้าง PDF และยืนยันเอกสารเรียบร้อยแล้ว', pdf_drive_url: result.url, status: 'READY' })
     }
     if (payload.action === 'send_email') {
+      if (!['READY', 'ACCEPTED'].includes(quote.status)) return json({ message: 'ส่งอีเมลได้เฉพาะใบเสนอราคาที่ยืนยันแล้วหรือตอบรับแล้ว' }, 409)
       if (!existing?.pdf_drive_file_id) return json({ message: 'กรุณาสร้างและยืนยัน PDF ก่อนส่งอีเมล' }, 422)
       await callAppsScript(scriptUrl, { action: 'send_email', secret, email: { to: payload.to || [], cc: payload.cc || [], bcc: payload.bcc || [], subject: payload.subject, message: payload.message }, pdfFileId: existing.pdf_drive_file_id })
-      await adminDb.from('email_logs').insert({ quotation_id: quote.id, revision_id: existing.id, recipient_to: payload.to || [], recipient_cc: payload.cc || [], recipient_bcc: payload.bcc || [], subject: payload.subject, message: payload.message, status: 'SENT', sent_by: user.id })
-      await adminDb.from('audit_logs').insert({ quotation_id: quote.id, actor_id: user.id, action: 'EMAIL_SENT', metadata: { revision: quote.revision_no } })
+      const { error: emailLogError } = await adminDb.from('email_logs').insert({ quotation_id: quote.id, revision_id: existing.id, recipient_to: payload.to || [], recipient_cc: payload.cc || [], recipient_bcc: payload.bcc || [], subject: payload.subject, message: payload.message, status: 'SENT', sent_by: user.id })
+      if (emailLogError) throw emailLogError
+      const { error: auditError } = await adminDb.from('audit_logs').insert({ quotation_id: quote.id, actor_id: user.id, action: 'EMAIL_SENT', metadata: { revision: quote.revision_no } })
+      if (auditError) throw auditError
       return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว' })
     }
     return json({ message: 'ไม่รองรับคำสั่งนี้' }, 400)

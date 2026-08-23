@@ -153,13 +153,18 @@ const categoryText = (category: Category) =>
     : "ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)";
 const statusText: Record<string, string> = {
   DRAFT: "ฉบับร่าง",
-  READY: "พร้อมส่ง",
-  SENT: "ส่งแล้ว",
+  READY: "ยืนยันแล้ว",
   ACCEPTED: "ตอบรับแล้ว",
-  REJECTED: "ปฏิเสธ",
   EXPIRED: "หมดอายุ",
   CANCELLED: "ยกเลิก",
 };
+const cancellationReasons = [
+  "ลูกค้าปฏิเสธข้อเสนอ",
+  "ลูกค้าเลื่อนหรือยกเลิกโครงการ",
+  "ข้อมูลในเอกสารไม่ถูกต้อง",
+  "ออกใบเสนอราคาซ้ำ",
+  "อื่น ๆ",
+];
 const initialForm = (salesName = ""): Form => ({
   customer_name: "",
   customer_address: "",
@@ -914,17 +919,33 @@ function App() {
       notify("บันทึกการแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
-  async function status(next: string) {
+  async function acceptQuotation() {
     if (!selected) return;
-    await run("กำลังเปลี่ยนสถานะ", async () => {
+    if (!window.confirm("ยืนยันว่าลูกค้าตอบรับใบเสนอราคานี้แล้วใช่หรือไม่?")) return;
+    await run("กำลังบันทึกการตอบรับ", async () => {
       const result = await supabase.rpc("change_quotation_status", {
         p_quotation_id: selected.id,
-        p_status: next,
+        p_status: "ACCEPTED",
       });
       if (result.error) throw result.error;
       setSelected(result.data);
       await load();
-      notify(`เปลี่ยนสถานะเป็น “${statusText[next]}” แล้ว`, "success");
+      notify("บันทึกการตอบรับเรียบร้อยแล้ว", "success");
+    });
+  }
+  async function cancelQuotation(reason: string, note: string) {
+    if (!selected) return;
+    if (!window.confirm("ยืนยันการยกเลิกใบเสนอราคานี้ใช่หรือไม่? การดำเนินการนี้จะทำให้เอกสารดูได้อย่างเดียว")) return;
+    await run("กำลังยกเลิกใบเสนอราคา", async () => {
+      const result = await supabase.rpc("cancel_quotation", {
+        p_quotation_id: selected.id,
+        p_reason: reason,
+        p_note: note || null,
+      });
+      if (result.error) throw result.error;
+      setSelected(result.data);
+      await load();
+      notify("ยกเลิกใบเสนอราคาเรียบร้อยแล้ว", "success");
     });
   }
   async function revision() {
@@ -979,16 +1000,9 @@ function App() {
             throw new Error(result.data?.message || "สร้าง PDF ไม่สำเร็จ");
           setSelected({
             ...selected,
-            status: "READY",
+            status: result.data?.status || "READY",
             pdf_drive_url: result.data.pdf_drive_url,
           });
-        } else {
-          const changed = await supabase.rpc("change_quotation_status", {
-            p_quotation_id: selected.id,
-            p_status: "SENT",
-          });
-          if (changed.error) throw changed.error;
-          setSelected(changed.data);
         }
         await load();
         notify(
@@ -1130,7 +1144,8 @@ function App() {
             onRevision={() => void revision()}
             onPdf={() => void documentAction("generate_pdf")}
             onEmail={() => void documentAction("send_email")}
-            onStatus={(next) => void status(next)}
+            onAccept={() => void acceptQuotation()}
+            onCancel={(reason, note) => void cancelQuotation(reason, note)}
           />
         )}
       </main>
@@ -1286,12 +1301,8 @@ function Dashboard({
         <Stat label="เอกสารทั้งหมด" value={quotes.length} />
         <Stat label="ฉบับร่าง" value={drafts} />
         <Stat
-          label="รอผล/ส่งแล้ว"
-          value={
-            quotes.filter(
-              (quote) => quote.status === "READY" || quote.status === "SENT",
-            ).length
-          }
+          label="ยืนยันแล้ว"
+          value={quotes.filter((quote) => quote.status === "READY").length}
         />
       </section>
       <section className="card table-card">
@@ -2058,7 +2069,8 @@ function Detail({
   onRevision,
   onPdf,
   onEmail,
-  onStatus,
+  onAccept,
+  onCancel,
 }: {
   quote: Quote;
   items: Item[];
@@ -2068,9 +2080,19 @@ function Detail({
   onRevision: () => void;
   onPdf: () => void;
   onEmail: () => void;
-  onStatus: (value: string) => void;
+  onAccept: () => void;
+  onCancel: (reason: string, note: string) => void;
 }) {
+  const [showCancellation, setShowCancellation] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellationNote, setCancellationNote] = useState("");
   const form = formFromQuote(quote);
+  const canCreateRevision = ["READY", "ACCEPTED", "EXPIRED"].includes(quote.status);
+  const canCancel = ["DRAFT", "READY", "ACCEPTED", "EXPIRED"].includes(quote.status);
+  const canSendEmail = ["READY", "ACCEPTED"].includes(quote.status);
+  const emailReady =
+    Boolean(quote.pdf_drive_url) &&
+    Boolean(quote.recipient_emails?.length || quote.contact_email);
   const totals = items.reduce(
     (sum, item) => {
       const value = itemTotal(item);
@@ -2115,27 +2137,25 @@ function Detail({
               แก้ไขฉบับร่าง
             </button>
           )}
-          {quote.status !== "DRAFT" && (
+          {canCreateRevision && (
             <button disabled={busy} onClick={onRevision}>
               สร้างฉบับแก้ไข
             </button>
           )}
-          <button type="button" onClick={() => printQuotation(quote.document_no)}>
-            พิมพ์
-          </button>
-          <button className="primary" disabled={busy} onClick={onPdf}>
-            ยืนยันสร้าง PDF
-          </button>
-          <button
-            disabled={
-              busy ||
-              !quote.pdf_drive_url ||
-              !(quote.recipient_emails?.length || quote.contact_email)
-            }
-            onClick={onEmail}
-          >
-            ยืนยันส่งอีเมล
-          </button>
+          {quote.status === "DRAFT" && (
+            <button className="primary" disabled={busy} onClick={onPdf}>
+              ยืนยันสร้าง PDF
+            </button>
+          )}
+          {canSendEmail && (
+            <button
+              disabled={busy || !emailReady}
+              title={!emailReady ? "ต้องมีไฟล์ PDF บน Google Drive และอีเมลผู้รับก่อน" : undefined}
+              onClick={onEmail}
+            >
+              ส่งอีเมล
+            </button>
+          )}
         </div>
       </header>
       <div className="editor detail-editor">
@@ -2170,39 +2190,82 @@ function Detail({
                 "ยังไม่ได้สร้าง PDF"
               )}
             </dd>
+            {quote.status === "CANCELLED" && (
+              <>
+                <dt>เหตุผลยกเลิก</dt>
+                <dd>{quote.cancellation_reason || "—"}</dd>
+                {quote.cancellation_note && (
+                  <>
+                    <dt>หมายเหตุ</dt>
+                    <dd>{quote.cancellation_note}</dd>
+                  </>
+                )}
+              </>
+            )}
           </dl>
           </Section>
-          <Section title="เปลี่ยนสถานะ">
+          <Section title="การดำเนินการ">
           <div className="status-actions">
-            {quote.status === "DRAFT" && (
-              <button disabled={busy} onClick={() => onStatus("READY")}>
-                พร้อมส่ง
+            {quote.status === "READY" && (
+              <button className="primary" disabled={busy} onClick={onAccept}>
+                บันทึกลูกค้าตอบรับ
               </button>
             )}
-            {quote.status === "READY" && (
-              <>
-                <button disabled={busy} onClick={() => onStatus("SENT")}>
-                  ส่งแล้ว
-                </button>
-                <button disabled={busy} onClick={() => onStatus("CANCELLED")}>
-                  ยกเลิก
-                </button>
-              </>
-            )}
-            {quote.status === "SENT" && (
-              <>
-                <button disabled={busy} onClick={() => onStatus("ACCEPTED")}>
-                  ลูกค้าตอบรับ
-                </button>
-                <button disabled={busy} onClick={() => onStatus("REJECTED")}>
-                  ลูกค้าปฏิเสธ
-                </button>
-                <button disabled={busy} onClick={() => onStatus("EXPIRED")}>
-                  หมดอายุ
-                </button>
-              </>
+            {canCancel && !showCancellation && (
+              <button disabled={busy} onClick={() => setShowCancellation(true)}>
+                ยกเลิกใบเสนอราคา
+              </button>
             )}
           </div>
+          {showCancellation && (
+            <div className="cancellation-form">
+              <label className="field">
+                <span>เหตุผลการยกเลิก <em>*</em></span>
+                <select
+                  value={cancellationReason}
+                  onChange={(event) => setCancellationReason(event.target.value)}
+                >
+                  <option value="">เลือกเหตุผล</option>
+                  {cancellationReasons.map((reason) => (
+                    <option value={reason} key={reason}>{reason}</option>
+                  ))}
+                </select>
+              </label>
+              {cancellationReason === "อื่น ๆ" && (
+                <label className="field">
+                  <span>หมายเหตุการยกเลิก <em>*</em></span>
+                  <textarea
+                    value={cancellationNote}
+                    onChange={(event) => setCancellationNote(event.target.value)}
+                    placeholder="ระบุเหตุผลเพิ่มเติม"
+                  />
+                </label>
+              )}
+              <div className="inline-actions">
+                <button type="button" disabled={busy} onClick={() => setShowCancellation(false)}>
+                  กลับ
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={
+                    busy ||
+                    !cancellationReason ||
+                    (cancellationReason === "อื่น ๆ" && !cancellationNote.trim())
+                  }
+                  onClick={() => onCancel(cancellationReason, cancellationNote)}
+                >
+                  ยืนยันยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+          {quote.status === "CANCELLED" && (
+            <p className="muted">เอกสารที่ยกเลิกแล้วดูรายละเอียดได้อย่างเดียว</p>
+          )}
+          {quote.status === "EXPIRED" && (
+            <p className="muted">เอกสารหมดอายุตามวันใช้ได้ถึง และสามารถยกเลิกเพื่อปิดรายการได้</p>
+          )}
           </Section>
         </section>
         <Preview form={form} items={items} totals={totals} group={group} />
