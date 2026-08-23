@@ -100,7 +100,16 @@ export type Quotation = {
   pdf_drive_url?: string | null;
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
+  list_items?: QuotationListItemSummary[];
   created_at?: string;
+};
+
+export type QuotationListItemSummary = {
+  category: Category;
+  service_name: string;
+  quantity: number | null;
+  unit: string | null;
+  line_net_satang: number | null;
 };
 
 export type QuotationTotals = {

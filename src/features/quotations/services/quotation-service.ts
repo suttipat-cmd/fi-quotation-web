@@ -98,3 +98,21 @@ export async function getQuotationItems(quotationId: string) {
     discount_value: Number(item.discount_value || 0),
   })) as Array<QuotationItem & { line_net_satang?: number | null }>;
 }
+
+export async function updateQuotationRecipientDetails(input: {
+  quotationId: string;
+  contactName: string;
+  contactPosition: string;
+  recipientEmails: string[];
+}) {
+  const result = await supabase.rpc("update_quotation_recipient_details", {
+    p_quotation_id: input.quotationId,
+    p_contact_name: input.contactName,
+    p_contact_position: input.contactPosition,
+    p_recipient_emails: input.recipientEmails,
+  });
+  if (result.error || !result.data) {
+    throw new Error(result.error?.message || "บันทึกข้อมูลผู้รับเอกสารไม่สำเร็จ");
+  }
+  return result.data as Quotation;
+}

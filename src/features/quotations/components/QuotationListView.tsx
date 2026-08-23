@@ -2,18 +2,52 @@ import { useMemo, useState } from "react";
 import { STATUS_TEXT } from "../constants";
 import QuotationGrid, { type QuotationListAction } from "./QuotationGrid";
 import type { QuoteStatus, Quotation } from "../types";
+import { onsiteTraining } from "../domain/list-summary";
 
-type DateFilters = {
-  issuedFrom: string;
-  issuedTo: string;
-  validFrom: string;
-  validTo: string;
-};
+type DateRange = { from: string; to: string };
 
 const STATUS_ORDER: QuoteStatus[] = ["DRAFT", "READY", "ACCEPTED", "EXPIRED", "CANCELLED"];
 
 const includesText = (value: unknown, query: string) =>
   String(value || "").toLocaleLowerCase("th-TH").includes(query);
+const isoDate = (date: Date) => date.toISOString().slice(0, 10);
+const monthRange = (offset = 0): DateRange => {
+  const date = new Date();
+  date.setMonth(date.getMonth() + offset, 1);
+  const from = new Date(date.getFullYear(), date.getMonth(), 1);
+  const to = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return { from: isoDate(from), to: isoDate(to) };
+};
+const yearRange = (offset = 0): DateRange => {
+  const year = new Date().getFullYear() + offset;
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+};
+const displayRange = (range: DateRange) =>
+  range.from || range.to ? `${range.from ? range.from.split("-").reverse().join("-") : "ไม่กำหนด"} – ${range.to ? range.to.split("-").reverse().join("-") : "ไม่กำหนด"}` : "ไม่กำหนดช่วงเวลา";
+
+function DateRangeModal({ range, onChange, onClose }: { range: DateRange; onChange: (range: DateRange) => void; onClose: () => void }) {
+  const [draft, setDraft] = useState(range);
+  const apply = () => { onChange(draft); onClose(); };
+  return (
+    <div className="date-range-overlay" role="presentation" onMouseDown={onClose}>
+      <section className="date-range-modal" role="dialog" aria-modal="true" aria-label="เลือกช่วงวันที่ออกเอกสาร" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="date-range-heading"><div><strong>เลือกช่วงเวลา</strong><small>อ้างอิงจากวันที่ออกเอกสาร</small></div><button type="button" aria-label="ปิด" onClick={onClose}>×</button></div>
+        <div className="date-presets">
+          <button type="button" onClick={() => setDraft({ from: isoDate(new Date()), to: isoDate(new Date()) })}>วันนี้</button>
+          <button type="button" onClick={() => setDraft(monthRange())}>เดือนนี้</button>
+          <button type="button" onClick={() => setDraft(monthRange(-1))}>เดือนที่แล้ว</button>
+          <button type="button" onClick={() => setDraft(yearRange())}>ปีนี้</button>
+          <button type="button" onClick={() => setDraft(yearRange(-1))}>ปีที่แล้ว</button>
+        </div>
+        <div className="date-range-fields">
+          <label><span>จากวันที่</span><input type="date" value={draft.from} onChange={(event) => setDraft({ ...draft, from: event.target.value })} /></label>
+          <label><span>ถึงวันที่</span><input type="date" value={draft.to} min={draft.from || undefined} onChange={(event) => setDraft({ ...draft, to: event.target.value })} /></label>
+        </div>
+        <div className="date-range-actions"><button type="button" className="text-button" onClick={() => setDraft({ from: "", to: "" })}>ล้างค่า</button><span /><button type="button" onClick={onClose}>ยกเลิก</button><button type="button" className="primary" onClick={apply}>ใช้ตัวกรอง</button></div>
+      </section>
+    </div>
+  );
+}
 
 export default function QuotationListView({
   quotes,
@@ -33,17 +67,24 @@ export default function QuotationListView({
   onAction: (quote: Quotation, action: QuotationListAction) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [sales, setSales] = useState("");
+  const [sales, setSales] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<QuoteStatus[]>([]);
-  const [dates, setDates] = useState<DateFilters>({ issuedFrom: "", issuedTo: "", validFrom: "", validTo: "" });
+  const [services, setServices] = useState<string[]>([]);
+  const [onsite, setOnsite] = useState<"" | "WITH" | "WITHOUT">("");
+  const [dateRange, setDateRange] = useState<DateRange>({ from: "", to: "" });
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const normalizedSearch = search.trim().toLocaleLowerCase("th-TH");
-  const hasFilters = Boolean(normalizedSearch || sales || statuses.length || Object.values(dates).some(Boolean));
+  const hasFilters = Boolean(normalizedSearch || sales.length || statuses.length || services.length || onsite || dateRange.from || dateRange.to);
   const salesPeople = useMemo(
     () => [...new Set(quotes.map((quote) => quote.sales_name?.trim()).filter(Boolean))].sort((a, b) => a!.localeCompare(b!, "th")) as string[],
     [quotes],
   );
   const counts = useMemo(
     () => Object.fromEntries(STATUS_ORDER.map((status) => [status, quotes.filter((quote) => quote.status === status).length])) as Record<QuoteStatus, number>,
+    [quotes],
+  );
+  const serviceOptions = useMemo(
+    () => [...new Set(quotes.flatMap((quote) => quote.recurring_addons || []))].sort((a, b) => a.localeCompare(b, "th")),
     [quotes],
   );
   const filteredQuotes = useMemo(
@@ -55,22 +96,26 @@ export default function QuotationListView({
         quote.contact_name,
       ].some((value) => includesText(value, normalizedSearch));
       const matchesStatus = !statuses.length || statuses.includes(quote.status);
-      const matchesSales = !sales || quote.sales_name === sales;
-      const matchesIssued = (!dates.issuedFrom || quote.issued_at >= dates.issuedFrom)
-        && (!dates.issuedTo || quote.issued_at <= dates.issuedTo);
-      const matchesValidity = (!dates.validFrom || quote.valid_until >= dates.validFrom)
-        && (!dates.validTo || quote.valid_until <= dates.validTo);
-      return matchesSearch && matchesStatus && matchesSales && matchesIssued && matchesValidity;
+      const matchesSales = !sales.length || sales.includes(quote.sales_name || "");
+      const matchesServices = !services.length || services.some((service) => quote.recurring_addons?.includes(service));
+      const hasOnsite = Boolean(onsiteTraining(quote)?.quantity);
+      const matchesOnsite = !onsite || (onsite === "WITH" ? hasOnsite : !hasOnsite);
+      const matchesIssued = (!dateRange.from || quote.issued_at >= dateRange.from)
+        && (!dateRange.to || quote.issued_at <= dateRange.to);
+      return matchesSearch && matchesStatus && matchesSales && matchesServices && matchesOnsite && matchesIssued;
     }),
-    [quotes, normalizedSearch, sales, statuses, dates],
+    [quotes, normalizedSearch, sales, statuses, services, onsite, dateRange],
   );
 
   const clearFilters = () => {
     setSearch("");
-    setSales("");
+    setSales([]);
     setStatuses([]);
-    setDates({ issuedFrom: "", issuedTo: "", validFrom: "", validTo: "" });
+    setServices([]);
+    setOnsite("");
+    setDateRange({ from: "", to: "" });
   };
+  const toggleValue = <T,>(value: T, current: T[], setValue: (next: T[]) => void) => setValue(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   const toggleStatus = (status?: QuoteStatus) => {
     if (!status) return setStatuses([]);
     setStatuses((current) => current.includes(status)
@@ -107,13 +152,7 @@ export default function QuotationListView({
               placeholder="เลขที่เอกสาร, ลูกค้า, ผู้เสนอราคา"
             />
           </label>
-          <label className="list-sales-filter">
-            <span>ผู้เสนอราคา</span>
-            <select value={sales} onChange={(event) => setSales(event.target.value)}>
-              <option value="">ทั้งหมด</option>
-              {salesPeople.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
+          <button type="button" className={`date-range-trigger${dateRange.from || dateRange.to ? " active" : ""}`} onClick={() => setDateRangeOpen(true)}><span>ช่วงวันที่ออกเอกสาร</span><strong>{displayRange(dateRange)}</strong></button>
           <div className="list-toolbar-actions">
             <span>แสดง {filteredQuotes.length} จาก {quotes.length} รายการ</span>
             <button type="button" className="text-button" disabled={!hasFilters} onClick={clearFilters}>ล้างตัวกรอง</button>
@@ -121,22 +160,21 @@ export default function QuotationListView({
         </div>
         <details className="quotation-advanced-filters">
           <summary>ตัวกรองเพิ่มเติม</summary>
-          <div className="list-date-filters">
-            <label><span>ออกเอกสารตั้งแต่</span><input type="date" value={dates.issuedFrom} onChange={(event) => setDates({ ...dates, issuedFrom: event.target.value })} /></label>
-            <label><span>ถึง</span><input type="date" value={dates.issuedTo} onChange={(event) => setDates({ ...dates, issuedTo: event.target.value })} /></label>
-            <label><span>ใช้ได้ถึงตั้งแต่</span><input type="date" value={dates.validFrom} onChange={(event) => setDates({ ...dates, validFrom: event.target.value })} /></label>
-            <label><span>ถึง</span><input type="date" value={dates.validTo} onChange={(event) => setDates({ ...dates, validTo: event.target.value })} /></label>
+          <div className="list-filter-groups">
+            <fieldset><legend>สถานะ</legend>{STATUS_ORDER.map((status) => <label key={status}><input type="checkbox" checked={statuses.includes(status)} onChange={() => toggleStatus(status)} />{STATUS_TEXT[status]}</label>)}</fieldset>
+            <fieldset><legend>ผู้เสนอราคา</legend>{salesPeople.length ? salesPeople.map((name) => <label key={name}><input type="checkbox" checked={sales.includes(name)} onChange={() => toggleValue(name, sales, setSales)} />{name}</label>) : <small>ยังไม่มีข้อมูล</small>}</fieldset>
+            <fieldset><legend>บริการหลัก</legend>{serviceOptions.length ? serviceOptions.map((service) => <label key={service}><input type="checkbox" checked={services.includes(service)} onChange={() => toggleValue(service, services, setServices)} />{service}</label>) : <small>ยังไม่มีข้อมูล</small>}</fieldset>
+            <fieldset><legend>Onsite Training</legend><label><input type="radio" name="onsite-filter" checked={!onsite} onChange={() => setOnsite("")} />ทั้งหมด</label><label><input type="radio" name="onsite-filter" checked={onsite === "WITH"} onChange={() => setOnsite("WITH")} />มีบริการ</label><label><input type="radio" name="onsite-filter" checked={onsite === "WITHOUT"} onChange={() => setOnsite("WITHOUT")} />ไม่มีบริการ</label></fieldset>
           </div>
         </details>
         {hasFilters && (
           <div className="list-filter-chips" aria-live="polite" aria-label="ตัวกรองที่ใช้งาน">
             {normalizedSearch && <button type="button" onClick={() => setSearch("")}>ค้นหา: {search.trim()} <span aria-hidden="true">×</span></button>}
-            {sales && <button type="button" onClick={() => setSales("")}>ผู้เสนอราคา: {sales} <span aria-hidden="true">×</span></button>}
+            {(dateRange.from || dateRange.to) && <button type="button" onClick={() => setDateRange({ from: "", to: "" })}>วันที่ออก: {displayRange(dateRange)} <span aria-hidden="true">×</span></button>}
+            {sales.length > 0 && <button type="button" onClick={() => setSales([])}>ผู้เสนอราคา: {sales.join(", ")} <span aria-hidden="true">×</span></button>}
             {statuses.length > 0 && <button type="button" onClick={() => setStatuses([])}>สถานะ: {statuses.map((status) => STATUS_TEXT[status]).join(", ")} <span aria-hidden="true">×</span></button>}
-            {dates.issuedFrom && <button type="button" onClick={() => setDates({ ...dates, issuedFrom: "" })}>ออกตั้งแต่: {dates.issuedFrom} <span aria-hidden="true">×</span></button>}
-            {dates.issuedTo && <button type="button" onClick={() => setDates({ ...dates, issuedTo: "" })}>ออกถึง: {dates.issuedTo} <span aria-hidden="true">×</span></button>}
-            {dates.validFrom && <button type="button" onClick={() => setDates({ ...dates, validFrom: "" })}>ใช้ได้ตั้งแต่: {dates.validFrom} <span aria-hidden="true">×</span></button>}
-            {dates.validTo && <button type="button" onClick={() => setDates({ ...dates, validTo: "" })}>ใช้ได้ถึง: {dates.validTo} <span aria-hidden="true">×</span></button>}
+            {services.length > 0 && <button type="button" onClick={() => setServices([])}>บริการ: {services.join(", ")} <span aria-hidden="true">×</span></button>}
+            {onsite && <button type="button" onClick={() => setOnsite("")}>Onsite Training: {onsite === "WITH" ? "มีบริการ" : "ไม่มีบริการ"} <span aria-hidden="true">×</span></button>}
           </div>
         )}
       </section>
@@ -161,6 +199,7 @@ export default function QuotationListView({
           <button type="button" onClick={clearFilters}>ล้างตัวกรอง</button>
         </div>
       ) : null}
+      {dateRangeOpen && <DateRangeModal range={dateRange} onChange={setDateRange} onClose={() => setDateRangeOpen(false)} />}
     </>
   );
 }

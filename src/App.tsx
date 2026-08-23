@@ -28,7 +28,7 @@ import {
 import { calculateCategoryTotals, calculateItemTotal, calculateQuotationTotals } from "./features/quotations/domain/calculator";
 import { documentAddonName, documentServiceName } from "./features/quotations/domain/document";
 import { quotationActions } from "./features/quotations/domain/status";
-import { getQuotationItems, saveQuotationDraft } from "./features/quotations/services/quotation-service";
+import { getQuotationItems, saveQuotationDraft, updateQuotationRecipientDetails } from "./features/quotations/services/quotation-service";
 import { quotationPdfBaseName, sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
 import { createPreviewPdf } from "./features/quotations/services/preview-pdf";
 import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
@@ -305,7 +305,7 @@ function App() {
         .order("sort_order"),
       supabase
         .from("quotations")
-        .select("*, quotation_revisions(pdf_drive_url, revision_no)")
+        .select("*, quotation_revisions(pdf_drive_url, revision_no), quotation_items(category, service_name, quantity, unit, line_net_satang)")
         .order("created_at", { ascending: false }),
     ]);
     setLoading(null);
@@ -325,6 +325,11 @@ function App() {
       setQuotes(
         (quotesResult.data || []).map((row: any) => ({
           ...row,
+          list_items: (row.quotation_items || []).map((item: any) => ({
+            ...item,
+            quantity: Number(item.quantity || 0),
+            line_net_satang: Number(item.line_net_satang || 0),
+          })),
           pdf_drive_url: row.quotation_revisions?.find(
             (revision: any) => revision.revision_no === row.revision_no,
           )?.pdf_drive_url,
@@ -413,6 +418,19 @@ function App() {
       setDetailItems(await getQuotationItems(quote.id));
       setSelected(quote);
       navigate("detail", quote.id);
+    });
+  }
+  async function saveRecipientDetails(input: { quote: Quote; contactName: string; contactPosition: string; recipientEmails: string[] }) {
+    await run("กำลังบันทึกข้อมูลผู้รับเอกสาร", async () => {
+      const saved = await updateQuotationRecipientDetails({
+        quotationId: input.quote.id,
+        contactName: input.contactName,
+        contactPosition: input.contactPosition,
+        recipientEmails: input.recipientEmails,
+      });
+      setSelected((current) => current?.id === saved.id ? { ...current, ...saved } : current);
+      await load();
+      notify("บันทึกข้อมูลผู้รับเอกสารเรียบร้อยแล้ว", "success");
     });
   }
   async function save() {
@@ -714,6 +732,7 @@ function App() {
             onPrint={() => void printSelectedQuotation()}
             onAccept={() => void acceptQuotation()}
             onCancel={(reason, note) => void cancelQuotation(reason, note)}
+            onSaveRecipients={(input) => void saveRecipientDetails(input)}
           />
         )}
         {view === "settings" && profile?.role === "ADMIN" && (
@@ -1615,6 +1634,73 @@ function PriceBlock({ category, form, items, summary }: { category: Item["catego
   );
 }
 
+function DetailForm({
+  quote,
+  items,
+  busy,
+  onSaveRecipients,
+}: {
+  quote: Quote;
+  items: Item[];
+  busy: boolean;
+  onSaveRecipients: (input: { quote: Quote; contactName: string; contactPosition: string; recipientEmails: string[] }) => void;
+}) {
+  const form = formFromQuotation(quote);
+  const recurring = items.find((item) => item.category === "RECURRING");
+  const [contactName, setContactName] = useState(form.contact_name);
+  const [contactPosition, setContactPosition] = useState(form.contact_position);
+  const [recipientEmails, setRecipientEmails] = useState(form.recipient_emails);
+  useEffect(() => {
+    setContactName(form.contact_name);
+    setContactPosition(form.contact_position);
+    setRecipientEmails(form.recipient_emails);
+  }, [quote.id, quote.contact_name, quote.contact_position, quote.contact_email, quote.recipient_emails]);
+  const recipientDirty = contactName !== form.contact_name
+    || contactPosition !== form.contact_position
+    || recipientEmails.join("|") !== form.recipient_emails.join("|");
+  return (
+    <>
+      <Section title="สถานะเอกสาร">
+        <div className="detail-status-row"><QuotationStatusBadge status={quote.status} /><strong>{money(quote.net_amount_satang ?? 0)}</strong><span>ยอดสุทธิทั้งเอกสาร</span></div>
+        {quote.pdf_drive_url && <a className="detail-pdf-link" target="_blank" rel="noreferrer" href={quote.pdf_drive_url}>เปิดไฟล์ PDF จาก Google Drive ↗</a>}
+        {quote.status === "CANCELLED" && <p className="detail-cancellation-note">ยกเลิก: {quote.cancellation_reason || "ไม่ระบุเหตุผล"}{quote.cancellation_note ? ` — ${quote.cancellation_note}` : ""}</p>}
+      </Section>
+      <Section title="ข้อมูลเอกสาร">
+        <div className="two"><Field label="วันที่ออกเอกสาร"><input readOnly value={displayDate(form.issued_at)} /></Field><Field label="ใช้ได้ถึง"><input readOnly value={displayDate(form.valid_until)} /></Field></div>
+        <Field label="ผู้เสนอราคา"><input readOnly value={form.sales_name} /></Field>
+      </Section>
+      <Section title="ข้อมูลลูกค้า">
+        <Field label="ชื่อลูกค้า"><input readOnly value={form.customer_name} /></Field>
+        <Field label="ที่อยู่"><textarea readOnly value={form.customer_address} /></Field>
+      </Section>
+      <Section title="ข้อมูลผู้รับเอกสาร">
+        <p className="section-note muted">แก้ไขได้ทุกสถานะ เพื่อใช้ส่งเอกสารหรือส่งอีเมลใหม่</p>
+        <div className="two"><Field label="ผู้รับ"><input value={contactName} onChange={(event) => setContactName(event.target.value)} /></Field><Field label="ตำแหน่ง"><input value={contactPosition} onChange={(event) => setContactPosition(event.target.value)} /></Field></div>
+        <EmailTags emails={recipientEmails} onChange={setRecipientEmails} />
+        <div className="recipient-save"><button className="primary" disabled={busy || !recipientDirty} onClick={() => onSaveRecipients({ quote, contactName, contactPosition, recipientEmails })}>{busy && <Spinner />}บันทึกข้อมูลผู้รับ</button></div>
+      </Section>
+      <Section title={SOFTWARE_SERVICE_LABEL}>
+        <fieldset className="check-field"><legend>รอบชำระค่าบริการ</legend><div className="check-grid">{PAYMENT_OPTIONS.map((option) => <label className="check-row" key={option}><input type="checkbox" checked={form.billing_cycles.includes(option)} disabled />{option}</label>)}</div></fieldset>
+        <fieldset className="check-field"><legend>บริการหลักที่รวมในแพ็กเกจ</legend><div className="check-grid">{form.recurring_addons.length ? form.recurring_addons.map((service) => <label className="check-row" key={service}><input type="checkbox" checked disabled />{service}</label>) : <span className="muted">ไม่ได้เลือกบริการเพิ่มเติม</span>}</div></fieldset>
+        <div className="two"><Field label="จำนวนรถ"><input readOnly value={`${form.package_reference_quantity || "—"} คัน`} /></Field><Field label="ราคารวม"><input readOnly value={money(recurring?.unit_price_satang || 0)} /></Field></div>
+      </Section>
+      <ReadOnlyOneTimeItems items={items.filter((item) => item.category === "ONE_TIME")} />
+      <CollapsibleSection title="ส่วนลดและภาษี" summary={`VAT ${form.vat_rate}% • หัก ณ ที่จ่าย ${form.wht_rate}%`}>
+        <div className="two"><Field label="รูปแบบส่วนลด"><input readOnly value={form.quotation_discount_type === "PERCENTAGE" ? "เปอร์เซ็นต์" : form.quotation_discount_type === "FIXED_AMOUNT" ? "จำนวนเงิน" : "ไม่มีส่วนลด"} /></Field><Field label="ส่วนลด"><input readOnly value={String(form.quotation_discount_value || 0)} /></Field><Field label="ภาษีมูลค่าเพิ่ม"><input readOnly value={`${form.vat_rate}%`} /></Field><Field label="หัก ณ ที่จ่าย"><input readOnly value={`${form.wht_rate}%`} /></Field></div>
+      </CollapsibleSection>
+      <CollapsibleSection title="เงื่อนไขการชำระเงิน" summary="ข้อความที่แสดงใน PDF"><Field label="เงื่อนไขการชำระเงิน"><textarea readOnly rows={5} value={form.payment_terms} /></Field></CollapsibleSection>
+      <Section title="หมายเหตุในเอกสาร"><Field label="หมายเหตุ"><textarea readOnly rows={9} value={form.notes} /></Field></Section>
+    </>
+  );
+}
+
+function ReadOnlyOneTimeItems({ items }: { items: Item[] }) {
+  return <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)">
+    <div className="one-time-editor-head" aria-hidden="true"><span /><span>รายการ</span><span>จำนวน</span><span>หน่วย</span><span>ราคา/หน่วย</span><span>ราคารวม</span></div>
+    <div className="one-time-editor-table">{items.map((item, index) => <article className="item-editor readonly-item" key={item.id}><b className="item-number">{index + 1}</b><div className="item-service"><Field label="บริการ" labelHidden><input readOnly value={item.service_name} /></Field>{item.service_name === SETUP_LABEL && <p className="item-detail">รวม: ทะเบียนรถ และข้อมูลทั่วไป</p>}</div><Field label="จำนวน" labelHidden><input readOnly value={String(item.quantity)} /></Field><Field label="หน่วย" labelHidden><input readOnly value={item.unit} /></Field>{item.service_name === ONSITE_TRAINING_LABEL ? <span className="item-empty-price">—</span> : <Field label="ราคา/หน่วย" labelHidden><input readOnly value={money(item.unit_price_satang)} /></Field>}<div className="item-total"><strong>{money(calculateItemTotal(item).net)}</strong></div></article>)}</div>
+  </Section>;
+}
+
 function Detail({
   quote,
   items,
@@ -1628,6 +1714,7 @@ function Detail({
   onPrint,
   onAccept,
   onCancel,
+  onSaveRecipients,
 }: {
   quote: Quote;
   items: Item[];
@@ -1641,6 +1728,7 @@ function Detail({
   onPrint: () => void;
   onAccept: () => void;
   onCancel: (reason: string, note: string) => void;
+  onSaveRecipients: (input: { quote: Quote; contactName: string; contactPosition: string; recipientEmails: string[] }) => void;
 }) {
   const [showCancellation, setShowCancellation] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
@@ -1662,22 +1750,22 @@ function Detail({
           <p className="muted">{quote.customer_name}</p>
         </div>
         <div className="actions">
-          <button disabled={busy} onClick={onBack}>
-            กลับรายการ
+          <button type="button" aria-label="กลับไปรายการใบเสนอราคา" title="กลับไปรายการใบเสนอราคา" disabled={busy} onClick={onBack}>
+            ←
           </button>
           {quote.status === "DRAFT" && (
             <button disabled={busy} onClick={onEdit}>
-              แก้ไขฉบับร่าง
+              แก้ไข
             </button>
           )}
           {actions.canCreateRevision && (
             <button disabled={busy} onClick={onRevision}>
-              สร้างฉบับแก้ไข
+              สร้างสำเนา
             </button>
           )}
           {quote.status === "DRAFT" && (
             <button className="primary" disabled={busy} onClick={onPdf}>
-              ยืนยันสร้าง PDF
+              สร้าง PDF
             </button>
           )}
           {actions.canSendEmail && (
@@ -1695,61 +1783,20 @@ function Detail({
             </button>
           )}
           {quote.status === "READY" && (
-            <button className="primary" disabled={busy} onClick={onAccept}>
-              บันทึกลูกค้าตอบรับ
+            <button className="accept-action" disabled={busy} onClick={onAccept}>
+              ตอบรับ
             </button>
           )}
           {actions.canCancel && !showCancellation && (
-            <button className="danger" disabled={busy} onClick={() => setShowCancellation(true)}>
-              ยกเลิกใบเสนอราคา
+            <button className="danger-text-action" disabled={busy} onClick={() => setShowCancellation(true)}>
+              ยกเลิก
             </button>
           )}
         </div>
       </header>
       <div className="editor detail-editor">
         <section className="form-panel">
-          <Section title="สถานะเอกสาร">
-          <QuotationStatusBadge status={quote.status} />
-          <h2 className="detail-total">{money(quote.net_amount_satang ?? 0)}</h2>
-          <p className="muted">ยอดสุทธิของเอกสาร</p>
-          <hr />
-          <dl>
-            <dt>ลูกค้า</dt>
-            <dd>{quote.customer_name}</dd>
-            <dt>ผู้ติดต่อ</dt>
-            <dd>{quote.contact_name || "—"}</dd>
-            <dt>ตำแหน่ง</dt>
-            <dd>{quote.contact_position || "—"}</dd>
-            <dt>อีเมล</dt>
-            <dd>
-              {Array.isArray(quote.recipient_emails) && quote.recipient_emails.length
-                ? quote.recipient_emails.join(", ")
-                : quote.contact_email || "—"}
-            </dd>
-            <dt>ไฟล์ PDF</dt>
-            <dd>
-              {quote.pdf_drive_url ? (
-                <a target="_blank" rel="noreferrer" href={quote.pdf_drive_url}>
-                  เปิดไฟล์จาก Google Drive
-                </a>
-              ) : (
-                "ยังไม่ได้สร้าง PDF"
-              )}
-            </dd>
-            {quote.status === "CANCELLED" && (
-              <>
-                <dt>เหตุผลยกเลิก</dt>
-                <dd>{quote.cancellation_reason || "—"}</dd>
-                {quote.cancellation_note && (
-                  <>
-                    <dt>หมายเหตุ</dt>
-                    <dd>{quote.cancellation_note}</dd>
-                  </>
-                )}
-              </>
-            )}
-          </dl>
-          </Section>
+          <DetailForm quote={quote} items={items} busy={busy} onSaveRecipients={onSaveRecipients} />
           {showCancellation && (
             <Section title="ยืนยันการยกเลิกใบเสนอราคา">
             <div className="cancellation-form">

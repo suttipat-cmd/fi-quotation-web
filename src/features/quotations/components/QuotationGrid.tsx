@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   CellStyleModule,
@@ -16,6 +16,7 @@ import { AgGridProvider, AgGridReact } from "ag-grid-react";
 import { displayDate, money } from "../../../lib/format";
 import { QuotationStatusBadge } from "../../../components/ui/QuotationStatusBadge";
 import { quotationActions } from "../domain/status";
+import { categoryNetAmount, onsiteTraining } from "../domain/list-summary";
 import type { Quotation } from "../types";
 
 export type QuotationListAction = "view" | "edit" | "email" | "accept" | "revision";
@@ -46,7 +47,7 @@ const quotationGridTheme = themeQuartz.withParams({
 });
 
 const revisionLabel = (revisionNo: number) =>
-  revisionNo > 0 ? `ฉบับแก้ไข ${String(revisionNo).padStart(2, "0")}` : null;
+  revisionNo > 0 ? `(${revisionNo})` : null;
 
 const THAI_GRID_TEXT = {
   page: "หน้า",
@@ -73,6 +74,7 @@ function RowActions({
   onAction: (quote: Quotation, action: QuotationListAction) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const actions = quotationActions(quote.status);
   const recipientEmails = Array.isArray(quote.recipient_emails)
@@ -85,10 +87,29 @@ function RowActions({
     onOpenChange(false);
     onAction(quote, action);
   };
+  const placeMenu = () => {
+    const bounds = triggerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const width = 190;
+    const height = 190;
+    const left = Math.max(12, Math.min(bounds.right - width, window.innerWidth - width - 12));
+    const top = bounds.bottom + height + 8 > window.innerHeight
+      ? Math.max(12, bounds.top - height - 8)
+      : bounds.bottom + 8;
+    setPosition({ top, left });
+  };
+  useLayoutEffect(() => {
+    if (!open) return;
+    placeMenu();
+    window.addEventListener("resize", placeMenu);
+    window.addEventListener("scroll", placeMenu, true);
+    return () => {
+      window.removeEventListener("resize", placeMenu);
+      window.removeEventListener("scroll", placeMenu, true);
+    };
+  }, [open]);
   const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    setPosition({ top: bounds.bottom + 6, left: Math.max(12, bounds.right - 220) });
     onOpenChange(!open);
   };
 
@@ -100,6 +121,7 @@ function RowActions({
     >
       <button
         type="button"
+        ref={triggerRef}
         className="grid-action-trigger"
         aria-label={`การดำเนินการ ${quote.document_no}`}
         aria-expanded={open}
@@ -113,7 +135,7 @@ function RowActions({
           <button type="button" className="grid-action-backdrop" aria-label="ปิดเมนูการดำเนินการ" onClick={() => onOpenChange(false)} />
           <div className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
           <button type="button" role="menuitem" onClick={() => choose("view")}>ดูรายละเอียด</button>
-          {actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}>แก้ไขฉบับร่าง</button>}
+          {actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}>แก้ไข</button>}
           {actions.canSendEmail && (
             <button
               type="button"
@@ -125,8 +147,8 @@ function RowActions({
               ส่งอีเมล
             </button>
           )}
-          {actions.canAccept && <button type="button" role="menuitem" onClick={() => choose("accept")}>บันทึกลูกค้าตอบรับ</button>}
-          {actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}>สร้างฉบับแก้ไข</button>}
+          {actions.canAccept && <button className="menu-accept" type="button" role="menuitem" onClick={() => choose("accept")}>ตอบรับ</button>}
+          {actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}>สร้างสำเนา</button>}
           </div>
         </>,
         document.body,
@@ -151,18 +173,18 @@ export default function QuotationGrid({
         headerName: "เลขที่เอกสาร",
         field: "document_no",
         flex: 1.1,
-        minWidth: 150,
+        minWidth: 136,
         cellClass: "grid-document-number",
         valueGetter: ({ data }) =>
           data
-            ? [data.document_no, revisionLabel(data.revision_no)].filter(Boolean).join(" · ")
+            ? [data.document_no, revisionLabel(data.revision_no)].filter(Boolean).join(" ")
             : "",
       },
       {
         headerName: "ลูกค้า",
         field: "customer_name",
-        flex: 1.7,
-        minWidth: 230,
+        flex: 1.5,
+        minWidth: 210,
         cellRenderer: ({ data, value }: { data?: Quotation; value?: string }) => (
           <div className="grid-customer-cell">
             <strong>{value || "-"}</strong>
@@ -170,28 +192,63 @@ export default function QuotationGrid({
           </div>
         ),
       },
-      { headerName: "วันที่ออก", field: "issued_at", flex: 0.85, minWidth: 120, valueFormatter: ({ value }) => displayDate(value) },
-      { headerName: "ใช้ได้ถึง", field: "valid_until", flex: 0.85, minWidth: 120, valueFormatter: ({ value }) => displayDate(value) },
-      { headerName: "ผู้เสนอราคา", field: "sales_name", flex: 0.9, minWidth: 135, valueFormatter: ({ value }) => value || "-" },
       {
-        headerName: "สถานะ",
-        field: "status",
-        flex: 0.9,
-        minWidth: 120,
-        cellRenderer: ({ value }: { value: Quotation["status"] }) => <QuotationStatusBadge status={value} />,
+        headerName: "จำนวนรถ",
+        colId: "vehicles",
+        flex: 0.7,
+        minWidth: 94,
+        valueGetter: ({ data }) => data?.package_reference_quantity || 0,
+        valueFormatter: ({ value }) => Number(value) ? `${value} คัน` : "—",
       },
       {
-        headerName: "ยอดสุทธิ",
-        field: "net_amount_satang",
-        flex: 1,
-        minWidth: 130,
+        headerName: "บริการหลัก",
+        colId: "services",
+        flex: 1.2,
+        minWidth: 160,
+        valueGetter: ({ data }) => data?.recurring_addons?.join(", ") || "—",
+        cellClass: "grid-service-list",
+      },
+      {
+        headerName: "Onsite Training",
+        colId: "onsite",
+        flex: 0.85,
+        minWidth: 120,
+        valueGetter: ({ data }) => {
+          const item = data ? onsiteTraining(data) : undefined;
+          return item && Number(item.quantity) ? `${item.quantity} ${item.unit || "ครั้ง"}` : "—";
+        },
+      },
+      { headerName: "วันที่ออก", field: "issued_at", flex: 0.82, minWidth: 112, valueFormatter: ({ value }) => displayDate(value) },
+      {
+        headerName: "ยอดเงิน",
+        colId: "recurringAmount",
+        flex: 0.9,
+        minWidth: 120,
         cellClass: "grid-money",
+        valueGetter: ({ data }) => data ? categoryNetAmount(data, "RECURRING") : 0,
         valueFormatter: ({ value }) => money(Number(value || 0)),
       },
       {
-        headerName: "การดำเนินการ",
+        headerName: "ค่าแรกเข้า",
+        colId: "oneTimeAmount",
+        flex: 0.9,
+        minWidth: 120,
+        cellClass: "grid-money",
+        valueGetter: ({ data }) => data ? categoryNetAmount(data, "ONE_TIME") : 0,
+        valueFormatter: ({ value }) => money(Number(value || 0)),
+      },
+      {
+        headerName: "สถานะ",
+        field: "status",
+        flex: 0.75,
+        minWidth: 104,
+        cellRenderer: ({ value }: { value: Quotation["status"] }) => <QuotationStatusBadge status={value} />,
+      },
+      {
+        headerName: "",
         colId: "actions",
-        width: 116,
+        width: 62,
+        pinned: "right",
         sortable: false,
         resizable: false,
         suppressHeaderMenuButton: true,
