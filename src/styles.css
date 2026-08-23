@@ -424,7 +424,7 @@ button:disabled {
 .date-range-trigger strong { color: #294865; font-size: 13px; font-weight: 600; }
 .date-range-trigger:hover,
 .date-range-trigger.active { border-color: #79a6d3; box-shadow: 0 0 0 2px #e2effc; }
-.date-range-control { position: relative; z-index: 2; flex: 0 0 auto; }
+.date-range-control { flex: 0 0 auto; }
 .list-filter-groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .list-filter-groups fieldset { display: grid; gap: 7px; min-width: 0; margin: 0; padding: 12px; border: 1px solid #dce6f0; border-radius: 9px; background: #fff; }
 .list-filter-groups legend { padding: 0 4px; color: #405a77; font-size: 12px; font-weight: 800; }
@@ -441,7 +441,7 @@ button:disabled {
 .list-error div { display: grid; gap: 2px; }
 .list-error span { font-size: 13px; }
 .list-error button { padding: 8px 12px; border: 1px solid #dfa2a2; border-radius: 7px; background: #fff; color: #9a3030; font-weight: 700; }
-.date-range-popover { position: absolute; z-index: 60; top: calc(100% + 8px); left: 0; width: min(640px, calc(100vw - 70px)); padding: 20px; border: 1px solid #d9e4ef; border-radius: 14px; background: #fff; box-shadow: 0 22px 50px #12385a35; }
+.date-range-popover { justify-self: end; width: min(640px, 100%); margin-top: -4px; padding: 20px; border: 1px solid #d9e4ef; border-radius: 14px; background: #fff; box-shadow: 0 14px 32px #12385a24; }
 .date-range-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .date-range-heading strong { display: block; color: #294865; font-size: 19px; }
 .date-range-heading small { display: block; margin-top: 3px; color: #7a899a; font-size: 13px; }

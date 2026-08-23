@@ -163,13 +163,13 @@ export default function QuotationListView({
           </label>
           <div className="date-range-control">
             <button type="button" className={`date-range-trigger${dateRange.from || dateRange.to ? " active" : ""}`} aria-haspopup="dialog" aria-expanded={dateRangeOpen} onClick={() => setDateRangeOpen((open) => !open)}><span>ช่วงวันที่ออกเอกสาร</span><strong>{displayRange(dateRange)}</strong></button>
-            {dateRangeOpen && <DateRangePopover range={dateRange} onChange={setDateRange} onClose={() => setDateRangeOpen(false)} />}
           </div>
           <div className="list-toolbar-actions">
             <span>แสดง {filteredQuotes.length} จาก {quotes.length} รายการ</span>
             <button type="button" className="text-button" disabled={!hasFilters} onClick={clearFilters}>ล้างตัวกรอง</button>
           </div>
           </div>
+          {dateRangeOpen && <DateRangePopover range={dateRange} onChange={setDateRange} onClose={() => setDateRangeOpen(false)} />}
           <div className="list-filter-groups">
             <fieldset><legend>สถานะ</legend>{STATUS_ORDER.map((status) => <label key={status}><input type="checkbox" checked={statuses.includes(status)} onChange={() => toggleStatus(status)} />{STATUS_TEXT[status]}</label>)}</fieldset>
             <fieldset><legend>ผู้เสนอราคา</legend>{salesPeople.length ? salesPeople.map((name) => <label key={name}><input type="checkbox" checked={sales.includes(name)} onChange={() => toggleValue(name, sales, setSales)} />{name}</label>) : <small>ยังไม่มีข้อมูล</small>}</fieldset>
