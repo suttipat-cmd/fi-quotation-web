@@ -35,22 +35,23 @@ const line = "#cad8e6";
 const styles = StyleSheet.create({
   page: { fontFamily: "Sarabun", paddingTop: 30, paddingRight: 34, paddingBottom: 30, paddingLeft: 34, color: ink, fontSize: 9.1, lineHeight: 1.28 },
   content: { flex: 1 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: 9, borderBottomWidth: 1.3, borderBottomColor: navy },
-  company: { flexDirection: "row", gap: 9, alignItems: "flex-start", maxWidth: "66%" },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 14, paddingBottom: 10, borderBottomWidth: 1.3, borderBottomColor: navy },
+  company: { flex: 1, flexDirection: "row", gap: 9, alignItems: "flex-start", minWidth: 0 },
+  companyDetails: { flex: 1, minWidth: 0 },
   logo: { width: 38, height: 34, objectFit: "contain" },
-  companyName: { fontSize: 13.2, fontWeight: 700, color: "#172d4c", marginBottom: 1 },
-  companyText: { color: "#3f5066", fontSize: 8.4, lineHeight: 1.35 },
-  title: { alignItems: "flex-end", paddingTop: 1 },
+  companyName: { fontSize: 13.2, fontWeight: 700, color: "#172d4c", lineHeight: 1.25, marginBottom: 3 },
+  companyText: { color: "#3f5066", fontSize: 8.4, lineHeight: 1.42 },
+  title: { width: 126, flexShrink: 0, alignItems: "flex-end", paddingTop: 2 },
   titleThai: { color: navy, fontSize: 22, fontWeight: 700, lineHeight: 1 },
   titleEnglish: { color: muted, fontSize: 8.4, letterSpacing: 0.8, marginTop: 3 },
   facts: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: line, paddingVertical: 8 },
   fact: { flex: 1, flexDirection: "row", justifyContent: "space-between", paddingRight: 8 },
   label: { color: muted },
   strong: { fontWeight: 700 },
-  customer: { flexDirection: "row", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: line },
-  customerBlock: { flex: 1 },
-  customerAddress: { flex: 1.55 },
-  customerValue: { marginTop: 1, fontSize: 9.3 },
+  customer: { flexDirection: "row", gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: line },
+  customerBlock: { width: "38%", flexShrink: 1, minWidth: 0 },
+  customerAddress: { flex: 1, flexShrink: 1, minWidth: 0 },
+  customerValue: { marginTop: 2, fontSize: 9.3, lineHeight: 1.32 },
   block: { marginTop: 10 },
   sectionTitle: { color: navy, fontSize: 12.5, fontWeight: 700, marginBottom: 4 },
   tableHead: { flexDirection: "row", backgroundColor: "#eaf1f7", borderTopWidth: 1.3, borderTopColor: navy, borderBottomWidth: 1, borderBottomColor: line },
@@ -141,7 +142,7 @@ export function QuotationPdfDocument({ form, items, quotation }: DocumentProps) 
         <View style={styles.header}>
           <View style={styles.company}>
             <Image style={styles.logo} src={logo} />
-            <View>
+            <View style={styles.companyDetails}>
               <Text style={styles.companyName}>{COMPANY_DOCUMENT_CONFIG.name}</Text>
               <Text style={styles.companyText}>{COMPANY_DOCUMENT_CONFIG.addressLine1}</Text>
               <Text style={styles.companyText}>{COMPANY_DOCUMENT_CONFIG.addressLine2}</Text>

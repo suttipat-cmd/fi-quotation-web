@@ -243,27 +243,30 @@ function App() {
         .order("created_at", { ascending: false }),
     ]);
     setLoading(null);
-    if (profileResult.error || servicesResult.error || quotesResult.error) {
-      notify(
-        friendlyError(
-          profileResult.error?.message ||
-            servicesResult.error?.message ||
-            quotesResult.error?.message,
-        ),
-        "error",
-      );
-      return;
+    // Master data must never hide quotations that were successfully loaded.
+    // Each resource has an independent failure state so the dashboard remains usable.
+    if (profileResult.error) {
+      notify(`โหลดข้อมูลบัญชีไม่สำเร็จ: ${friendlyError(profileResult.error.message)}`, "error");
+    } else {
+      setProfile(profileResult.data);
     }
-    setProfile(profileResult.data);
-    setServices(servicesResult.data || []);
-    setQuotes(
-      (quotesResult.data || []).map((row: any) => ({
-        ...row,
-        pdf_drive_url: row.quotation_revisions?.find(
-          (revision: any) => revision.revision_no === row.revision_no,
-        )?.pdf_drive_url,
-      })),
-    );
+    if (quotesResult.error) {
+      notify(`โหลดใบเสนอราคาไม่สำเร็จ: ${friendlyError(quotesResult.error.message)}`, "error");
+    } else {
+      setQuotes(
+        (quotesResult.data || []).map((row: any) => ({
+          ...row,
+          pdf_drive_url: row.quotation_revisions?.find(
+            (revision: any) => revision.revision_no === row.revision_no,
+          )?.pdf_drive_url,
+        })),
+      );
+    }
+    if (servicesResult.error) {
+      notify("โหลดรายการบริการไม่สำเร็จ แต่ใบเสนอราคาเดิมยังแสดงได้", "error");
+    } else {
+      setServices(servicesResult.data || []);
+    }
   }
   const totals = useMemo(() => calculateQuotationTotals(form, items), [items, form]);
   async function run(label: string, task: () => Promise<void>) {
@@ -1204,28 +1207,47 @@ function Preview({
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [snapshot, setSnapshot] = useState(() => ({ form, items, quotation }));
+  const currentUrl = useRef<string | null>(null);
+
+  // PDF generation is intentionally delayed while a user is still typing.
+  // The editor remains responsive and the document action still uses current form data.
+  useEffect(() => {
+    setUpdating(true);
+    const timer = window.setTimeout(() => {
+      setSnapshot({ form, items, quotation });
+      setUpdating(false);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [form, items, quotation]);
+
   useEffect(() => {
     let active = true;
-    let objectUrl: string | null = null;
     setError(null);
-    void createPdfBlob({ form, items, quotation }).then((blob) => {
+    void createPdfBlob(snapshot).then((blob) => {
       if (!active) return;
-      objectUrl = URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
+      const previousUrl = currentUrl.current;
+      currentUrl.current = objectUrl;
       setUrl(objectUrl);
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
     }).catch(() => {
       if (active) setError("ไม่สามารถสร้างตัวอย่าง PDF ได้");
     });
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [form, items, quotation]);
+  }, [snapshot]);
+  useEffect(() => () => {
+    if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+  }, []);
   return (
     <aside className="preview-panel">
-      <p className="preview-label">ตัวอย่าง PDF</p>
+      <p className="preview-label">ตัวอย่าง PDF {updating && <small>กำลังอัปเดต…</small>}</p>
       {error && <p className="preview-overflow" role="alert">{error}</p>}
       <div className="pdf-preview-scroll">
-        {url ? <iframe className="pdf-preview" title="ตัวอย่างใบเสนอราคา PDF" src={url} /> : <div className="pdf-preview-loading"><Spinner /> กำลังสร้างตัวอย่าง PDF</div>}
+        {url ? <iframe className="pdf-preview" title="ตัวอย่างใบเสนอราคา PDF" src={`${url}#page=1&zoom=page-width`} /> : <div className="pdf-preview-loading"><Spinner /> กำลังสร้างตัวอย่าง PDF</div>}
       </div>
     </aside>
   );

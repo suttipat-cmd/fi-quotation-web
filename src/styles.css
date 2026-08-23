@@ -556,6 +556,11 @@ button:disabled {
   font-weight: 700;
   margin: 0 0 9px;
 }
+.preview-label small {
+  color: #5f7895;
+  font-weight: 500;
+  margin-left: 5px;
+}
 .preview-overflow {
   margin: -3px 0 9px;
   padding: 8px 10px;
@@ -584,7 +589,7 @@ button:disabled {
 .pdf-preview {
   display: block;
   width: 100%;
-  min-width: 560px;
+  min-width: 0;
   height: min(76vh, 980px);
   border: 0;
   background: #fff;
