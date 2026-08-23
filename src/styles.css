@@ -958,6 +958,20 @@ button:disabled {
   border-bottom: 1px solid #dbe4ed;
   box-shadow: inset 1px 0 #e4ebf2, inset -1px 0 #e4ebf2;
 }
+/* The Drive PDF is rasterised from a cloned paper. Explicit fills prevent
+   html2canvas from compositing transparent table cells onto a tinted layer. */
+.pdf-render-source .mini-head {
+  background-color: #edf3f8 !important;
+}
+.pdf-render-source .mini-row {
+  background-color: #ffffff !important;
+}
+.pdf-render-source .price-summary-card {
+  background-color: #fbfdff !important;
+}
+.pdf-render-source .price-summary-card .net {
+  background-color: #f1f6fb !important;
+}
 .quotation-paper .price-rows {
   display: block;
 }

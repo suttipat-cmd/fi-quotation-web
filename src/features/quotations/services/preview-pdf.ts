@@ -13,6 +13,10 @@ export const createPreviewPdf = async (paper: HTMLElement) => {
 
   const stage = document.createElement("div");
   const copy = paper.cloneNode(true) as HTMLElement;
+  // html2canvas's default renderer can flatten transparent grid cells against
+  // a neighbouring background. Mark this isolated source so its key fills are
+  // explicitly preserved in the exported document.
+  copy.classList.add("pdf-render-source");
   Object.assign(stage.style, {
     position: "fixed",
     top: "0",
@@ -43,8 +47,12 @@ export const createPreviewPdf = async (paper: HTMLElement) => {
     await document.fonts?.ready;
     const canvas = await html2canvas(copy, {
       backgroundColor: "#ffffff",
-      scale: 2,
+      // 3x the browser CSS A4 size is approximately 288 DPI. It keeps Thai
+      // text crisp in Drive while remaining safely below typical request-size
+      // limits after base64 encoding for the Apps Script handoff.
+      scale: 3,
       useCORS: true,
+      foreignObjectRendering: true,
       logging: false,
       width: copy.scrollWidth,
       height: copy.scrollHeight,
@@ -57,7 +65,9 @@ export const createPreviewPdf = async (paper: HTMLElement) => {
       format: "a4",
       compress: true,
     });
-    pdf.addImage(canvas.toDataURL("image/jpeg", 0.96), "JPEG", 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM);
+    // PNG avoids JPEG chroma subsampling, which was making the pale table
+    // fills appear opaque and different from the on-screen/printed preview.
+    pdf.addImage(canvas, "PNG", 0, 0, A4_WIDTH_MM, A4_HEIGHT_MM);
     return pdf.output("blob");
   } catch (error) {
     throw new Error(
