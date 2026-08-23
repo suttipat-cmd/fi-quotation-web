@@ -797,7 +797,7 @@ button:disabled {
   display: grid;
   grid-template-columns: 36px minmax(260px, 1fr) 112px 118px 150px 130px;
   gap: 10px;
-  align-items: end;
+  align-items: start;
   padding: 10px 8px;
   border-top: 1px solid #dfe7f0;
 }
@@ -817,17 +817,19 @@ button:disabled {
 }
 .one-time-editor-table .item-editor:first-child { border-top: 0; }
 .item-editor .field { margin: 0; }
+.item-editor .field { align-self: start; }
 .item-editor .field input { padding: 8px; font-size: 12px; }
 .item-service { min-width: 0; }
 .item-service input[readonly] { background: #f8fbfe; color: #29425f; }
 .item-number {
-  padding-bottom: 10px;
+  align-self: center;
   color: #8390a1;
 }
 .item-total {
   display: grid;
   justify-items: end;
-  align-items: flex-end;
+  align-self: start;
+  align-items: center;
   gap: 7px;
   min-height: 39px;
   padding-bottom: 8px;
