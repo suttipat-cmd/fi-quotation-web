@@ -601,6 +601,25 @@ button:disabled {
 .settings-row { border: 1px solid #d4e2e0; border-radius: 4px; padding: 16px; background: #fcfefa; }
 .settings-toggles { display: flex; flex-wrap: wrap; gap: 20px; }
 .toggle-field { display: inline-flex; align-items: center; gap: 7px; color: #445a73; font-size: 13px; font-weight: 600; }
+.appearance-settings { max-width: 1320px; display: grid; gap: 22px; }
+.appearance-group { padding-bottom: 22px; border-bottom: 1px solid #d7e4e8; }
+.appearance-group:last-child { padding-bottom: 0; border-bottom: 0; }
+.appearance-group h2 { margin: 0 0 4px; color: #1c477b; font-size: 18px; }
+.appearance-group > .muted { margin: 0 0 14px; }
+.appearance-user-row h3 { margin: 0 0 13px; color: #294865; }
+.appearance-user-row h3 small { color: #70829a; font-size: 12px; font-weight: 500; }
+.background-choice-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+.background-choice { position: relative; display: grid; gap: 4px; min-width: 0; overflow: hidden; padding: 9px; border: 1px solid #cbdcdd; border-radius: 6px; background: #f9fcfb; cursor: pointer; }
+.background-choice:hover { border-color: #69b9b0; }
+.background-choice.selected { border: 2px solid #28aaa7; padding: 8px; box-shadow: 2px 2px 0 #8ed6d0; }
+.background-choice > input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.background-choice img, .background-upload-placeholder { width: 100%; height: 78px; border-radius: 3px; object-fit: cover; background: #e8f0f4; }
+.background-upload-placeholder { display: grid; place-items: center; color: #58738e; font-size: 25px; }
+.background-upload-placeholder small { margin-top: -22px; font-size: 11px; font-weight: 600; }
+.background-choice strong { overflow: hidden; color: #294865; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.background-choice small { color: #75869a; font-size: 11px; }
+.background-file-input { width: 100%; max-width: 100%; color: #52657c; font-size: 10px; }
+.background-file-input::file-selector-button { margin-right: 6px; border: 1px solid #b5ced0; border-radius: 3px; background: #fff; color: #2e5780; padding: 4px 6px; font: inherit; font-weight: 700; cursor: pointer; }
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1697,6 +1716,22 @@ button:disabled {
   place-items: center;
   padding: 20px;
 }
+.auth-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(#08254491, #08254491), var(--auth-wallpaper);
+  background-position: center;
+  background-size: cover;
+}
+.auth-shell::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image: linear-gradient(90deg, #082e4a22 1px, transparent 1px), linear-gradient(#082e4a22 1px, transparent 1px);
+  background-size: 18px 18px;
+  content: "";
+}
 .auth-card {
   width: min(430px, 100%);
   padding: 35px;
@@ -1817,6 +1852,7 @@ button:disabled {
   .list-filter-groups {
     grid-template-columns: 1fr;
   }
+  .background-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .list-toolbar-row { display: grid; grid-template-columns: 1fr; }
   .list-search, .list-sales-filter { min-width: 0; }
   .list-toolbar-actions { justify-content: space-between; }

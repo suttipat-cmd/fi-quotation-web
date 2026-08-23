@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money, thaiBaht } from "./lib/format";
@@ -44,7 +44,8 @@ type Achievement = { title: string; message: string } | null;
 type Confirmation = { title: string; message: string; confirmLabel: string; tone?: "danger" | "primary"; onConfirm: () => void } | null;
 type View = "dashboard" | "create" | "edit" | "detail" | "settings";
 type Route = { view: View; id?: string };
-type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts" | "sales" | "user_scopes" | "email_template";
+type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts" | "sales" | "user_scopes" | "appearance" | "email_template";
+type BackgroundKey = "terraria" | "battlefield" | "shinchan" | "custom";
 type CompanySettings = {
   id: boolean;
   company_name: string;
@@ -63,8 +64,19 @@ type PaymentTerm = { id: string; name: string; body: string; active: boolean; so
 type BankAccount = { id: string; bank_name: string; account_name: string; account_number: string; branch: string | null; active: boolean; is_default: boolean };
 type EmailTemplate = { code: string; subject_template: string; body_template: string; fixed_cc: string[] };
 type UserSalesScope = { user_id: string; all_sales: boolean; sales_profile_ids: string[] };
+type LoginAppearance = { id: boolean; background_key: BackgroundKey; background_url: string | null };
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+const BACKGROUND_OPTIONS: Array<{ key: Exclude<BackgroundKey, "custom">; label: string; description: string; asset: string }> = [
+  { key: "terraria", label: "Terraria", description: "พิกเซลผจญภัย", asset: "terraria-system-background.png" },
+  { key: "battlefield", label: "Battlefield", description: "สนามรบยามเย็น", asset: "battlefield-system-background.png" },
+  { key: "shinchan", label: "Shinchan", description: "วันสดใสริมทาง", asset: "shinchan-system-background.png" },
+];
+const backgroundUrl = (key?: BackgroundKey | null, customUrl?: string | null) => {
+  if (key === "custom" && customUrl) return customUrl;
+  const option = BACKGROUND_OPTIONS.find((item) => item.key === key) || BACKGROUND_OPTIONS[0];
+  return `${appBasePath}/assets/${option.asset}`;
+};
 const A4_WIDTH_PX = (210 / 25.4) * 96;
 const A4_HEIGHT_PX = (297 / 25.4) * 96;
 const normalizeQuoteStatus = (status: string): Quote["status"] =>
@@ -124,6 +136,13 @@ function Auth({ onSession }: { onSession: (value: Session) => void }) {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loginAppearance, setLoginAppearance] = useState<LoginAppearance | null>(null);
+  useEffect(() => {
+    let active = true;
+    void supabase.from("login_appearance").select("id, background_key, background_url").eq("id", true).maybeSingle()
+      .then(({ data }) => { if (active && data) setLoginAppearance(data as LoginAppearance); });
+    return () => { active = false; };
+  }, []);
   async function submit() {
     if (busy) return;
     if (!email || !password) {
@@ -137,7 +156,7 @@ function Auth({ onSession }: { onSession: (value: Session) => void }) {
     else if (result.data.session) onSession(result.data.session);
   }
   return (
-    <main className="auth-shell">
+    <main className="auth-shell" style={{ "--auth-wallpaper": `url(${backgroundUrl(loginAppearance?.background_key, loginAppearance?.background_url)})` } as CSSProperties}>
       <section className="auth-card">
         <Brand />
         <p className="eyebrow">ระบบจัดการใบเสนอราคา</p>
@@ -830,7 +849,7 @@ function App() {
     <div
       className={`app-shell ${collapsed ? "sidebar-is-collapsed" : ""}`}
       style={{
-        "--system-wallpaper": `url(${appBasePath}/assets/terraria-system-background.png)`,
+        "--system-wallpaper": `url(${backgroundUrl(profile?.app_background_key, profile?.app_background_url)})`,
         "--pixel-sidebar-texture": `url(${pixelAsset("textures/sidebar-navy-stone@2x.png")})`,
         "--pixel-grid-texture": `url(${pixelAsset("textures/hud-blueprint-grid@2x.png")})`,
         "--pixel-paper-texture": `url(${pixelAsset("textures/app-background-parchment@2x.png")})`,
@@ -1182,6 +1201,43 @@ function QuotationListSkeleton() {
   );
 }
 
+function BackgroundPicker({
+  value,
+  customUrl,
+  onChange,
+  onUpload,
+  uploading,
+}: {
+  value?: BackgroundKey | null;
+  customUrl?: string | null;
+  onChange: (key: BackgroundKey) => void;
+  onUpload: (file: File) => void;
+  uploading: boolean;
+}) {
+  const selected = value || "terraria";
+  const pickerId = useId();
+  return <div className="background-picker">
+    <div className="background-choice-grid">
+      {BACKGROUND_OPTIONS.map((option) => <label className={`background-choice ${selected === option.key ? "selected" : ""}`} key={option.key}>
+        <input type="radio" name={`background-${pickerId}`} checked={selected === option.key} onChange={() => onChange(option.key)} />
+        <img src={backgroundUrl(option.key)} alt="" />
+        <strong>{option.label}</strong><small>{option.description}</small>
+      </label>)}
+      <label className={`background-choice ${selected === "custom" ? "selected" : ""}`}>
+        <input type="radio" name={`background-${pickerId}`} checked={selected === "custom"} onChange={() => onChange("custom")} />
+        {customUrl ? <img src={customUrl} alt="ภาพที่อัปโหลด" /> : <span className="background-upload-placeholder">＋<small>อัปโหลดภาพ</small></span>}
+        <strong>ภาพกำหนดเอง</strong><small>PNG, JPG หรือ WEBP</small>
+        <input className="background-file-input" type="file" accept="image/png,image/jpeg,image/webp" disabled={uploading} onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onUpload(file);
+          event.currentTarget.value = "";
+        }} />
+      </label>
+    </div>
+    {selected === "custom" && <p className="field-help">อัปโหลดได้สูงสุด 10 MB และกดบันทึกการตั้งค่าเพื่อยืนยันการใช้งาน</p>}
+  </div>;
+}
+
 function Settings({
   busy,
   notify,
@@ -1198,24 +1254,28 @@ function Settings({
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [salesProfiles, setSalesProfiles] = useState<Profile[]>([]);
   const [userProfiles, setUserProfiles] = useState<Profile[]>([]);
+  const [appearanceProfiles, setAppearanceProfiles] = useState<Profile[]>([]);
   const [salesScopes, setSalesScopes] = useState<UserSalesScope[]>([]);
   const [emailTemplate, setEmailTemplate] = useState<EmailTemplate | null>(null);
+  const [loginAppearance, setLoginAppearance] = useState<LoginAppearance | null>(null);
+  const [uploadingBackground, setUploadingBackground] = useState<string | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const loadSettings = async () => {
     setLoadingSettings(true);
-    const [companyResult, servicesResult, termsResult, banksResult, profilesResult, scopesResult, templateResult] = await Promise.all([
+    const [companyResult, servicesResult, termsResult, banksResult, profilesResult, scopesResult, templateResult, loginAppearanceResult] = await Promise.all([
       supabase.from("company_settings").select("*").eq("id", true).maybeSingle(),
       supabase.from("services").select("*").order("sort_order"),
       supabase.from("payment_terms").select("*").order("sort_order"),
       supabase.from("bank_accounts").select("*").order("is_default", { ascending: false }),
-      supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active").order("display_name"),
+      supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active, app_background_key, app_background_url").order("display_name"),
       supabase.from("user_sales_scopes").select("user_id, all_sales, sales_profile_ids"),
       supabase.from("email_templates").select("code, subject_template, body_template, fixed_cc").eq("code", "QUOTATION_SEND").maybeSingle(),
+      supabase.from("login_appearance").select("id, background_key, background_url").eq("id", true).maybeSingle(),
     ]);
     setLoadingSettings(false);
-    const errors = [companyResult.error, servicesResult.error, termsResult.error, banksResult.error, profilesResult.error, scopesResult.error, templateResult.error].filter(Boolean);
+    const errors = [companyResult.error, servicesResult.error, termsResult.error, banksResult.error, profilesResult.error, scopesResult.error, templateResult.error, loginAppearanceResult.error].filter(Boolean);
     if (errors.length) {
       notify(`โหลดข้อมูลตั้งค่าไม่สำเร็จ: ${friendlyError(errors[0]?.message)}`, "error");
       return;
@@ -1227,8 +1287,10 @@ function Settings({
     const profiles = (profilesResult.data || []) as Profile[];
     setSalesProfiles(profiles.filter((profile) => profile.role === "SALE"));
     setUserProfiles(profiles.filter((profile) => profile.role === "USER"));
+    setAppearanceProfiles(profiles);
     setSalesScopes((scopesResult.data || []) as UserSalesScope[]);
     setEmailTemplate(templateResult.data as EmailTemplate | null);
+    setLoginAppearance(loginAppearanceResult.data as LoginAppearance | null);
   };
 
   useEffect(() => { void loadSettings(); }, []);
@@ -1314,6 +1376,20 @@ function Settings({
         const results = await Promise.all(writes);
         error = results.find((result) => result.error)?.error || null;
       }
+      if (tab === "appearance" && loginAppearance) {
+        const appearanceResult = await supabase.from("login_appearance").update({
+          background_key: loginAppearance.background_key,
+          background_url: loginAppearance.background_key === "custom" ? loginAppearance.background_url : null,
+        }).eq("id", true);
+        error = appearanceResult.error;
+        if (!error) {
+          const results = await Promise.all(appearanceProfiles.map((user) => supabase.from("profiles").update({
+            app_background_key: user.app_background_key || "terraria",
+            app_background_url: user.app_background_key === "custom" ? user.app_background_url || null : null,
+          }).eq("id", user.id)));
+          error = results.find((result) => result.error)?.error || null;
+        }
+      }
       if (tab === "email_template" && emailTemplate) {
         ({ error } = await supabase.from("email_templates").upsert({
           code: "QUOTATION_SEND",
@@ -1342,6 +1418,33 @@ function Settings({
     setBankAccounts((current) => current.map((account) => account.id === id ? { ...account, ...patch } : account));
   const updateSalesProfile = (id: string, patch: Partial<Profile>) =>
     setSalesProfiles((current) => current.map((profile) => profile.id === id ? { ...profile, ...patch } : profile));
+  const updateAppearanceProfile = (id: string, patch: Partial<Profile>) =>
+    setAppearanceProfiles((current) => current.map((profile) => profile.id === id ? { ...profile, ...patch } : profile));
+  const uploadBackground = async (file: File, target: "login" | string) => {
+    if (!file.type.startsWith("image/") || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      notify("รองรับเฉพาะไฟล์ PNG, JPG และ WEBP", "error");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      notify("ภาพต้องมีขนาดไม่เกิน 10 MB", "error");
+      return;
+    }
+    setUploadingBackground(target);
+    try {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+      const path = `${target}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from("app-backgrounds").upload(path, file, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from("app-backgrounds").getPublicUrl(path);
+      if (target === "login") setLoginAppearance((current) => current ? { ...current, background_key: "custom", background_url: data.publicUrl } : { id: true, background_key: "custom", background_url: data.publicUrl });
+      else updateAppearanceProfile(target, { app_background_key: "custom", app_background_url: data.publicUrl });
+      notify("อัปโหลดภาพแล้ว กดบันทึกการตั้งค่าเพื่อใช้งาน", "success");
+    } catch (error) {
+      notify(`อัปโหลดภาพไม่สำเร็จ: ${friendlyError(errorMessage(error))}`, "error");
+    } finally {
+      setUploadingBackground(null);
+    }
+  };
   const updateScope = (userId: string, patch: Partial<UserSalesScope>) => setSalesScopes((current) => {
     const existing = current.find((scope) => scope.user_id === userId) || { user_id: userId, all_sales: false, sales_profile_ids: [] };
     return [...current.filter((scope) => scope.user_id !== userId), { ...existing, ...patch }];
@@ -1386,6 +1489,7 @@ function Settings({
           ["bank_accounts", "บัญชีธนาคาร"],
           ["sales", "ข้อมูลฝ่ายขาย"],
           ["user_scopes", "สิทธิ์ผู้ใช้งาน"],
+          ["appearance", "ภาพพื้นหลัง"],
           ["email_template", "เทมเพลตอีเมล"],
         ] as Array<[SettingTab, string]>).map(([value, label]) => (
           <button key={value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
@@ -1407,6 +1511,33 @@ function Settings({
           {tab === "bank_accounts" && <div className="settings-list">{bankAccounts.map((account) => <article className="settings-row" key={account.id}><div className="two"><Field label="ธนาคาร"><input value={account.bank_name} onChange={(event) => updateBank(account.id, { bank_name: event.target.value })} /></Field><Field label="ชื่อบัญชี"><input value={account.account_name} onChange={(event) => updateBank(account.id, { account_name: event.target.value })} /></Field></div><div className="two"><Field label="เลขที่บัญชี"><input value={account.account_number} onChange={(event) => updateBank(account.id, { account_number: event.target.value })} /></Field><Field label="สาขา"><input value={account.branch || ""} onChange={(event) => updateBank(account.id, { branch: event.target.value })} /></Field></div><div className="settings-toggles"><label className="toggle-field"><input type="checkbox" checked={account.active} onChange={(event) => updateBank(account.id, { active: event.target.checked })} /> เปิดใช้งาน</label><label className="toggle-field"><input type="radio" name="default-bank" checked={account.is_default} onChange={() => setBankAccounts((current) => current.map((item) => ({ ...item, is_default: item.id === account.id })))} /> บัญชีเริ่มต้น</label></div></article>)}</div>}
           {tab === "sales" && <div className="settings-list">{salesProfiles.map((sales) => <article className="settings-row" key={sales.id}><h3>{sales.display_name || sales.email || "ฝ่ายขาย"}</h3><div className="four"><Field label="ชื่อแสดง"><input value={sales.display_name || ""} onChange={(event) => updateSalesProfile(sales.id, { display_name: event.target.value })} /></Field><Field label="ตำแหน่ง"><input value={sales.job_title || ""} onChange={(event) => updateSalesProfile(sales.id, { job_title: event.target.value })} /></Field><Field label="โทรศัพท์"><input value={sales.phone || ""} onChange={(event) => updateSalesProfile(sales.id, { phone: event.target.value })} /></Field><Field label="อีเมลทำงาน"><input type="email" value={sales.work_email || ""} onChange={(event) => updateSalesProfile(sales.id, { work_email: event.target.value })} /></Field></div><label className="toggle-field"><input type="checkbox" checked={sales.active !== false} onChange={(event) => updateSalesProfile(sales.id, { active: event.target.checked })} /> เปิดใช้งาน</label></article>)}</div>}
           {tab === "user_scopes" && <div className="settings-list">{userProfiles.map((user) => { const scope = salesScopes.find((item) => item.user_id === user.id) || { user_id: user.id, all_sales: false, sales_profile_ids: [] }; return <article className="settings-row" key={user.id}><h3>{user.display_name || user.email || "ผู้ใช้งาน"}</h3><label className="toggle-field"><input type="checkbox" checked={scope.all_sales} onChange={(event) => updateScope(user.id, { all_sales: event.target.checked, sales_profile_ids: event.target.checked ? [] : scope.sales_profile_ids })} /> เห็นข้อมูลของฝ่ายขายทุกคน</label>{!scope.all_sales && <fieldset className="check-field"><legend>ฝ่ายขายที่อนุญาต</legend><div className="check-grid">{salesProfiles.filter((sales) => sales.active !== false).map((sales) => <label className="check-row" key={sales.id}><input type="checkbox" checked={scope.sales_profile_ids.includes(sales.id)} onChange={(event) => updateScope(user.id, { sales_profile_ids: event.target.checked ? [...scope.sales_profile_ids, sales.id] : scope.sales_profile_ids.filter((id) => id !== sales.id) })} />{sales.display_name || sales.email}</label>)}</div></fieldset>}</article>; })}</div>}
+          {tab === "appearance" && <div className="settings-form appearance-settings">
+            <section className="appearance-group">
+              <h2>พื้นหลังหน้าเข้าสู่ระบบ</h2>
+              <p className="muted">แสดงก่อนเข้าสู่ระบบ จึงใช้ภาพที่ตั้งกลางของระบบเท่านั้น</p>
+              <BackgroundPicker
+                value={loginAppearance?.background_key}
+                customUrl={loginAppearance?.background_url}
+                onChange={(background_key) => setLoginAppearance((current) => current ? { ...current, background_key } : { id: true, background_key, background_url: null })}
+                onUpload={(file) => void uploadBackground(file, "login")}
+                uploading={uploadingBackground === "login"}
+              />
+            </section>
+            <section className="appearance-group">
+              <h2>พื้นหลังของผู้ใช้งาน</h2>
+              <p className="muted">เลือกภาพสำหรับแต่ละบัญชี โดยค่าเริ่มต้นคือ Terraria</p>
+              <div className="settings-list">{appearanceProfiles.map((user) => <article className="settings-row appearance-user-row" key={user.id}>
+                <h3>{user.display_name || user.email || "ผู้ใช้งาน"} <small>{user.role === "ADMIN" ? "ผู้ดูแลระบบ" : user.role === "SALE" ? "ฝ่ายขาย" : "ผู้ใช้งาน"}</small></h3>
+                <BackgroundPicker
+                  value={user.app_background_key}
+                  customUrl={user.app_background_url}
+                  onChange={(app_background_key) => updateAppearanceProfile(user.id, { app_background_key })}
+                  onUpload={(file) => void uploadBackground(file, user.id)}
+                  uploading={uploadingBackground === user.id}
+                />
+              </article>)}</div>
+            </section>
+          </div>}
           {tab === "email_template" && emailTemplate && <div className="settings-form"><p className="muted">ตัวแปรที่ใช้ได้: {"{recipient_name}"}, {"{customer_name}"}, {"{document_no}"}, {"{main_services}"}, {"{sales_name}"}, {"{sales_title}"}, {"{sales_phone}"}</p><Field label="หัวข้ออีเมล"><input value={emailTemplate.subject_template} onChange={(event) => setEmailTemplate({ ...emailTemplate, subject_template: event.target.value })} /></Field><Field label="เนื้อหาอีเมล"><textarea rows={18} value={emailTemplate.body_template} onChange={(event) => setEmailTemplate({ ...emailTemplate, body_template: event.target.value })} /></Field><EmailTags emails={emailTemplate.fixed_cc || []} onChange={(fixed_cc) => setEmailTemplate({ ...emailTemplate, fixed_cc })} /></div>}
         </section>
       )}
