@@ -388,7 +388,7 @@ function App() {
     setInitialDataReady(false);
     setLoading("กำลังโหลดข้อมูล");
     const [profileResult, servicesResult, quotesResult, salesResult, myScopeResult] = await Promise.all([
-      supabase.from("profiles").select("*").single(),
+      supabase.from("profiles").select("*").eq("id", session?.user.id || "").single(),
       supabase
         .from("services")
         .select("*")
