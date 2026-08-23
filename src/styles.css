@@ -768,19 +768,15 @@ button:disabled {
 }
 .notes-help { margin: -4px 0 0; }
 .editor-section-nav {
-  position: sticky;
-  z-index: 2;
-  top: 0;
+  position: relative;
+  z-index: 0;
   display: flex;
   gap: 7px;
   counter-reset: quest-step;
   overflow-x: auto;
-  padding: 2px 0 8px;
+  padding: 4px 0 10px;
   background-color: #f3f7fb;
-  background-image: linear-gradient(#f3f7fbf2, #f3f7fbf2), var(--pixel-route);
-  background-repeat: repeat, repeat-x;
-  background-position: 0 0, 0 calc(100% - 2px);
-  background-size: auto, auto 3px;
+  background-image: none;
   scrollbar-width: none;
 }
 .editor-section-nav::-webkit-scrollbar { display: none; }
@@ -790,10 +786,17 @@ button:disabled {
   border-radius: 3px;
   background: #fcfefa;
   color: #48627d;
-  padding: 5px 9px;
+  padding: 6px 10px;
   font-size: 11px;
   font-weight: 700;
 }
+.confirmation-overlay { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b3088; }
+.confirmation-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; }
+.confirmation-modal { position: relative; width: min(410px, 100%); display: grid; justify-items: center; gap: 10px; padding: 23px 26px; border: 3px solid #1463a0; border-radius: 6px; background: #f9f6e8; box-shadow: 8px 8px 0 #08274a, inset 0 0 0 3px #bff3e9; color: #1a3d68; text-align: center; }
+.confirmation-modal > img { width: 124px; height: 92px; object-fit: contain; image-rendering: pixelated; }
+.confirmation-modal h2 { margin: 0; font-size: 20px; }
+.confirmation-modal p { max-width: 340px; margin: 0; color: #51647a; line-height: 1.55; }
+.confirmation-modal .inline-actions { width: 100%; justify-content: center; margin-top: 6px; }
 .editor-section-nav button::before { counter-increment: quest-step; content: counter(quest-step); display: inline-grid; width: 15px; height: 15px; margin-right: 5px; place-items: center; border: 1px solid #75cfc6; border-radius: 2px; background: #e6f7f2; color: #276475; font-size: 9px; }
 .editor-section-nav button:hover {
   border-color: #1d5b9f;

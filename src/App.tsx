@@ -41,6 +41,7 @@ declare const __APP_BUILD_ID__: string;
 
 type Toast = { text: string; type: "success" | "error" | "info" } | null;
 type Achievement = { title: string; message: string } | null;
+type Confirmation = { title: string; message: string; confirmLabel: string; tone?: "danger" | "primary"; onConfirm: () => void } | null;
 type View = "dashboard" | "create" | "edit" | "detail" | "settings";
 type Route = { view: View; id?: string };
 type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts";
@@ -64,24 +65,11 @@ type BankAccount = { id: string; bank_name: string; account_name: string; accoun
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
 const A4_HEIGHT_PX = (297 / 25.4) * 96;
-const playSuccessTone = () => {
-  try {
-    const context = new AudioContext();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "square";
-    oscillator.frequency.setValueAtTime(660, context.currentTime);
-    oscillator.frequency.setValueAtTime(880, context.currentTime + 0.11);
-    gain.gain.setValueAtTime(0.035, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.26);
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.27);
-    oscillator.addEventListener("ended", () => void context.close());
-  } catch {
-    // Sound is decorative only; unsupported browsers must continue normally.
-  }
-};
+const normalizeQuoteStatus = (status: string): Quote["status"] =>
+  status === "SENT" ? "READY" : status === "REJECTED" ? "CANCELLED" :
+  ["DRAFT", "READY", "ACCEPTED", "EXPIRED", "CANCELLED"].includes(status)
+    ? status as Quote["status"]
+    : "DRAFT";
 const routeFromLocation = (): Route => {
   const path = window.location.pathname
     .replace(appBasePath, "")
@@ -214,28 +202,67 @@ function App() {
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [achievement, setAchievement] = useState<Achievement>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
   const detailPaperRef = useRef<HTMLElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const melodyIndexRef = useRef(0);
+  const playClickMelody = () => {
+    if (!soundEnabled) return;
+    try {
+      const context = audioContextRef.current || new AudioContext();
+      audioContextRef.current = context;
+      if (context.state === "suspended") void context.resume();
+      const notes = [523.25, 587.33, 659.25, 783.99, 698.46, 659.25, 587.33, 493.88];
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.setValueAtTime(notes[melodyIndexRef.current++ % notes.length], context.currentTime);
+      gain.gain.setValueAtTime(0.018, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.09);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.1);
+    } catch {
+      // Sound is optional and must never block an interaction.
+    }
+  };
   const notify = (text: string, type: NonNullable<Toast>["type"] = "info") => {
-    if (soundEnabled && type === "success") playSuccessTone();
     setToast({ text, type });
   };
   const toggleSound = () => setSoundEnabled((current) => {
     const next = !current;
     window.localStorage.setItem("fi-quotation-sound", next ? "on" : "off");
-    if (next) playSuccessTone();
+    if (next) window.setTimeout(playClickMelody, 0);
     return next;
   });
+  useEffect(() => {
+    if (!soundEnabled) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".app-shell")) playClickMelody();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [soundEnabled]);
+  useEffect(() => () => { void audioContextRef.current?.close(); }, []);
   const navigate = (next: View, id?: string, replace = false, skipDirtyCheck = false) => {
     if (
       !skipDirtyCheck &&
       editorDirty &&
       (view === "create" || view === "edit") &&
-      next !== view &&
-      !window.confirm("มีข้อมูลที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?")
-    ) return false;
+      next !== view
+    ) {
+      setConfirmation({
+        title: "ออกจากฟอร์มโดยไม่บันทึก?",
+        message: "ข้อมูลที่แก้ไขอยู่จะไม่ถูกบันทึก",
+        confirmLabel: "ออกจากฟอร์ม",
+        tone: "danger",
+        onConfirm: () => { void navigate(next, id, replace, true); },
+      });
+      return false;
+    }
     if ((view === "create" || view === "edit") && next !== view) setEditorDirty(false);
     const path = routePath(next, id);
     if (window.location.pathname !== path) {
@@ -368,6 +395,7 @@ function App() {
       setQuotes(
         (quotesResult.data || []).map((row: any) => ({
           ...row,
+          status: normalizeQuoteStatus(String(row.status)),
           list_items: (row.quotation_items || []).map((item: any) => ({
             ...item,
             quantity: Number(item.quantity || 0),
@@ -510,65 +538,77 @@ function App() {
       notify("บันทึกการแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
-  async function acceptQuotation(target = selected) {
-    if (!target) return;
-    if (!window.confirm("ยืนยันว่าลูกค้าตอบรับใบเสนอราคานี้แล้วใช่หรือไม่?")) return;
+  async function performAcceptQuotation(target: Quote) {
     await run("กำลังบันทึกการตอบรับ", async () => {
       const result = await supabase.rpc("change_quotation_status", {
         p_quotation_id: target.id,
         p_status: "ACCEPTED",
       });
-      if (result.error) throw result.error;
-      setSelected(result.data);
+      if (result.error || !result.data) throw result.error || new Error("ไม่พบเอกสารหลังบันทึกการตอบรับ");
+      setSelected({ ...result.data, status: normalizeQuoteStatus(String(result.data.status)) });
       await load();
       notify("บันทึกการตอบรับเรียบร้อยแล้ว", "success");
     });
   }
-  async function cancelQuotation(reason: string, note: string) {
-    if (!selected) return;
-    if (!window.confirm("ยืนยันการยกเลิกใบเสนอราคานี้ใช่หรือไม่? การดำเนินการนี้จะทำให้เอกสารดูได้อย่างเดียว")) return;
+  function acceptQuotation(target = selected) {
+    if (!target) return;
+    setConfirmation({
+      title: "ยืนยันการตอบรับ",
+      message: `ยืนยันว่าลูกค้าตอบรับใบเสนอราคา ${target.document_no} แล้วใช่หรือไม่?`,
+      confirmLabel: "บันทึกการตอบรับ",
+      onConfirm: () => void performAcceptQuotation(target),
+    });
+  }
+  async function performCancelQuotation(target: Quote, reason: string, note: string) {
     await run("กำลังยกเลิกใบเสนอราคา", async () => {
       const result = await supabase.rpc("cancel_quotation", {
-        p_quotation_id: selected.id,
+        p_quotation_id: target.id,
         p_reason: reason,
         p_note: note || null,
       });
-      if (result.error) throw result.error;
-      setSelected(result.data);
+      if (result.error || !result.data) throw result.error || new Error("ไม่พบเอกสารหลังยกเลิก");
+      setSelected({ ...result.data, status: normalizeQuoteStatus(String(result.data.status)) });
       await load();
       notify("ยกเลิกใบเสนอราคาเรียบร้อยแล้ว", "success");
     });
   }
-  async function revision(target = selected) {
-    if (
-      !target ||
-      !window.confirm(
-        `ต้องการสร้างฉบับแก้ไข ${String(target.revision_no + 1).padStart(2, "0")} ใช่หรือไม่?`,
-      )
-    )
-      return;
+  function cancelQuotation(reason: string, note: string) {
+    if (!selected) return;
+    setConfirmation({
+      title: "ยืนยันการยกเลิกใบเสนอราคา",
+      message: "เอกสารจะเป็นแบบดูได้อย่างเดียวและไม่สามารถย้อนสถานะกลับได้",
+      confirmLabel: "ยืนยันยกเลิก",
+      tone: "danger",
+      onConfirm: () => void performCancelQuotation(selected, reason, note),
+    });
+  }
+  async function performRevision(target: Quote) {
     await run("กำลังสร้างฉบับแก้ไข", async () => {
       const result = await supabase.rpc("create_quotation_revision", {
         p_quotation_id: target.id,
       });
-      if (result.error) throw result.error;
-      setSelected(result.data);
+      if (result.error || !result.data) throw result.error || new Error("ไม่พบฉบับสำเนาที่สร้าง");
+      setSelected({ ...result.data, status: normalizeQuoteStatus(String(result.data.status)) });
       await load();
       notify("สร้างฉบับแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
-  async function documentAction(action: "generate_pdf" | "send_email", target = selected) {
+  function revision(target = selected) {
+    if (!target) return;
+    setConfirmation({
+      title: "สร้างสำเนาใบเสนอราคา",
+      message: `ระบบจะสร้างฉบับแก้ไข ${String(target.revision_no + 1).padStart(2, "0")} จาก ${target.document_no}`,
+      confirmLabel: "สร้างสำเนา",
+      onConfirm: () => void performRevision(target),
+    });
+  }
+  async function performDocumentAction(action: "generate_pdf" | "send_email", target: Quote) {
     if (!target) return;
     const recipients = Array.isArray(target.recipient_emails)
       ? target.recipient_emails
       : target.contact_email
         ? [target.contact_email]
         : [];
-    const question =
-      action === "generate_pdf"
-        ? "ยืนยันสร้าง PDF และบันทึกใน Google Drive ใช่หรือไม่?"
-        : `ยืนยันส่งอีเมลพร้อม PDF ไปที่ ${recipients.join(", ") || "ผู้รับที่ระบุ"} ใช่หรือไม่?`;
-    if (!window.confirm(question)) return;
     await run(
       action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
       async () => {
@@ -607,6 +647,16 @@ function App() {
         );
       },
     );
+  }
+  function documentAction(action: "generate_pdf" | "send_email", target = selected) {
+    if (!target) return;
+    const recipients = Array.isArray(target.recipient_emails) ? target.recipient_emails : target.contact_email ? [target.contact_email] : [];
+    setConfirmation({
+      title: action === "generate_pdf" ? "สร้าง PDF" : "ส่งอีเมล",
+      message: action === "generate_pdf" ? "ระบบจะสร้าง PDF และบันทึกลง Google Drive" : `ส่งอีเมลพร้อม PDF ไปที่ ${recipients.join(", ") || "ผู้รับที่ระบุ"}`,
+      confirmLabel: action === "generate_pdf" ? "สร้าง PDF" : "ส่งอีเมล",
+      onConfirm: () => void performDocumentAction(action, target),
+    });
   }
   async function printSelectedQuotation() {
     if (!selected) return;
@@ -845,6 +895,22 @@ function App() {
             <h2 id="achievement-title">{achievement.title}</h2>
             <span>{achievement.message}</span>
             <button className="primary" type="button" onClick={() => setAchievement(null)}>เรียบร้อย</button>
+          </section>
+        </div>
+      )}
+      {confirmation && (
+        <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+          <button type="button" className="confirmation-backdrop" aria-label="ปิดหน้าต่างยืนยัน" disabled={busy} onClick={() => setConfirmation(null)} />
+          <section className="confirmation-modal">
+            <img src={pixelAsset(confirmation.tone === "danger" ? "characters/robot/robot-warning-alert@2x.png" : "characters/robot/robot-neutral@2x.png")} alt="" aria-hidden="true" />
+            <h2 id="confirmation-title">{confirmation.title}</h2>
+            <p>{confirmation.message}</p>
+            <div className="inline-actions">
+              <button type="button" disabled={busy} onClick={() => setConfirmation(null)}>กลับ</button>
+              <button type="button" className={confirmation.tone === "danger" ? "danger" : "primary"} disabled={busy} onClick={() => { const action = confirmation.onConfirm; setConfirmation(null); action(); }}>
+                {busy && <Spinner />}{confirmation.confirmLabel}
+              </button>
+            </div>
           </section>
         </div>
       )}
@@ -1250,7 +1316,7 @@ function Editor({
         </div>
         <div className="actions">
           <button disabled={busy} onClick={onCancel}>
-            ยกเลิก
+            {mode === "create" ? "ออกจากฟอร์ม" : "ยกเลิกการแก้ไข"}
           </button>
           <button className="primary" disabled={busy} onClick={submit}>
             {busy && <Spinner />}
@@ -1833,6 +1899,9 @@ function Detail({
   const emailReady =
     Boolean(quote.pdf_drive_url) &&
     Boolean(quote.recipient_emails?.length || quote.contact_email);
+  useEffect(() => {
+    if (quote.status === "CANCELLED") setShowCancellation(false);
+  }, [quote.status]);
   return (
     <>
       <header className="page-header">
