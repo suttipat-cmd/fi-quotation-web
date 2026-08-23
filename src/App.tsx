@@ -82,7 +82,7 @@ const paymentOptions = [
   "ค่าบริการชำระราย 6 เดือน",
   "ค่าบริการชำระรายปี",
 ];
-const softwareServiceLabel = "ค่าบริการซอฟแวร์ระบบ";
+const softwareServiceLabel = "ค่าบริการซอฟต์แวร์";
 const setupChildServices = ["Setup ทะเบียนรถ", "Setup ข้อมูลทั่วไป"];
 const setupLabel = "Setup";
 const customFormLabel = "Custom Form";
@@ -115,6 +115,19 @@ const displayDate = (value?: string) => {
   const [year, month, day] = String(value || "").split("-");
   return year && month && day ? `${day}-${month}-${year}` : "—";
 };
+const documentServiceName = (value?: string) => {
+  if (
+    !value ||
+    value === "ค่าบริการประจำ" ||
+    value === "ค่าบริการซอฟแวร์ระบบ" ||
+    value === "ค่าบริการซอฟแวร์"
+  ) {
+    return softwareServiceLabel;
+  }
+  return value;
+};
+const documentAddonName = (value: string) =>
+  value === "ซ่อมบำรุง" ? "อู่ซ่อมบำรุง" : value;
 const printQuotation = (documentNo?: string) => {
   const previousTitle = document.title;
   document.title = documentNo || "ใบเสนอราคา";
@@ -1587,7 +1600,7 @@ function RecurringPlan({
     <Section title={softwareServiceLabel}>
       <p className="muted section-note">
         เลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox โดยระบบจะแสดงเป็นราคา
-        ค่าบริการซอฟแวร์ระบบหนึ่งรายการในใบเสนอราคา
+        ค่าบริการซอฟต์แวร์หนึ่งรายการในใบเสนอราคา
       </p>
       <fieldset className="check-field">
         <legend>รอบชำระค่าบริการ</legend>
@@ -1942,7 +1955,7 @@ function PriceBlock({
       <div className="price-title">
         <h3>
           {recurring
-            ? `1. ${form.billing_cycles.join(" / ") || "ค่าบริการซอฟแวร์ระบบ"}`
+            ? `1. ${form.billing_cycles.join(" / ") || softwareServiceLabel}`
             : "2. ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)"}
         </h3>
       </div>
@@ -1955,9 +1968,9 @@ function PriceBlock({
         {recurring ? (
           <div className="mini-row">
             <span className="service-cell">
-              {main?.service_name || softwareServiceLabel}
+              {documentServiceName(main?.service_name)}
               {form.recurring_addons.length > 0 && (
-                <small>{form.recurring_addons.join(", ")}</small>
+                <small>{form.recurring_addons.map(documentAddonName).join(", ")}</small>
               )}
             </span>
             <span>{form.package_reference_quantity || "—"} คัน</span>
@@ -2010,8 +2023,8 @@ function PriceBlock({
           <span>ยอดรวมสุทธิ</span>
           <b>{money(summary.net)}</b>
         </p>
-        <p className="amount-in-words">{thaiBaht(summary.net)}</p>
       </div>
+      <p className="table-amount-in-words">{thaiBaht(summary.net)}</p>
     </section>
   );
 }

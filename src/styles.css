@@ -797,7 +797,7 @@ button:disabled {
   flex-direction: column;
   padding: 15px 22px 14px;
   font-family: "Sarabun", "Noto Sans Thai", sans-serif;
-  font-size: 10.7px;
+  font-size: 11.7px;
   color: #26384f;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -832,7 +832,7 @@ button:disabled {
   gap: 2px;
 }
 .document-company b {
-  font-size: 12.6px;
+  font-size: 13.5px;
   color: #172b48;
 }
 .document-company span {
@@ -845,11 +845,11 @@ button:disabled {
 .document-title h2 {
   margin: 0;
   color: #19467d;
-  font-size: 20px;
+  font-size: 21px;
 }
 .document-title > span {
   color: #718097;
-  font-size: 8px;
+  font-size: 8.8px;
   letter-spacing: 0.08em;
 }
 .document-facts {
@@ -891,7 +891,7 @@ button:disabled {
 .document-customer span {
   display: block;
   color: #718097;
-  font-size: 9px;
+  font-size: 9.6px;
 }
 .document-customer p {
   margin: 1px 0 0;
@@ -914,7 +914,7 @@ button:disabled {
   min-height: 152px;
 }
 .quotation-paper .price-title h3 {
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .quotation-paper .mini-head,
 .quotation-paper .mini-row {
@@ -926,7 +926,7 @@ button:disabled {
 .quotation-paper .mini-row > span,
 .quotation-paper .mini-row > b {
   min-width: 0;
-  padding: 5px 7px;
+  padding: 6px 7px;
 }
 .quotation-paper .mini-head > span + span,
 .quotation-paper .mini-row > span + span,
@@ -961,7 +961,7 @@ button:disabled {
   display: block;
   margin: 0 0 2px;
   color: #61748a;
-  font-size: 8.5px;
+  font-size: 9.2px;
   font-weight: 700;
 }
 .quotation-paper .price-summary-card p {
@@ -975,12 +975,10 @@ button:disabled {
   background: #f1f6fb;
   padding: 3px 4px;
 }
-.quotation-paper .price-summary-card .amount-in-words {
-  margin: 1px 0 0;
-  padding-top: 1px;
-  border-top: 0;
+.table-amount-in-words {
+  margin: 3px 0 0;
   color: #586b80;
-  font-size: 8.5px;
+  font-size: 9.2px;
   text-align: right;
 }
 .document-footer-grid {
@@ -999,7 +997,7 @@ button:disabled {
 .document-footer-grid h3 {
   margin: 0 0 3px;
   color: #19477f;
-  font-size: 10px;
+  font-size: 10.8px;
 }
 .document-footer-grid p {
   margin: 0;
@@ -1049,13 +1047,14 @@ button:disabled {
   border-bottom: 1px dashed #aebfd1;
 }
 .compact-signatures {
-  margin-top: 9px;
-  padding-top: 5px;
+  margin-top: 3px;
+  min-height: 82px;
+  padding-top: 8px;
   gap: 18px;
 }
 .compact-signatures h3 {
-  margin: 0 0 8px;
-  font-size: 10px;
+  margin: 0 0 13px;
+  font-size: 10.8px;
   text-align: center;
 }
 .compact-signatures span {
@@ -1063,8 +1062,8 @@ button:disabled {
   align-items: baseline;
   gap: 4px;
   border-bottom: 0;
-  padding: 1px 0;
-  font-size: 9.5px;
+  padding: 3px 0;
+  font-size: 10.2px;
 }
 .compact-signatures span i {
   position: relative;
