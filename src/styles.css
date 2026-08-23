@@ -424,7 +424,7 @@ button:disabled {
 .date-range-trigger strong { color: #294865; font-size: 13px; font-weight: 600; }
 .date-range-trigger:hover,
 .date-range-trigger.active { border-color: #79a6d3; box-shadow: 0 0 0 2px #e2effc; }
-.date-range-control { flex: 0 0 auto; }
+.date-range-control { position: relative; z-index: 61; flex: 0 0 auto; }
 .list-filter-groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .list-filter-groups fieldset { display: grid; gap: 7px; min-width: 0; margin: 0; padding: 12px; border: 1px solid #dce6f0; border-radius: 9px; background: #fff; }
 .list-filter-groups legend { padding: 0 4px; color: #405a77; font-size: 12px; font-weight: 800; }
@@ -441,7 +441,7 @@ button:disabled {
 .list-error div { display: grid; gap: 2px; }
 .list-error span { font-size: 13px; }
 .list-error button { padding: 8px 12px; border: 1px solid #dfa2a2; border-radius: 7px; background: #fff; color: #9a3030; font-weight: 700; }
-.date-range-popover { justify-self: end; width: min(640px, 100%); margin-top: -4px; padding: 20px; border: 1px solid #d9e4ef; border-radius: 14px; background: #fff; box-shadow: 0 14px 32px #12385a24; }
+.date-range-popover { position: absolute; z-index: 62; top: calc(100% + 10px); right: 0; width: min(640px, calc(100vw - 365px)); padding: 20px; border: 1px solid #d9e4ef; border-radius: 14px; background: #fff; box-shadow: 0 22px 50px #12385a35; }
 .date-range-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .date-range-heading strong { display: block; color: #294865; font-size: 19px; }
 .date-range-heading small { display: block; margin-top: 3px; color: #7a899a; font-size: 13px; }
@@ -1714,7 +1714,7 @@ button:disabled {
   .list-search, .list-sales-filter { min-width: 0; }
   .list-toolbar-actions { justify-content: space-between; }
   .date-range-trigger { width: 100%; min-width: 0; }
-  .date-range-popover { padding: 18px; }
+  .date-range-popover { right: auto; left: 0; width: min(640px, calc(100vw - 48px)); padding: 18px; }
   .date-range-fields { grid-template-columns: 1fr; }
   .date-range-actions { grid-template-columns: auto 1fr auto; }
   .date-range-actions .primary { grid-column: 1 / -1; }
