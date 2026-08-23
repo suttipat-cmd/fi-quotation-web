@@ -7,9 +7,20 @@ const edgeErrorMessage = async (error: unknown) => {
     const payload = await context?.clone?.().json();
     if (payload && typeof payload.message === "string") return payload.message;
   } catch {
-    // fall back to the SDK error message
+    try {
+      const raw = await context?.clone?.().text();
+      if (raw) {
+        const payload = JSON.parse(raw);
+        if (typeof payload?.message === "string") return payload.message;
+      }
+    } catch {
+      // Fall back to the SDK error message below.
+    }
   }
-  return error instanceof Error ? error.message : "ไม่สามารถดำเนินการได้";
+  const message = error instanceof Error ? error.message : "ไม่สามารถดำเนินการได้";
+  return /non-2xx|functionshttperror/i.test(message)
+    ? "บริการสร้าง PDF ตอบกลับผิดพลาด กรุณาตรวจสอบ Google Apps Script"
+    : message;
 };
 
 const blobToBase64 = async (blob: Blob) => {

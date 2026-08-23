@@ -16,7 +16,7 @@ const callAppsScript = async (scriptUrl: string, payload: unknown) => {
     throw new Error(`Google Apps Script ตอบกลับไม่ถูกต้อง (HTTP ${response.status}): ${raw.slice(0, 240)}`)
   }
   if (!response.ok || !result.ok) {
-    throw new Error(result.message || `Google Apps Script ทำงานไม่สำเร็จ (HTTP ${response.status})`)
+    throw new Error(`Google Apps Script: ${result.message || `ทำงานไม่สำเร็จ (HTTP ${response.status})`}`)
   }
   return result
 }
