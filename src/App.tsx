@@ -830,6 +830,7 @@ function App() {
     <div
       className={`app-shell ${collapsed ? "sidebar-is-collapsed" : ""}`}
       style={{
+        "--system-wallpaper": `url(${appBasePath}/assets/terraria-system-background.png)`,
         "--pixel-sidebar-texture": `url(${pixelAsset("textures/sidebar-navy-stone@2x.png")})`,
         "--pixel-grid-texture": `url(${pixelAsset("textures/hud-blueprint-grid@2x.png")})`,
         "--pixel-paper-texture": `url(${pixelAsset("textures/app-background-parchment@2x.png")})`,
