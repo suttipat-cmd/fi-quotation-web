@@ -37,6 +37,18 @@ function json_(value) {
   );
 }
 
+// Run this once from the Apps Script editor after pasting the code. It opens
+// Google's authorization flow and verifies that the deployment owner can
+// write to the configured Drive folder.
+function authorizeDriveAccess() {
+  var folderId = PropertiesService.getScriptProperties().getProperty(
+    "DRIVE_FOLDER_ID",
+  );
+  if (!folderId) throw new Error("ยังไม่ได้ตั้งค่า DRIVE_FOLDER_ID");
+  var folder = DriveApp.getFolderById(folderId);
+  Logger.log("เขียนไฟล์ลงโฟลเดอร์ได้: " + folder.getName());
+}
+
 function safeFileName_(value) {
   var name = String(value || "ใบเสนอราคา.pdf").trim();
   if (!/\.pdf$/i.test(name)) name += ".pdf";
