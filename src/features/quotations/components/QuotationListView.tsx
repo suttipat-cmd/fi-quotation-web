@@ -10,7 +10,9 @@ const STATUS_ORDER: QuoteStatus[] = ["DRAFT", "READY", "ACCEPTED", "EXPIRED", "C
 
 const includesText = (value: unknown, query: string) =>
   String(value || "").toLocaleLowerCase("th-TH").includes(query);
-const isoDate = (date: Date) => date.toISOString().slice(0, 10);
+// Date inputs represent local calendar days. Using toISOString() converts to UTC,
+// which moves Bangkok dates back one day and can put the range in the prior month.
+const isoDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const monthRange = (offset = 0): DateRange => {
   const date = new Date();
   date.setMonth(date.getMonth() + offset, 1);
