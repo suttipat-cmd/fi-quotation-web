@@ -29,7 +29,7 @@ import { calculateCategoryTotals, calculateItemTotal, calculateQuotationTotals }
 import { documentAddonName, documentServiceName } from "./features/quotations/domain/document";
 import { quotationActions } from "./features/quotations/domain/status";
 import { getQuotationItems, saveQuotationDraft } from "./features/quotations/services/quotation-service";
-import { sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
+import { quotationPdfBaseName, sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
 import { createPreviewPdf } from "./features/quotations/services/preview-pdf";
 import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
 
@@ -483,7 +483,7 @@ function App() {
   async function printSelectedQuotation() {
     if (!selected) return;
     const previousTitle = document.title;
-    document.title = selected.document_no || "ใบเสนอราคา";
+    document.title = quotationPdfBaseName(selected) || "ใบเสนอราคา";
     window.addEventListener("afterprint", () => { document.title = previousTitle; }, { once: true });
     window.print();
   }
@@ -815,7 +815,7 @@ function Editor({
   onRemoveItem: (id: string) => void;
 }) {
   const patch = (value: Partial<Form>) => setForm({ ...form, ...value });
-  const noteLength = form.notes.length;
+  const limitNotesToNineLines = (value: string) => value.replace(/\r/g, "").split("\n").slice(0, 9).join("\n");
   return (
     <>
       <header className="topbar editor-topbar">
@@ -990,12 +990,10 @@ function Editor({
             <Field label="หมายเหตุ">
               <textarea
                 value={form.notes}
-                onChange={(event) => patch({ notes: event.target.value })}
+                rows={9}
+                onChange={(event) => patch({ notes: limitNotesToNineLines(event.target.value) })}
               />
             </Field>
-            <p className={`field-help ${noteLength > 450 ? "warning" : ""}`}>
-              {noteLength}/450 ตัวอักษร{noteLength > 450 ? " — หมายเหตุยาวเกินพื้นที่ที่แนะนำสำหรับเอกสาร A4 หน้าเดียว" : ""}
-            </p>
           </Section>
         </section>
         <Preview form={form} items={items} />
@@ -1250,8 +1248,8 @@ function Preview({
 }
 
 function QuotePaper({ form, items, group, documentNo, paperRef }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals>; documentNo?: string; paperRef?: { current: HTMLElement | null } }) {
-  const usedNoteLines = form.notes.split(/\r?\n/).filter((line) => line.trim()).length;
-  const remainingNoteLines = Math.max(0, 5 - usedNoteLines);
+  const usedNoteLines = form.notes ? form.notes.split(/\r?\n/).length : 0;
+  const remainingNoteLines = Math.max(0, 9 - usedNoteLines);
   return (
     <article className="paper quotation-paper" ref={paperRef}>
       <div className="document-topline">

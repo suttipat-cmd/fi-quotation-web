@@ -62,12 +62,14 @@ Deno.serve(async (req) => {
         return json({ message: 'ไฟล์ PDF มีขนาดใหญ่เกินกำหนด กรุณาลดเนื้อหาหรือรูปภาพในเอกสาร' }, 413)
       }
       const snapshot = { quotation: quote, items: items || [] }
+      const revisionSuffix = Number(quote.revision_no) > 0 ? ` (${quote.revision_no})` : ''
+      const defaultFileName = `${quote.document_no}${revisionSuffix}.pdf`
       // The browser generated this exact PDF for the user-facing preview. Apps
       // Script stores the same bytes; it must not render a second document.
       const result = await callAppsScript(scriptUrl, {
         action: 'store_pdf',
         secret,
-        file_name: typeof payload.file_name === 'string' ? payload.file_name : `${quote.document_no}.pdf`,
+        file_name: typeof payload.file_name === 'string' ? payload.file_name : defaultFileName,
         pdf_base64: payload.pdf_base64,
       })
       const { error: revisionError } = await adminDb.from('quotation_revisions').upsert({ quotation_id: quote.id, revision_no: quote.revision_no, snapshot, pdf_drive_file_id: result.fileId, pdf_drive_url: result.url, pdf_generated_at: new Date().toISOString(), generated_by: user.id }, { onConflict: 'quotation_id,revision_no' })

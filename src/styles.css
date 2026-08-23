@@ -1109,15 +1109,16 @@ button:disabled {
 }
 .compact-signatures span i b {
   position: absolute;
-  right: 0;
+  left: 50%;
   bottom: -2px;
-  left: 0;
+  transform: translateX(-50%);
   padding: 0 4px;
   background: #fff;
   color: #26384f;
   font-style: normal;
   font-weight: 400;
   text-align: center;
+  white-space: nowrap;
 }
 .detail-grid {
   display: grid;

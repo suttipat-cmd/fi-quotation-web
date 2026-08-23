@@ -1,6 +1,12 @@
 import { supabase } from "../../../supabase";
 import type { Quotation } from "../types";
 
+export const quotationPdfBaseName = (quotation: Pick<Quotation, "document_no" | "revision_no">) =>
+  `${quotation.document_no}${quotation.revision_no > 0 ? ` (${quotation.revision_no})` : ""}`;
+
+export const quotationPdfFileName = (quotation: Pick<Quotation, "document_no" | "revision_no">) =>
+  `${quotationPdfBaseName(quotation)}.pdf`;
+
 const edgeErrorMessage = async (error: unknown) => {
   const context = (error as { context?: { clone?: () => Response } })?.context;
   try {
@@ -38,7 +44,7 @@ export const uploadGeneratedPdf = async (quotation: Quotation, pdf: Blob) => {
     body: {
       action: "generate_pdf",
       quotation_id: quotation.id,
-      file_name: `${quotation.document_no}.pdf`,
+      file_name: quotationPdfFileName(quotation),
       pdf_base64: await blobToBase64(pdf),
     },
   });

@@ -52,7 +52,6 @@ export const createPreviewPdf = async (paper: HTMLElement) => {
       // limits after base64 encoding for the Apps Script handoff.
       scale: 3,
       useCORS: true,
-      foreignObjectRendering: true,
       logging: false,
       width: copy.scrollWidth,
       height: copy.scrollHeight,
