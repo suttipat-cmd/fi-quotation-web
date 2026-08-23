@@ -183,6 +183,7 @@ function App() {
   const [services, setServices] = useState<Service[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quotesLoadError, setQuotesLoadError] = useState<string | null>(null);
+  const [initialDataReady, setInitialDataReady] = useState(false);
   const [view, setView] = useState<View>(initialRoute.current.view);
   const [selected, setSelected] = useState<Quote | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -247,7 +248,7 @@ function App() {
     if (session) void load();
   }, [session]);
   useEffect(() => {
-    if (!session || !profile || restoredRoute.current) return;
+    if (!session || !profile || !initialDataReady || restoredRoute.current) return;
     const route = initialRoute.current;
     restoredRoute.current = true;
     if (route.view === "dashboard") return;
@@ -272,8 +273,9 @@ function App() {
     }
     if (route.view === "edit") void startEdit(quote);
     else void openDetail(quote);
-  }, [session, profile, quotes]);
+  }, [session, profile, quotes, initialDataReady]);
   async function load() {
+    setInitialDataReady(false);
     setLoading("กำลังโหลดข้อมูล");
     const [profileResult, servicesResult, quotesResult] = await Promise.all([
       supabase.from("profiles").select("*").single(),
@@ -315,6 +317,7 @@ function App() {
     } else {
       setServices(servicesResult.data || []);
     }
+    setInitialDataReady(true);
   }
   const totals = useMemo(() => calculateQuotationTotals(form, items), [items, form]);
   async function run(label: string, task: () => Promise<void>) {
@@ -538,18 +541,20 @@ function App() {
     );
   if (!session) return <Auth onSession={setSession} />;
   const busy = Boolean(loading);
+  const pageContext = view === "dashboard"
+    ? "ภาพรวม"
+    : view === "create"
+      ? "สร้างใบเสนอราคา"
+      : view === "edit"
+        ? "แก้ไขใบเสนอราคา"
+        : view === "detail"
+          ? "รายละเอียดใบเสนอราคา"
+          : "ตั้งค่าระบบ";
+  const userName = profile?.display_name || session.user.email || "ผู้ใช้งาน";
+  const isRestoringDocumentRoute = view !== "dashboard" && view !== "settings" && !restoredRoute.current;
   const nav = (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
-      <div className="side-top">
-        <Brand hideText={collapsed} />
-        <button
-          className="icon-button"
-          aria-label="ย่อหรือขยายเมนู"
-          onClick={() => setCollapsed((value) => !value)}
-        >
-          {collapsed ? "›" : "‹"}
-        </button>
-      </div>
+      <p className="sidebar-label">เมนูหลัก</p>
       <nav>
         <button
           className={view === "dashboard" ? "active" : ""}
@@ -595,7 +600,28 @@ function App() {
     </aside>
   );
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${collapsed ? "sidebar-is-collapsed" : ""}`}>
+      <header className="app-topbar">
+        <div className="app-topbar-start">
+          <button
+            className="app-menu-toggle"
+            aria-label="ย่อหรือขยายเมนู"
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? "☰" : "‹"}
+          </button>
+          <Brand />
+          <span className="app-topbar-subtitle">ระบบจัดการใบเสนอราคา</span>
+        </div>
+        <span className="app-topbar-context">{pageContext}</span>
+        <div className="app-topbar-user" aria-label="ข้อมูลผู้ใช้งาน">
+          <span className="app-user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
+          <span className="app-user-copy">
+            <strong>{userName}</strong>
+            <small>{profile?.role === "ADMIN" ? "ผู้ดูแลระบบ" : profile?.role === "SALE" ? "ฝ่ายขาย" : "ผู้ใช้งาน"}</small>
+          </span>
+        </div>
+      </header>
       {nav}
       <main
         className={`work ${view === "create" || view === "edit" || view === "detail" ? "editor-work" : ""}`}
@@ -614,7 +640,10 @@ function App() {
             onRetry={() => void load()}
           />
         )}
-        {view === "create" && (
+        {isRestoringDocumentRoute && (
+          <main className="page-loader route-loader"><Spinner /><span>กำลังเตรียมเอกสาร</span></main>
+        )}
+        {view === "create" && !isRestoringDocumentRoute && (
           <Editor
             mode="create"
             form={form}
@@ -629,7 +658,7 @@ function App() {
             onRemoveItem={removeItem}
           />
         )}
-        {view === "edit" && (
+        {view === "edit" && !isRestoringDocumentRoute && (
           <Editor
             mode="edit"
             form={form}
@@ -647,7 +676,7 @@ function App() {
             onRemoveItem={removeItem}
           />
         )}
-        {view === "detail" && selected && (
+        {view === "detail" && selected && !isRestoringDocumentRoute && (
           <Detail
             quote={selected}
             items={detailItems}
@@ -777,7 +806,7 @@ function Dashboard({
 }) {
   return (
     <>
-      <header className="topbar editor-topbar">
+      <header className="page-header editor-page-header">
         <div>
           <p className="eyebrow">ภาพรวมระบบ</p>
           <h1>ใบเสนอราคาของคุณ</h1>
@@ -787,8 +816,8 @@ function Dashboard({
           ＋ สร้างใบเสนอราคา
         </button>
       </header>
-      <section className="card table-card">
-        <div className="section-heading">
+      <section className="card table-card quotation-list-panel">
+        <div className="section-heading quotation-list-heading">
           <div>
             <h2>รายการใบเสนอราคา</h2>
           </div>
@@ -943,7 +972,7 @@ function Settings({
 
   return (
     <>
-      <header className="topbar editor-topbar">
+      <header className="page-header editor-page-header">
         <div>
           <p className="eyebrow">ผู้ดูแลระบบ</p>
           <h1>ตั้งค่าระบบ</h1>
@@ -1017,7 +1046,7 @@ function Editor({
   const limitNotesToNineLines = (value: string) => value.replace(/\r/g, "").split("\n").slice(0, 9).join("\n");
   return (
     <>
-      <header className="topbar editor-topbar">
+      <header className="page-header editor-page-header">
         <div>
           <p className="eyebrow">
             {mode === "create" ? "ใบเสนอราคาใหม่" : "แก้ไขใบเสนอราคา"}
@@ -1522,7 +1551,7 @@ function Detail({
     Boolean(quote.recipient_emails?.length || quote.contact_email);
   return (
     <>
-      <header className="topbar">
+      <header className="page-header">
         <div>
           <p className="eyebrow">รายละเอียดใบเสนอราคา</p>
           <h1>

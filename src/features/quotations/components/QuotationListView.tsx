@@ -33,10 +33,15 @@ export default function QuotationListView({
   onAction: (quote: Quotation, action: QuotationListAction) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [sales, setSales] = useState("");
   const [statuses, setStatuses] = useState<QuoteStatus[]>([]);
   const [dates, setDates] = useState<DateFilters>({ issuedFrom: "", issuedTo: "", validFrom: "", validTo: "" });
   const normalizedSearch = search.trim().toLocaleLowerCase("th-TH");
-  const hasFilters = Boolean(normalizedSearch || statuses.length || Object.values(dates).some(Boolean));
+  const hasFilters = Boolean(normalizedSearch || sales || statuses.length || Object.values(dates).some(Boolean));
+  const salesPeople = useMemo(
+    () => [...new Set(quotes.map((quote) => quote.sales_name?.trim()).filter(Boolean))].sort((a, b) => a!.localeCompare(b!, "th")) as string[],
+    [quotes],
+  );
   const counts = useMemo(
     () => Object.fromEntries(STATUS_ORDER.map((status) => [status, quotes.filter((quote) => quote.status === status).length])) as Record<QuoteStatus, number>,
     [quotes],
@@ -50,17 +55,19 @@ export default function QuotationListView({
         quote.contact_name,
       ].some((value) => includesText(value, normalizedSearch));
       const matchesStatus = !statuses.length || statuses.includes(quote.status);
+      const matchesSales = !sales || quote.sales_name === sales;
       const matchesIssued = (!dates.issuedFrom || quote.issued_at >= dates.issuedFrom)
         && (!dates.issuedTo || quote.issued_at <= dates.issuedTo);
       const matchesValidity = (!dates.validFrom || quote.valid_until >= dates.validFrom)
         && (!dates.validTo || quote.valid_until <= dates.validTo);
-      return matchesSearch && matchesStatus && matchesIssued && matchesValidity;
+      return matchesSearch && matchesStatus && matchesSales && matchesIssued && matchesValidity;
     }),
-    [quotes, normalizedSearch, statuses, dates],
+    [quotes, normalizedSearch, sales, statuses, dates],
   );
 
   const clearFilters = () => {
     setSearch("");
+    setSales("");
     setStatuses([]);
     setDates({ issuedFrom: "", issuedTo: "", validFrom: "", validTo: "" });
   };
@@ -73,7 +80,7 @@ export default function QuotationListView({
 
   return (
     <>
-      <section className="status-summary" aria-label="สรุปสถานะใบเสนอราคา">
+      <section className="status-summary list-panel-section" aria-label="สรุปสถานะใบเสนอราคา">
         <button className={`status-summary-card ${!statuses.length ? "active" : ""}`} aria-pressed={!statuses.length} onClick={() => toggleStatus()}>
           <span>เอกสารทั้งหมด</span><strong>{quotes.length}</strong><small>รายการ</small>
         </button>
@@ -90,25 +97,48 @@ export default function QuotationListView({
       </section>
 
       <section className="quotation-list-toolbar" aria-label="ค้นหาและกรองรายการใบเสนอราคา">
-        <label className="list-search">
-          <span>ค้นหา</span>
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="เลขที่เอกสาร, ลูกค้า, ผู้เสนอราคา"
-          />
-        </label>
-        <div className="list-date-filters">
-          <label><span>ออกเอกสารตั้งแต่</span><input type="date" value={dates.issuedFrom} onChange={(event) => setDates({ ...dates, issuedFrom: event.target.value })} /></label>
-          <label><span>ถึง</span><input type="date" value={dates.issuedTo} onChange={(event) => setDates({ ...dates, issuedTo: event.target.value })} /></label>
-          <label><span>ใช้ได้ถึงตั้งแต่</span><input type="date" value={dates.validFrom} onChange={(event) => setDates({ ...dates, validFrom: event.target.value })} /></label>
-          <label><span>ถึง</span><input type="date" value={dates.validTo} onChange={(event) => setDates({ ...dates, validTo: event.target.value })} /></label>
+        <div className="list-toolbar-row">
+          <label className="list-search">
+            <span>ค้นหา</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="เลขที่เอกสาร, ลูกค้า, ผู้เสนอราคา"
+            />
+          </label>
+          <label className="list-sales-filter">
+            <span>ผู้เสนอราคา</span>
+            <select value={sales} onChange={(event) => setSales(event.target.value)}>
+              <option value="">ทั้งหมด</option>
+              {salesPeople.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+          <div className="list-toolbar-actions">
+            <span>แสดง {filteredQuotes.length} จาก {quotes.length} รายการ</span>
+            <button type="button" className="text-button" disabled={!hasFilters} onClick={clearFilters}>ล้างตัวกรอง</button>
+          </div>
         </div>
-        <div className="list-toolbar-actions">
-          <span>แสดง {filteredQuotes.length} จาก {quotes.length} รายการ</span>
-          <button type="button" className="text-button" disabled={!hasFilters} onClick={clearFilters}>ล้างตัวกรอง</button>
-        </div>
+        <details className="quotation-advanced-filters">
+          <summary>ตัวกรองเพิ่มเติม</summary>
+          <div className="list-date-filters">
+            <label><span>ออกเอกสารตั้งแต่</span><input type="date" value={dates.issuedFrom} onChange={(event) => setDates({ ...dates, issuedFrom: event.target.value })} /></label>
+            <label><span>ถึง</span><input type="date" value={dates.issuedTo} onChange={(event) => setDates({ ...dates, issuedTo: event.target.value })} /></label>
+            <label><span>ใช้ได้ถึงตั้งแต่</span><input type="date" value={dates.validFrom} onChange={(event) => setDates({ ...dates, validFrom: event.target.value })} /></label>
+            <label><span>ถึง</span><input type="date" value={dates.validTo} onChange={(event) => setDates({ ...dates, validTo: event.target.value })} /></label>
+          </div>
+        </details>
+        {hasFilters && (
+          <div className="list-filter-chips" aria-live="polite" aria-label="ตัวกรองที่ใช้งาน">
+            {normalizedSearch && <button type="button" onClick={() => setSearch("")}>ค้นหา: {search.trim()} <span aria-hidden="true">×</span></button>}
+            {sales && <button type="button" onClick={() => setSales("")}>ผู้เสนอราคา: {sales} <span aria-hidden="true">×</span></button>}
+            {statuses.length > 0 && <button type="button" onClick={() => setStatuses([])}>สถานะ: {statuses.map((status) => STATUS_TEXT[status]).join(", ")} <span aria-hidden="true">×</span></button>}
+            {dates.issuedFrom && <button type="button" onClick={() => setDates({ ...dates, issuedFrom: "" })}>ออกตั้งแต่: {dates.issuedFrom} <span aria-hidden="true">×</span></button>}
+            {dates.issuedTo && <button type="button" onClick={() => setDates({ ...dates, issuedTo: "" })}>ออกถึง: {dates.issuedTo} <span aria-hidden="true">×</span></button>}
+            {dates.validFrom && <button type="button" onClick={() => setDates({ ...dates, validFrom: "" })}>ใช้ได้ตั้งแต่: {dates.validFrom} <span aria-hidden="true">×</span></button>}
+            {dates.validTo && <button type="button" onClick={() => setDates({ ...dates, validTo: "" })}>ใช้ได้ถึง: {dates.validTo} <span aria-hidden="true">×</span></button>}
+          </div>
+        )}
       </section>
 
       {loadError && (
@@ -124,7 +154,7 @@ export default function QuotationListView({
           <button className="primary" onClick={onCreate}>สร้างใบเสนอราคา</button>
         </div>
       ) : filteredQuotes.length ? (
-        <QuotationGrid quotes={filteredQuotes} onSelect={onSelect} onAction={onAction} />
+        <div className="list-grid-section"><QuotationGrid quotes={filteredQuotes} onSelect={onSelect} onAction={onAction} /></div>
       ) : !loadError ? (
         <div className="empty list-no-results">
           <span>⌕</span><h3>ไม่พบเอกสารตามตัวกรอง</h3><p>ลองเปลี่ยนคำค้นหา วันที่ หรือสถานะที่เลือก</p>

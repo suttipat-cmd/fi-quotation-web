@@ -35,8 +35,8 @@ const quotationGridTheme = themeQuartz.withParams({
   fontFamily: ["Noto Sans Thai", "system-ui", "sans-serif"],
   fontSize: 14,
   headerFontWeight: 700,
-  headerHeight: 54,
-  rowHeight: 68,
+  headerHeight: 48,
+  rowHeight: 60,
   borderRadius: 9,
   wrapperBorderRadius: 9,
   accentColor: "#16559b",
@@ -158,8 +158,21 @@ export default function QuotationGrid({
             ? [data.document_no, revisionLabel(data.revision_no)].filter(Boolean).join(" · ")
             : "",
       },
-      { headerName: "ลูกค้า", field: "customer_name", flex: 1.8, minWidth: 220 },
-      { headerName: "ใช้ได้ถึง", field: "valid_until", flex: 0.9, minWidth: 125, valueFormatter: ({ value }) => displayDate(value) },
+      {
+        headerName: "ลูกค้า",
+        field: "customer_name",
+        flex: 1.7,
+        minWidth: 230,
+        cellRenderer: ({ data, value }: { data?: Quotation; value?: string }) => (
+          <div className="grid-customer-cell">
+            <strong>{value || "-"}</strong>
+            {data?.contact_name && <span>{data.contact_name}</span>}
+          </div>
+        ),
+      },
+      { headerName: "วันที่ออก", field: "issued_at", flex: 0.85, minWidth: 120, valueFormatter: ({ value }) => displayDate(value) },
+      { headerName: "ใช้ได้ถึง", field: "valid_until", flex: 0.85, minWidth: 120, valueFormatter: ({ value }) => displayDate(value) },
+      { headerName: "ผู้เสนอราคา", field: "sales_name", flex: 0.9, minWidth: 135, valueFormatter: ({ value }) => value || "-" },
       {
         headerName: "สถานะ",
         field: "status",
@@ -209,8 +222,8 @@ export default function QuotationGrid({
           defaultColDef={{ sortable: true, filter: false, resizable: true, suppressHeaderMenuButton: true }}
           localeText={THAI_GRID_TEXT}
           theme={quotationGridTheme}
-          headerHeight={54}
-          rowHeight={68}
+          headerHeight={48}
+          rowHeight={60}
         />
       </AgGridProvider>
     </div>
