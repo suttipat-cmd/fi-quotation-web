@@ -1,4 +1,4 @@
-import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money, thaiBaht } from "./lib/format";
@@ -1104,14 +1104,11 @@ function Editor({
   const customerNameRef = useRef<HTMLInputElement>(null);
   const initialDraft = useRef(JSON.stringify({ form, items }));
   const [attemptedSave, setAttemptedSave] = useState(false);
-  const deferredForm = useDeferredValue(form);
-  const deferredItems = useDeferredValue(items);
   const patch = (value: Partial<Form>) => setForm({ ...form, ...value });
   const limitNotesToNineLines = (value: string) => value.replace(/\r/g, "").split("\n").slice(0, 9).join("\n");
   const customerNameError = attemptedSave && !form.customer_name.trim()
     ? "กรุณาระบุชื่อลูกค้าก่อนบันทึก"
     : undefined;
-  const isPreviewUpdating = deferredForm !== form || deferredItems !== items;
   useEffect(() => {
     onDirtyChange(initialDraft.current !== JSON.stringify({ form, items }));
   }, [form, items, onDirtyChange]);
@@ -1321,7 +1318,7 @@ function Editor({
             <p className="field-help notes-help">กรอกได้สูงสุด 9 บรรทัด</p>
           </Section>
         </section>
-        <Preview form={deferredForm} items={deferredItems} isUpdating={isPreviewUpdating} />
+        <Preview form={form} items={items} />
       </div>
     </>
   );
@@ -1533,26 +1530,22 @@ function Preview({
   items,
   quotation,
   paperRef: externalPaperRef,
-  isUpdating = false,
 }: {
   form: Form;
   items: Item[];
   quotation?: Quote | null;
   paperRef?: { current: HTMLElement | null };
-  isUpdating?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
-  const [fitScale, setFitScale] = useState(1);
-  const [zoom, setZoom] = useState<"fit" | 75 | 100>("fit");
+  const [scale, setScale] = useState(1);
   const [isPaperOverflow, setIsPaperOverflow] = useState(false);
-  const scale = zoom === "fit" ? fitScale : zoom / 100;
   const totals = useMemo(() => calculateQuotationTotals(form, items), [form, items]);
   const group = (category: Item["category"]) => calculateCategoryTotals(category, form, items, totals);
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
-    const updateScale = () => setFitScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
+    const updateScale = () => setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(node);
@@ -1570,12 +1563,7 @@ function Preview({
   }, [form, items, totals, scale]);
   return (
     <aside className="preview-panel">
-      <div className="preview-toolbar">
-        <p className="preview-label">ตัวอย่างใบเสนอราคา {isUpdating && <small aria-live="polite">กำลังอัปเดต</small>}</p>
-        <div className="preview-zoom" aria-label="ขนาดตัวอย่างเอกสาร">
-          {(["fit", 75, 100] as const).map((value) => <button key={value} type="button" className={zoom === value ? "active" : ""} onClick={() => setZoom(value)}>{value === "fit" ? "พอดี" : `${value}%`}</button>)}
-        </div>
-      </div>
+      <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
       {isPaperOverflow && <p className="preview-overflow" role="alert">เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF</p>}
       <div className="preview-scroll" ref={scrollRef}>
         <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
