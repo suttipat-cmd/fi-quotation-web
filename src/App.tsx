@@ -199,6 +199,7 @@ function App() {
   const [booting, setBooting] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [salesProfiles, setSalesProfiles] = useState<Profile[]>([]);
+  const [mySalesScope, setMySalesScope] = useState<UserSalesScope | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quotesLoadError, setQuotesLoadError] = useState<string | null>(null);
@@ -386,7 +387,7 @@ function App() {
   async function load() {
     setInitialDataReady(false);
     setLoading("กำลังโหลดข้อมูล");
-    const [profileResult, servicesResult, quotesResult, salesResult] = await Promise.all([
+    const [profileResult, servicesResult, quotesResult, salesResult, myScopeResult] = await Promise.all([
       supabase.from("profiles").select("*").single(),
       supabase
         .from("services")
@@ -398,6 +399,7 @@ function App() {
         .select("*, quotation_revisions(pdf_drive_url, revision_no), quotation_items(category, service_name, quantity, unit, line_net_satang)")
         .order("created_at", { ascending: false }),
       supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active").eq("role", "SALE").eq("active", true).order("display_name"),
+      supabase.from("user_sales_scopes").select("user_id, all_sales, sales_profile_ids").eq("user_id", session?.user.id || "").maybeSingle(),
     ]);
     setLoading(null);
     // Master data must never hide quotations that were successfully loaded.
@@ -438,6 +440,11 @@ function App() {
     } else {
       setSalesProfiles((salesResult.data || []) as Profile[]);
     }
+    if (myScopeResult.error) {
+      setMySalesScope(null);
+    } else {
+      setMySalesScope(myScopeResult.data as UserSalesScope | null);
+    }
     setInitialDataReady(true);
   }
   const totals = useMemo(() => calculateQuotationTotals(form, items), [items, form]);
@@ -458,7 +465,10 @@ function App() {
     }
   }
   const reset = () => {
-    setForm({ ...initialQuotationForm(profile?.display_name || ""), sales_profile_id: profile?.id });
+    const defaultSales = profile?.role === "USER"
+      ? (!mySalesScope ? profile : salesProfiles.find((sales) => mySalesScope.all_sales || mySalesScope.sales_profile_ids.includes(sales.id)) || profile)
+      : profile;
+    setForm({ ...initialQuotationForm(defaultSales?.display_name || ""), sales_profile_id: defaultSales?.id });
     setItems(defaultQuotationItems(services));
     setSelected(null);
     setEditingId(null);
@@ -858,6 +868,7 @@ function App() {
             services={services}
             profile={profile}
             salesProfiles={salesProfiles}
+            salesScope={mySalesScope}
             busy={busy}
             onDirtyChange={setEditorDirty}
             onSave={() => void save()}
@@ -876,6 +887,7 @@ function App() {
             services={services}
             profile={profile}
             salesProfiles={salesProfiles}
+            salesScope={mySalesScope}
             busy={busy}
             onDirtyChange={setEditorDirty}
             onSave={() => void saveEdit()}
@@ -1375,6 +1387,7 @@ function Editor({
   services,
   profile,
   salesProfiles,
+  salesScope,
   busy,
   onDirtyChange,
   onSave,
@@ -1390,6 +1403,7 @@ function Editor({
   services: Service[];
   profile: Profile | null;
   salesProfiles: Profile[];
+  salesScope: UserSalesScope | null;
   busy: boolean;
   onDirtyChange: (isDirty: boolean) => void;
   onSave: () => void;
@@ -1459,7 +1473,7 @@ function Editor({
               </Field>
             </div>
             <Field label="ผู้เสนอราคา">
-              {profile?.role === "ADMIN" ? (
+              {profile?.role === "ADMIN" || (profile?.role === "USER" && Boolean(salesScope && (salesScope.all_sales || salesScope.sales_profile_ids.length))) ? (
                 <select
                   value={form.sales_profile_id || ""}
                   onChange={(event) => {
@@ -1471,7 +1485,7 @@ function Editor({
                   }}
                 >
                   <option value="">เลือกผู้เสนอราคา</option>
-                  {salesProfiles.map((sales) => <option key={sales.id} value={sales.id}>{sales.display_name || sales.email || "ไม่ระบุชื่อ"}</option>)}
+                  {salesProfiles.filter((sales) => profile?.role === "ADMIN" || salesScope?.all_sales || salesScope?.sales_profile_ids.includes(sales.id)).map((sales) => <option key={sales.id} value={sales.id}>{sales.display_name || sales.email || "ไม่ระบุชื่อ"}</option>)}
                 </select>
               ) : (
                 <input readOnly value={form.sales_name || profile?.display_name || ""} />
