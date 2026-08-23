@@ -17,6 +17,7 @@ export const initialQuotationForm = (salesName = ""): QuotationForm => ({
   contact_email: "",
   recipient_emails: [],
   sales_name: salesName,
+  sales_profile_id: undefined,
   issued_at: today(),
   valid_until: plusDays(30),
   notes: "",
@@ -104,6 +105,7 @@ export const formFromQuotation = (quote: Quotation): QuotationForm => ({
       ? [quote.contact_email]
       : [],
   sales_name: quote.sales_name || "",
+  sales_profile_id: quote.sales_profile_id || undefined,
   issued_at: quote.issued_at || today(),
   valid_until: quote.valid_until || plusDays(30),
   notes: quote.notes || "",

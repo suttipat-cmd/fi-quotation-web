@@ -44,7 +44,7 @@ type Achievement = { title: string; message: string } | null;
 type Confirmation = { title: string; message: string; confirmLabel: string; tone?: "danger" | "primary"; onConfirm: () => void } | null;
 type View = "dashboard" | "create" | "edit" | "detail" | "settings";
 type Route = { view: View; id?: string };
-type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts";
+type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts" | "sales" | "user_scopes" | "email_template";
 type CompanySettings = {
   id: boolean;
   company_name: string;
@@ -61,6 +61,8 @@ type CompanySettings = {
 };
 type PaymentTerm = { id: string; name: string; body: string; active: boolean; sort_order: number };
 type BankAccount = { id: string; bank_name: string; account_name: string; account_number: string; branch: string | null; active: boolean; is_default: boolean };
+type EmailTemplate = { code: string; subject_template: string; body_template: string; fixed_cc: string[] };
+type UserSalesScope = { user_id: string; all_sales: boolean; sales_profile_ids: string[] };
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
@@ -91,6 +93,10 @@ const routePath = (view: View, id?: string) =>
     : `${appBasePath}/${view}${id ? `/${id}` : ""}`;
 const revisionLabel = (revisionNo: number) =>
   revisionNo > 0 ? `ฉบับแก้ไข ${String(revisionNo).padStart(2, "0")}` : null;
+const renderEmailTemplate = (template: string, values: Record<string, string>) =>
+  template.replace(/\{([a-z_]+)\}/g, (_match, key: string) => values[key] ?? "");
+const uniqueEmails = (emails: Array<string | null | undefined>) =>
+  [...new Set(emails.map((email) => email?.trim().toLowerCase()).filter((email): email is string => Boolean(email && /^\S+@\S+\.\S+$/.test(email))))];
 
 const friendlyError = (message?: string) =>
   !message
@@ -192,6 +198,7 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [booting, setBooting] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [salesProfiles, setSalesProfiles] = useState<Profile[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quotesLoadError, setQuotesLoadError] = useState<string | null>(null);
@@ -379,7 +386,7 @@ function App() {
   async function load() {
     setInitialDataReady(false);
     setLoading("กำลังโหลดข้อมูล");
-    const [profileResult, servicesResult, quotesResult] = await Promise.all([
+    const [profileResult, servicesResult, quotesResult, salesResult] = await Promise.all([
       supabase.from("profiles").select("*").single(),
       supabase
         .from("services")
@@ -390,6 +397,7 @@ function App() {
         .from("quotations")
         .select("*, quotation_revisions(pdf_drive_url, revision_no), quotation_items(category, service_name, quantity, unit, line_net_satang)")
         .order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active").eq("role", "SALE").eq("active", true).order("display_name"),
     ]);
     setLoading(null);
     // Master data must never hide quotations that were successfully loaded.
@@ -425,6 +433,11 @@ function App() {
     } else {
       setServices(servicesResult.data || []);
     }
+    if (salesResult.error) {
+      notify(`โหลดรายชื่อฝ่ายขายไม่สำเร็จ: ${friendlyError(salesResult.error.message)}`, "error");
+    } else {
+      setSalesProfiles((salesResult.data || []) as Profile[]);
+    }
     setInitialDataReady(true);
   }
   const totals = useMemo(() => calculateQuotationTotals(form, items), [items, form]);
@@ -445,7 +458,7 @@ function App() {
     }
   }
   const reset = () => {
-    setForm(initialQuotationForm(profile?.display_name || ""));
+    setForm({ ...initialQuotationForm(profile?.display_name || ""), sales_profile_id: profile?.id });
     setItems(defaultQuotationItems(services));
     setSelected(null);
     setEditingId(null);
@@ -638,11 +651,34 @@ function App() {
             pdf_drive_url: result.pdf_drive_url,
           });
         } else {
+          if (!recipients.length) throw new Error("กรุณาระบุอีเมลผู้รับเอกสารก่อนส่งอีเมล");
+          if (!target.sales_email) throw new Error("ยังไม่มีอีเมลของผู้เสนอราคา กรุณาให้ผู้ดูแลระบบตั้งค่าข้อมูลฝ่ายขายก่อนส่งอีเมล");
+          const { data: template, error: templateError } = await supabase
+            .from("email_templates")
+            .select("code, subject_template, body_template, fixed_cc")
+            .eq("code", "QUOTATION_SEND")
+            .single();
+          if (templateError || !template) throw new Error(templateError?.message || "ไม่พบเทมเพลตอีเมล");
+          const mainServices = (target.list_items || [])
+            .filter((item) => item.category === "RECURRING")
+            .map((item) => documentServiceName(item.service_name))
+            .filter(Boolean)
+            .join(", ") || "ตามรายละเอียดในใบเสนอราคา";
+          const values = {
+            recipient_name: target.contact_name ? `คุณ${target.contact_name}${target.contact_position ? ` / ${target.contact_position}` : ""}` : "ผู้เกี่ยวข้อง",
+            customer_name: target.customer_name || "",
+            document_no: target.document_no || "",
+            main_services: mainServices,
+            sales_name: target.sales_name || "",
+            sales_title: target.sales_title || "ฝ่ายขาย",
+            sales_phone: target.sales_phone || "-",
+          };
           await sendQuotationEmail({
             quotationId: target.id,
             to: recipients,
-            subject: `ใบเสนอราคา ${target.document_no}`,
-            message: `เรียน ${target.contact_name || ""}\n\nขอส่งใบเสนอราคา ${target.document_no} ตามเอกสารแนบ\n\nขอบคุณค่ะ\nForward Insight`,
+            cc: uniqueEmails([...(template.fixed_cc || []), target.sales_email]),
+            subject: renderEmailTemplate(template.subject_template, values),
+            message: renderEmailTemplate(template.body_template, values),
           });
         }
         await load();
@@ -820,6 +856,8 @@ function App() {
             setForm={setForm}
             items={items}
             services={services}
+            profile={profile}
+            salesProfiles={salesProfiles}
             busy={busy}
             onDirtyChange={setEditorDirty}
             onSave={() => void save()}
@@ -836,6 +874,8 @@ function App() {
             setForm={setForm}
             items={items}
             services={services}
+            profile={profile}
+            salesProfiles={salesProfiles}
             busy={busy}
             onDirtyChange={setEditorDirty}
             onSave={() => void saveEdit()}
@@ -1109,19 +1149,26 @@ function Settings({
   const [settingServices, setSettingServices] = useState<Service[]>([]);
   const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [salesProfiles, setSalesProfiles] = useState<Profile[]>([]);
+  const [userProfiles, setUserProfiles] = useState<Profile[]>([]);
+  const [salesScopes, setSalesScopes] = useState<UserSalesScope[]>([]);
+  const [emailTemplate, setEmailTemplate] = useState<EmailTemplate | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const loadSettings = async () => {
     setLoadingSettings(true);
-    const [companyResult, servicesResult, termsResult, banksResult] = await Promise.all([
+    const [companyResult, servicesResult, termsResult, banksResult, profilesResult, scopesResult, templateResult] = await Promise.all([
       supabase.from("company_settings").select("*").eq("id", true).maybeSingle(),
       supabase.from("services").select("*").order("sort_order"),
       supabase.from("payment_terms").select("*").order("sort_order"),
       supabase.from("bank_accounts").select("*").order("is_default", { ascending: false }),
+      supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active").order("display_name"),
+      supabase.from("user_sales_scopes").select("user_id, all_sales, sales_profile_ids"),
+      supabase.from("email_templates").select("code, subject_template, body_template, fixed_cc").eq("code", "QUOTATION_SEND").maybeSingle(),
     ]);
     setLoadingSettings(false);
-    const errors = [companyResult.error, servicesResult.error, termsResult.error, banksResult.error].filter(Boolean);
+    const errors = [companyResult.error, servicesResult.error, termsResult.error, banksResult.error, profilesResult.error, scopesResult.error, templateResult.error].filter(Boolean);
     if (errors.length) {
       notify(`โหลดข้อมูลตั้งค่าไม่สำเร็จ: ${friendlyError(errors[0]?.message)}`, "error");
       return;
@@ -1130,6 +1177,11 @@ function Settings({
     setSettingServices((servicesResult.data || []) as Service[]);
     setPaymentTerms((termsResult.data || []) as PaymentTerm[]);
     setBankAccounts((banksResult.data || []) as BankAccount[]);
+    const profiles = (profilesResult.data || []) as Profile[];
+    setSalesProfiles(profiles.filter((profile) => profile.role === "SALE"));
+    setUserProfiles(profiles.filter((profile) => profile.role === "USER"));
+    setSalesScopes((scopesResult.data || []) as UserSalesScope[]);
+    setEmailTemplate(templateResult.data as EmailTemplate | null);
   };
 
   useEffect(() => { void loadSettings(); }, []);
@@ -1189,6 +1241,41 @@ function Settings({
           is_default: account.is_default,
         }))));
       }
+      if (tab === "sales") {
+        const results = await Promise.all(salesProfiles.map((sales) => supabase.from("profiles").update({
+          display_name: sales.display_name?.trim() || null,
+          job_title: sales.job_title?.trim() || null,
+          phone: sales.phone?.trim() || null,
+          work_email: sales.work_email?.trim() || null,
+          active: sales.active !== false,
+        }).eq("id", sales.id)));
+        error = results.find((result) => result.error)?.error || null;
+      }
+      if (tab === "user_scopes") {
+        const writes = userProfiles.map(async (user) => {
+          const scope = salesScopes.find((item) => item.user_id === user.id);
+          if (!scope || (!scope.all_sales && !scope.sales_profile_ids.length)) {
+            return supabase.from("user_sales_scopes").delete().eq("user_id", user.id);
+          }
+          return supabase.from("user_sales_scopes").upsert({
+            user_id: user.id,
+            all_sales: scope.all_sales,
+            sales_profile_ids: scope.all_sales ? [] : scope.sales_profile_ids,
+            updated_at: new Date().toISOString(),
+          });
+        });
+        const results = await Promise.all(writes);
+        error = results.find((result) => result.error)?.error || null;
+      }
+      if (tab === "email_template" && emailTemplate) {
+        ({ error } = await supabase.from("email_templates").upsert({
+          code: "QUOTATION_SEND",
+          subject_template: emailTemplate.subject_template.trim(),
+          body_template: emailTemplate.body_template.trim(),
+          fixed_cc: uniqueEmails(emailTemplate.fixed_cc),
+          updated_at: new Date().toISOString(),
+        }));
+      }
       if (error) throw error;
       notify("บันทึกการตั้งค่าเรียบร้อยแล้ว", "success");
       onSaved();
@@ -1206,6 +1293,12 @@ function Settings({
     setPaymentTerms((current) => current.map((term) => term.id === id ? { ...term, ...patch } : term));
   const updateBank = (id: string, patch: Partial<BankAccount>) =>
     setBankAccounts((current) => current.map((account) => account.id === id ? { ...account, ...patch } : account));
+  const updateSalesProfile = (id: string, patch: Partial<Profile>) =>
+    setSalesProfiles((current) => current.map((profile) => profile.id === id ? { ...profile, ...patch } : profile));
+  const updateScope = (userId: string, patch: Partial<UserSalesScope>) => setSalesScopes((current) => {
+    const existing = current.find((scope) => scope.user_id === userId) || { user_id: userId, all_sales: false, sales_profile_ids: [] };
+    return [...current.filter((scope) => scope.user_id !== userId), { ...existing, ...patch }];
+  });
   const addService = () => setSettingServices((current) => [...current, {
     id: crypto.randomUUID(), code: `SERVICE_${Date.now()}`, name: "บริการใหม่", default_category: "ONE_TIME",
     default_billing_type: "ONE_TIME", default_calculation_mode: "FIXED_PRICE", default_unit: "ครั้ง",
@@ -1244,6 +1337,9 @@ function Settings({
           ["services", "บริการและราคา"],
           ["payment_terms", "เงื่อนไขชำระเงิน"],
           ["bank_accounts", "บัญชีธนาคาร"],
+          ["sales", "ข้อมูลฝ่ายขาย"],
+          ["user_scopes", "สิทธิ์ผู้ใช้งาน"],
+          ["email_template", "เทมเพลตอีเมล"],
         ] as Array<[SettingTab, string]>).map(([value, label]) => (
           <button key={value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
         ))}
@@ -1262,6 +1358,9 @@ function Settings({
           {tab === "services" && <div className="settings-list">{settingServices.map((service) => <article className="settings-row" key={service.id}><div className="two"><Field label="รหัสบริการ"><input value={service.code || ""} onChange={(event) => updateService(service.id, { code: event.target.value })} /></Field><Field label="ชื่อบริการ"><input value={service.name} onChange={(event) => updateService(service.id, { name: event.target.value })} /></Field></div><div className="four"><Field label="ประเภท"><select value={service.default_category} onChange={(event) => updateService(service.id, { default_category: event.target.value as Service["default_category"] })}><option value="RECURRING">รายเดือน</option><option value="ONE_TIME">ครั้งเดียว</option></select></Field><Field label="หน่วย"><input value={service.default_unit || ""} onChange={(event) => updateService(service.id, { default_unit: event.target.value })} /></Field><Field label="ราคาแนะนำ (บาท)"><MoneyInput value={service.suggested_price_satang || 0} onChange={(value) => updateService(service.id, { suggested_price_satang: value })} /></Field><label className="toggle-field"><input type="checkbox" checked={service.active !== false} onChange={(event) => updateService(service.id, { active: event.target.checked })} /> เปิดใช้งาน</label></div></article>)}</div>}
           {tab === "payment_terms" && <div className="settings-list">{paymentTerms.map((term) => <article className="settings-row" key={term.id}><Field label="ชื่อเงื่อนไข"><input value={term.name} onChange={(event) => updateTerm(term.id, { name: event.target.value })} /></Field><Field label="เนื้อหา"><textarea value={term.body} onChange={(event) => updateTerm(term.id, { body: event.target.value })} /></Field><label className="toggle-field"><input type="checkbox" checked={term.active} onChange={(event) => updateTerm(term.id, { active: event.target.checked })} /> เปิดใช้งาน</label></article>)}</div>}
           {tab === "bank_accounts" && <div className="settings-list">{bankAccounts.map((account) => <article className="settings-row" key={account.id}><div className="two"><Field label="ธนาคาร"><input value={account.bank_name} onChange={(event) => updateBank(account.id, { bank_name: event.target.value })} /></Field><Field label="ชื่อบัญชี"><input value={account.account_name} onChange={(event) => updateBank(account.id, { account_name: event.target.value })} /></Field></div><div className="two"><Field label="เลขที่บัญชี"><input value={account.account_number} onChange={(event) => updateBank(account.id, { account_number: event.target.value })} /></Field><Field label="สาขา"><input value={account.branch || ""} onChange={(event) => updateBank(account.id, { branch: event.target.value })} /></Field></div><div className="settings-toggles"><label className="toggle-field"><input type="checkbox" checked={account.active} onChange={(event) => updateBank(account.id, { active: event.target.checked })} /> เปิดใช้งาน</label><label className="toggle-field"><input type="radio" name="default-bank" checked={account.is_default} onChange={() => setBankAccounts((current) => current.map((item) => ({ ...item, is_default: item.id === account.id })))} /> บัญชีเริ่มต้น</label></div></article>)}</div>}
+          {tab === "sales" && <div className="settings-list">{salesProfiles.map((sales) => <article className="settings-row" key={sales.id}><h3>{sales.display_name || sales.email || "ฝ่ายขาย"}</h3><div className="four"><Field label="ชื่อแสดง"><input value={sales.display_name || ""} onChange={(event) => updateSalesProfile(sales.id, { display_name: event.target.value })} /></Field><Field label="ตำแหน่ง"><input value={sales.job_title || ""} onChange={(event) => updateSalesProfile(sales.id, { job_title: event.target.value })} /></Field><Field label="โทรศัพท์"><input value={sales.phone || ""} onChange={(event) => updateSalesProfile(sales.id, { phone: event.target.value })} /></Field><Field label="อีเมลทำงาน"><input type="email" value={sales.work_email || ""} onChange={(event) => updateSalesProfile(sales.id, { work_email: event.target.value })} /></Field></div><label className="toggle-field"><input type="checkbox" checked={sales.active !== false} onChange={(event) => updateSalesProfile(sales.id, { active: event.target.checked })} /> เปิดใช้งาน</label></article>)}</div>}
+          {tab === "user_scopes" && <div className="settings-list">{userProfiles.map((user) => { const scope = salesScopes.find((item) => item.user_id === user.id) || { user_id: user.id, all_sales: false, sales_profile_ids: [] }; return <article className="settings-row" key={user.id}><h3>{user.display_name || user.email || "ผู้ใช้งาน"}</h3><label className="toggle-field"><input type="checkbox" checked={scope.all_sales} onChange={(event) => updateScope(user.id, { all_sales: event.target.checked, sales_profile_ids: event.target.checked ? [] : scope.sales_profile_ids })} /> เห็นข้อมูลของฝ่ายขายทุกคน</label>{!scope.all_sales && <fieldset className="check-field"><legend>ฝ่ายขายที่อนุญาต</legend><div className="check-grid">{salesProfiles.filter((sales) => sales.active !== false).map((sales) => <label className="check-row" key={sales.id}><input type="checkbox" checked={scope.sales_profile_ids.includes(sales.id)} onChange={(event) => updateScope(user.id, { sales_profile_ids: event.target.checked ? [...scope.sales_profile_ids, sales.id] : scope.sales_profile_ids.filter((id) => id !== sales.id) })} />{sales.display_name || sales.email}</label>)}</div></fieldset>}</article>; })}</div>}
+          {tab === "email_template" && emailTemplate && <div className="settings-form"><p className="muted">ตัวแปรที่ใช้ได้: {"{recipient_name}"}, {"{customer_name}"}, {"{document_no}"}, {"{main_services}"}, {"{sales_name}"}, {"{sales_title}"}, {"{sales_phone}"}</p><Field label="หัวข้ออีเมล"><input value={emailTemplate.subject_template} onChange={(event) => setEmailTemplate({ ...emailTemplate, subject_template: event.target.value })} /></Field><Field label="เนื้อหาอีเมล"><textarea rows={18} value={emailTemplate.body_template} onChange={(event) => setEmailTemplate({ ...emailTemplate, body_template: event.target.value })} /></Field><EmailTags emails={emailTemplate.fixed_cc || []} onChange={(fixed_cc) => setEmailTemplate({ ...emailTemplate, fixed_cc })} /></div>}
         </section>
       )}
     </>
@@ -1274,6 +1373,8 @@ function Editor({
   setForm,
   items,
   services,
+  profile,
+  salesProfiles,
   busy,
   onDirtyChange,
   onSave,
@@ -1287,6 +1388,8 @@ function Editor({
   setForm: (form: Form) => void;
   items: Item[];
   services: Service[];
+  profile: Profile | null;
+  salesProfiles: Profile[];
   busy: boolean;
   onDirtyChange: (isDirty: boolean) => void;
   onSave: () => void;
@@ -1356,10 +1459,23 @@ function Editor({
               </Field>
             </div>
             <Field label="ผู้เสนอราคา">
-              <input
-                value={form.sales_name}
-                onChange={(event) => patch({ sales_name: event.target.value })}
-              />
+              {profile?.role === "ADMIN" ? (
+                <select
+                  value={form.sales_profile_id || ""}
+                  onChange={(event) => {
+                    const selectedSales = salesProfiles.find((sales) => sales.id === event.target.value);
+                    patch({
+                      sales_profile_id: selectedSales?.id,
+                      sales_name: selectedSales?.display_name || "",
+                    });
+                  }}
+                >
+                  <option value="">เลือกผู้เสนอราคา</option>
+                  {salesProfiles.map((sales) => <option key={sales.id} value={sales.id}>{sales.display_name || sales.email || "ไม่ระบุชื่อ"}</option>)}
+                </select>
+              ) : (
+                <input readOnly value={form.sales_name || profile?.display_name || ""} />
+              )}
             </Field>
           </Section>
           <Section title="ข้อมูลลูกค้า" id="customer">

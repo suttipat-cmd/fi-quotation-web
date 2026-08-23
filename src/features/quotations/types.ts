@@ -38,6 +38,7 @@ export type QuotationItem = {
 };
 
 export type QuotationForm = {
+  sales_profile_id?: string;
   customer_name: string;
   customer_address: string;
   contact_name: string;
@@ -75,6 +76,10 @@ export type Quotation = {
   contact_email?: string | null;
   recipient_emails?: string[] | null;
   sales_name?: string | null;
+  sales_profile_id?: string | null;
+  sales_title?: string | null;
+  sales_phone?: string | null;
+  sales_email?: string | null;
   issued_at: string;
   valid_until: string;
   notes?: string | null;
@@ -128,4 +133,8 @@ export type Profile = {
   display_name: string | null;
   role: "ADMIN" | "SALE" | "USER";
   email?: string;
+  job_title?: string | null;
+  phone?: string | null;
+  work_email?: string | null;
+  active?: boolean;
 };
