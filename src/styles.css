@@ -319,6 +319,54 @@ button:disabled {
 .quote-row strong {
   text-align: right;
 }
+.quotation-grid {
+  height: min(580px, calc(100vh - 330px));
+  min-height: 340px;
+  margin-top: 18px;
+  --ag-font-family: "Noto Sans Thai", system-ui, sans-serif;
+  --ag-font-size: 13px;
+  --ag-header-background-color: #edf3f8;
+  --ag-header-foreground-color: #51647c;
+  --ag-row-hover-color: #f5f9fe;
+  --ag-border-color: #dfe7f0;
+  --ag-row-border-color: #e4eaf1;
+  --ag-selected-row-background-color: #eaf3fc;
+  --ag-accent-color: #16559b;
+  --ag-wrapper-border-radius: 9px;
+}
+.quotation-grid .ag-row { cursor: pointer; }
+.quotation-grid .ag-cell { display: flex; align-items: center; }
+.grid-document-number { display: grid; gap: 2px; }
+.grid-document-number b { color: #194476; }
+.grid-document-number small { color: #8190a4; font-size: 11px; }
+.grid-money { justify-content: flex-end; font-weight: 700; }
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.settings-tabs button {
+  border: 1px solid #d0dce8;
+  border-radius: 8px;
+  padding: 9px 13px;
+  background: #fff;
+  color: #4a5d74;
+  font-weight: 600;
+}
+.settings-tabs button.active { background: #e9f2fc; border-color: #7fa9d4; color: #17477f; }
+.settings-panel {
+  background: #fff;
+  border: 1px solid #dfe7f0;
+  border-radius: 13px;
+  box-shadow: 0 7px 20px #1e4d7610;
+  padding: 22px;
+}
+.settings-form { max-width: 900px; }
+.settings-list { display: grid; gap: 14px; }
+.settings-row { border: 1px solid #e0e8f0; border-radius: 10px; padding: 16px; }
+.settings-toggles { display: flex; flex-wrap: wrap; gap: 20px; }
+.toggle-field { display: inline-flex; align-items: center; gap: 7px; color: #445a73; font-size: 13px; font-weight: 600; }
 .badge {
   display: inline-flex;
   font-style: normal;
@@ -1059,20 +1107,6 @@ button:disabled {
   grid-area: payment;
   border-left: 1px solid #d8e2ec;
   padding-right: 0 !important;
-}
-.blank-note-lines {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: space-between;
-  margin-top: 8px;
-}
-.document-notes .multiline + .blank-note-lines {
-  margin-top: 0;
-}
-.blank-note-lines i {
-  display: block;
-  border-bottom: 1px dashed #aebfd1;
 }
 .compact-signatures {
   margin-top: 3px;

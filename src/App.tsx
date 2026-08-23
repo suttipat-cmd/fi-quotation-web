@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money, thaiBaht } from "./lib/format";
@@ -33,11 +33,30 @@ import { quotationPdfBaseName, sendQuotationEmail, uploadGeneratedPdf } from "./
 import { createPreviewPdf } from "./features/quotations/services/preview-pdf";
 import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
 
+const QuotationGrid = lazy(() => import("./features/quotations/components/QuotationGrid"));
+
 declare const __APP_BUILD_ID__: string;
 
 type Toast = { text: string; type: "success" | "error" | "info" } | null;
-type View = "dashboard" | "create" | "edit" | "detail";
+type View = "dashboard" | "create" | "edit" | "detail" | "settings";
 type Route = { view: View; id?: string };
+type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts";
+type CompanySettings = {
+  id: boolean;
+  company_name: string;
+  company_name_en: string | null;
+  tax_id: string | null;
+  branch: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  default_vat_rate: number;
+  default_wht_rate: number;
+  default_validity_days: number;
+};
+type PaymentTerm = { id: string; name: string; body: string; active: boolean; sort_order: number };
+type BankAccount = { id: string; bank_name: string; account_name: string; account_number: string; branch: string | null; active: boolean; is_default: boolean };
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
@@ -48,6 +67,7 @@ const routeFromLocation = (): Route => {
     .replace(/^\/+|\/+$/g, "");
   const [view, id] = path.split("/");
   if (view === "create") return { view: "create" };
+  if (view === "settings") return { view: "settings" };
   if (view === "detail" && id) return { view: "detail", id };
   if (view === "edit" && id) return { view: "edit", id };
   return { view: "dashboard" };
@@ -56,6 +76,8 @@ const routePath = (view: View, id?: string) =>
   view === "dashboard"
     ? `${appBasePath}/`
     : `${appBasePath}/${view}${id ? `/${id}` : ""}`;
+const revisionLabel = (revisionNo: number) =>
+  revisionNo > 0 ? `ฉบับแก้ไข ${String(revisionNo).padStart(2, "0")}` : null;
 
 const friendlyError = (message?: string) =>
   !message
@@ -227,6 +249,14 @@ function App() {
     const route = initialRoute.current;
     restoredRoute.current = true;
     if (route.view === "dashboard") return;
+    if (route.view === "settings") {
+      if (profile.role === "ADMIN") navigate("settings", undefined, true);
+      else {
+        notify("หน้านี้สำหรับผู้ดูแลระบบเท่านั้น", "error");
+        navigate("dashboard", undefined, true);
+      }
+      return;
+    }
     if (route.view === "create") {
       reset();
       navigate("create", undefined, true);
@@ -526,6 +556,15 @@ function App() {
           <span>＋</span>
           <b>สร้างใบเสนอราคา</b>
         </button>
+        {profile?.role === "ADMIN" && (
+          <button
+            className={view === "settings" ? "active" : ""}
+            onClick={() => navigate("settings")}
+          >
+            <span>⚙</span>
+            <b>ตั้งค่า</b>
+          </button>
+        )}
       </nav>
       <div className="account">
         <strong>{profile?.display_name || session.user.email}</strong>
@@ -617,6 +656,20 @@ function App() {
             onPrint={() => void printSelectedQuotation()}
             onAccept={() => void acceptQuotation()}
             onCancel={(reason, note) => void cancelQuotation(reason, note)}
+          />
+        )}
+        {view === "settings" && profile?.role === "ADMIN" && (
+          <Settings busy={busy} notify={notify} onSaved={() => void load()} />
+        )}
+        {view === "settings" && profile?.role !== "ADMIN" && (
+          <Dashboard
+            quotes={quotes}
+            busy={busy}
+            onCreate={() => {
+              reset();
+              navigate("create");
+            }}
+            onSelect={(quote) => void openDetail(quote)}
           />
         )}
       </main>
@@ -736,35 +789,9 @@ function Dashboard({
           </div>
         </div>
         {quotes.length ? (
-          <div className="quote-table">
-            <div className="quote-head">
-              <span>เลขที่เอกสาร</span>
-              <span>ลูกค้า</span>
-              <span>วันหมดอายุ</span>
-              <span>สถานะ</span>
-              <span>ยอดสุทธิ</span>
-            </div>
-            {quotes.map((quote) => (
-              <button
-                key={quote.id}
-                className="quote-row"
-                onClick={() => onSelect(quote)}
-              >
-                <b>
-                  {quote.document_no}
-                  <small>
-                    ฉบับแก้ไข {String(quote.revision_no).padStart(2, "0")}
-                  </small>
-                </b>
-                <span>{quote.customer_name}</span>
-                <span>{displayDate(quote.valid_until)}</span>
-                <span>
-                  <QuotationStatusBadge status={quote.status} />
-                </span>
-                <strong>{money(quote.net_amount_satang ?? 0)}</strong>
-              </button>
-            ))}
-          </div>
+          <Suspense fallback={<div className="empty"><Spinner /><p>กำลังโหลดตารางข้อมูล</p></div>}>
+            <QuotationGrid quotes={quotes} onSelect={onSelect} />
+          </Suspense>
         ) : (
           <div className="empty">
             <span>◫</span>
@@ -779,6 +806,177 @@ function Dashboard({
     </>
   );
 }
+
+function Settings({
+  busy,
+  notify,
+  onSaved,
+}: {
+  busy: boolean;
+  notify: (text: string, type?: NonNullable<Toast>["type"]) => void;
+  onSaved: () => void;
+}) {
+  const [tab, setTab] = useState<SettingTab>("company");
+  const [company, setCompany] = useState<CompanySettings | null>(null);
+  const [settingServices, setSettingServices] = useState<Service[]>([]);
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadSettings = async () => {
+    setLoadingSettings(true);
+    const [companyResult, servicesResult, termsResult, banksResult] = await Promise.all([
+      supabase.from("company_settings").select("*").eq("id", true).maybeSingle(),
+      supabase.from("services").select("*").order("sort_order"),
+      supabase.from("payment_terms").select("*").order("sort_order"),
+      supabase.from("bank_accounts").select("*").order("is_default", { ascending: false }),
+    ]);
+    setLoadingSettings(false);
+    const errors = [companyResult.error, servicesResult.error, termsResult.error, banksResult.error].filter(Boolean);
+    if (errors.length) {
+      notify(`โหลดข้อมูลตั้งค่าไม่สำเร็จ: ${friendlyError(errors[0]?.message)}`, "error");
+      return;
+    }
+    setCompany(companyResult.data as CompanySettings | null);
+    setSettingServices((servicesResult.data || []) as Service[]);
+    setPaymentTerms((termsResult.data || []) as PaymentTerm[]);
+    setBankAccounts((banksResult.data || []) as BankAccount[]);
+  };
+
+  useEffect(() => { void loadSettings(); }, []);
+
+  const save = async () => {
+    if (saving || busy) return;
+    setSaving(true);
+    try {
+      let error: { message?: string } | null = null;
+      if (tab === "company" && company) {
+        ({ error } = await supabase.from("company_settings").update({
+          company_name: company.company_name.trim(),
+          company_name_en: company.company_name_en || null,
+          tax_id: company.tax_id || null,
+          branch: company.branch || null,
+          address: company.address || null,
+          phone: company.phone || null,
+          email: company.email || null,
+          website: company.website || null,
+          default_vat_rate: Number(company.default_vat_rate || 0),
+          default_wht_rate: Number(company.default_wht_rate || 0),
+          default_validity_days: Number(company.default_validity_days || 30),
+        }).eq("id", true));
+      }
+      if (tab === "services") {
+        ({ error } = await supabase.from("services").upsert(settingServices.map((service, index) => ({
+          id: service.id,
+          code: service.code?.trim(),
+          name: service.name.trim(),
+          default_description: service.default_description || null,
+          default_category: service.default_category,
+          default_billing_type: service.default_billing_type,
+          default_calculation_mode: service.default_calculation_mode,
+          default_unit: service.default_unit || null,
+          suggested_price_satang: service.suggested_price_satang || null,
+          active: service.active !== false,
+          sort_order: service.sort_order ?? (index + 1) * 10,
+        }))));
+      }
+      if (tab === "payment_terms") {
+        ({ error } = await supabase.from("payment_terms").upsert(paymentTerms.map((term, index) => ({
+          id: term.id,
+          name: term.name.trim(),
+          body: term.body.trim(),
+          active: term.active,
+          sort_order: term.sort_order || (index + 1) * 10,
+        }))));
+      }
+      if (tab === "bank_accounts") {
+        ({ error } = await supabase.from("bank_accounts").upsert(bankAccounts.map((account) => ({
+          id: account.id,
+          bank_name: account.bank_name.trim(),
+          account_name: account.account_name.trim(),
+          account_number: account.account_number.trim(),
+          branch: account.branch || null,
+          active: account.active,
+          is_default: account.is_default,
+        }))));
+      }
+      if (error) throw error;
+      notify("บันทึกการตั้งค่าเรียบร้อยแล้ว", "success");
+      onSaved();
+      await loadSettings();
+    } catch (error) {
+      notify(friendlyError(errorMessage(error)), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateService = (id: string, patch: Partial<Service>) =>
+    setSettingServices((current) => current.map((service) => service.id === id ? { ...service, ...patch } : service));
+  const updateTerm = (id: string, patch: Partial<PaymentTerm>) =>
+    setPaymentTerms((current) => current.map((term) => term.id === id ? { ...term, ...patch } : term));
+  const updateBank = (id: string, patch: Partial<BankAccount>) =>
+    setBankAccounts((current) => current.map((account) => account.id === id ? { ...account, ...patch } : account));
+  const addService = () => setSettingServices((current) => [...current, {
+    id: crypto.randomUUID(), code: `SERVICE_${Date.now()}`, name: "บริการใหม่", default_category: "ONE_TIME",
+    default_billing_type: "ONE_TIME", default_calculation_mode: "FIXED_PRICE", default_unit: "ครั้ง",
+    suggested_price_satang: null, active: true, sort_order: (current.length + 1) * 10,
+  }]);
+  const addTerm = () => setPaymentTerms((current) => [...current, {
+    id: crypto.randomUUID(), name: "เงื่อนไขใหม่", body: "", active: true, sort_order: (current.length + 1) * 10,
+  }]);
+  const addBank = () => setBankAccounts((current) => [...current, {
+    id: crypto.randomUUID(), bank_name: "", account_name: "", account_number: "", branch: null, active: true, is_default: current.length === 0,
+  }]);
+
+  return (
+    <>
+      <header className="topbar editor-topbar">
+        <div>
+          <p className="eyebrow">ผู้ดูแลระบบ</p>
+          <h1>ตั้งค่าระบบ</h1>
+          <p className="muted">จัดการข้อมูลตั้งต้นที่ใช้ในใบเสนอราคา</p>
+        </div>
+        <div className="actions">
+          {tab === "services" && <button disabled={saving || busy} onClick={addService}>＋ เพิ่มบริการ</button>}
+          {tab === "payment_terms" && <button disabled={saving || busy} onClick={addTerm}>＋ เพิ่มเงื่อนไข</button>}
+          {tab === "bank_accounts" && <button disabled={saving || busy} onClick={addBank}>＋ เพิ่มบัญชี</button>}
+          <button className="primary" disabled={saving || busy || loadingSettings} onClick={() => void save()}>
+            {saving && <Spinner />}บันทึกการตั้งค่า
+          </button>
+        </div>
+      </header>
+      <section className="settings-tabs" aria-label="หมวดการตั้งค่า">
+        {([
+          ["company", "ข้อมูลบริษัท"],
+          ["services", "บริการและราคา"],
+          ["payment_terms", "เงื่อนไขชำระเงิน"],
+          ["bank_accounts", "บัญชีธนาคาร"],
+        ] as Array<[SettingTab, string]>).map(([value, label]) => (
+          <button key={value} className={tab === value ? "active" : ""} onClick={() => setTab(value)}>{label}</button>
+        ))}
+      </section>
+      {loadingSettings ? <main className="page-loader"><Spinner /><span>กำลังโหลดการตั้งค่า</span></main> : (
+        <section className="settings-panel">
+          {tab === "company" && company && (
+            <div className="settings-form">
+              <div className="two"><Field label="ชื่อบริษัท"><input value={company.company_name} onChange={(event) => setCompany({ ...company, company_name: event.target.value })} /></Field><Field label="ชื่อบริษัท (อังกฤษ)"><input value={company.company_name_en || ""} onChange={(event) => setCompany({ ...company, company_name_en: event.target.value })} /></Field></div>
+              <div className="two"><Field label="เลขประจำตัวผู้เสียภาษี"><input value={company.tax_id || ""} onChange={(event) => setCompany({ ...company, tax_id: event.target.value })} /></Field><Field label="สาขา"><input value={company.branch || ""} onChange={(event) => setCompany({ ...company, branch: event.target.value })} /></Field></div>
+              <Field label="ที่อยู่"><textarea value={company.address || ""} onChange={(event) => setCompany({ ...company, address: event.target.value })} /></Field>
+              <div className="three"><Field label="โทรศัพท์"><input value={company.phone || ""} onChange={(event) => setCompany({ ...company, phone: event.target.value })} /></Field><Field label="อีเมล"><input value={company.email || ""} onChange={(event) => setCompany({ ...company, email: event.target.value })} /></Field><Field label="เว็บไซต์"><input value={company.website || ""} onChange={(event) => setCompany({ ...company, website: event.target.value })} /></Field></div>
+              <div className="three"><Field label="VAT เริ่มต้น (%)"><input type="number" min="0" max="100" value={company.default_vat_rate} onChange={(event) => setCompany({ ...company, default_vat_rate: Number(event.target.value) })} /></Field><Field label="หัก ณ ที่จ่ายเริ่มต้น (%)"><input type="number" min="0" max="100" value={company.default_wht_rate} onChange={(event) => setCompany({ ...company, default_wht_rate: Number(event.target.value) })} /></Field><Field label="อายุใบเสนอราคาเริ่มต้น (วัน)"><input type="number" min="1" value={company.default_validity_days} onChange={(event) => setCompany({ ...company, default_validity_days: Number(event.target.value) })} /></Field></div>
+            </div>
+          )}
+          {tab === "services" && <div className="settings-list">{settingServices.map((service) => <article className="settings-row" key={service.id}><div className="two"><Field label="รหัสบริการ"><input value={service.code || ""} onChange={(event) => updateService(service.id, { code: event.target.value })} /></Field><Field label="ชื่อบริการ"><input value={service.name} onChange={(event) => updateService(service.id, { name: event.target.value })} /></Field></div><div className="four"><Field label="ประเภท"><select value={service.default_category} onChange={(event) => updateService(service.id, { default_category: event.target.value as Service["default_category"] })}><option value="RECURRING">รายเดือน</option><option value="ONE_TIME">ครั้งเดียว</option></select></Field><Field label="หน่วย"><input value={service.default_unit || ""} onChange={(event) => updateService(service.id, { default_unit: event.target.value })} /></Field><Field label="ราคาแนะนำ (บาท)"><MoneyInput value={service.suggested_price_satang || 0} onChange={(value) => updateService(service.id, { suggested_price_satang: value })} /></Field><label className="toggle-field"><input type="checkbox" checked={service.active !== false} onChange={(event) => updateService(service.id, { active: event.target.checked })} /> เปิดใช้งาน</label></div></article>)}</div>}
+          {tab === "payment_terms" && <div className="settings-list">{paymentTerms.map((term) => <article className="settings-row" key={term.id}><Field label="ชื่อเงื่อนไข"><input value={term.name} onChange={(event) => updateTerm(term.id, { name: event.target.value })} /></Field><Field label="เนื้อหา"><textarea value={term.body} onChange={(event) => updateTerm(term.id, { body: event.target.value })} /></Field><label className="toggle-field"><input type="checkbox" checked={term.active} onChange={(event) => updateTerm(term.id, { active: event.target.checked })} /> เปิดใช้งาน</label></article>)}</div>}
+          {tab === "bank_accounts" && <div className="settings-list">{bankAccounts.map((account) => <article className="settings-row" key={account.id}><div className="two"><Field label="ธนาคาร"><input value={account.bank_name} onChange={(event) => updateBank(account.id, { bank_name: event.target.value })} /></Field><Field label="ชื่อบัญชี"><input value={account.account_name} onChange={(event) => updateBank(account.id, { account_name: event.target.value })} /></Field></div><div className="two"><Field label="เลขที่บัญชี"><input value={account.account_number} onChange={(event) => updateBank(account.id, { account_number: event.target.value })} /></Field><Field label="สาขา"><input value={account.branch || ""} onChange={(event) => updateBank(account.id, { branch: event.target.value })} /></Field></div><div className="settings-toggles"><label className="toggle-field"><input type="checkbox" checked={account.active} onChange={(event) => updateBank(account.id, { active: event.target.checked })} /> เปิดใช้งาน</label><label className="toggle-field"><input type="radio" name="default-bank" checked={account.is_default} onChange={() => setBankAccounts((current) => current.map((item) => ({ ...item, is_default: item.id === account.id })))} /> บัญชีเริ่มต้น</label></div></article>)}</div>}
+        </section>
+      )}
+    </>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <article className="stat">
@@ -1248,8 +1446,6 @@ function Preview({
 }
 
 function QuotePaper({ form, items, group, documentNo, paperRef }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals>; documentNo?: string; paperRef?: { current: HTMLElement | null } }) {
-  const usedNoteLines = form.notes ? form.notes.split(/\r?\n/).length : 0;
-  const remainingNoteLines = Math.max(0, 9 - usedNoteLines);
   return (
     <article className="paper quotation-paper" ref={paperRef}>
       <div className="document-topline">
@@ -1261,7 +1457,7 @@ function QuotePaper({ form, items, group, documentNo, paperRef }: { form: Form; 
       <PriceBlock category="RECURRING" form={form} items={items} summary={group("RECURRING")} />
       <PriceBlock category="ONE_TIME" form={form} items={items} summary={group("ONE_TIME")} />
       <div className="document-footer-grid">
-        <section className="document-notes"><h3>หมายเหตุ</h3>{form.notes && <p className="multiline">{form.notes}</p>}<div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">{Array.from({ length: remainingNoteLines }, (_, index) => <i key={index} />)}</div></section>
+        <section className="document-notes"><h3>หมายเหตุ</h3>{form.notes && <p className="multiline">{form.notes}</p>}</section>
         <section className="document-payment-terms"><h3>เงื่อนไขการชำระเงิน</h3><p className="multiline">{form.payment_terms || DEFAULT_PAYMENT_TERMS}</p></section>
         <section className="document-payment-info"><h3>ข้อมูลการชำระเงิน</h3><p className="multiline">{COMPANY_DOCUMENT_CONFIG.payment}</p></section>
       </div>
@@ -1329,10 +1525,8 @@ function Detail({
         <div>
           <p className="eyebrow">รายละเอียดใบเสนอราคา</p>
           <h1>
-            {quote.document_no}{" "}
-            <small>
-              ฉบับแก้ไข {String(quote.revision_no).padStart(2, "0")}
-            </small>
+            {quote.document_no}
+            {revisionLabel(quote.revision_no) && <small> {revisionLabel(quote.revision_no)}</small>}
           </h1>
           <p className="muted">{quote.customer_name}</p>
         </div>
@@ -1367,6 +1561,16 @@ function Detail({
           {actions.canPrint && (
             <button type="button" disabled={busy} onClick={onPrint}>
               พิมพ์
+            </button>
+          )}
+          {quote.status === "READY" && (
+            <button className="primary" disabled={busy} onClick={onAccept}>
+              บันทึกลูกค้าตอบรับ
+            </button>
+          )}
+          {actions.canCancel && !showCancellation && (
+            <button className="danger" disabled={busy} onClick={() => setShowCancellation(true)}>
+              ยกเลิกใบเสนอราคา
             </button>
           )}
         </div>
@@ -1415,20 +1619,8 @@ function Detail({
             )}
           </dl>
           </Section>
-          <Section title="การดำเนินการ">
-          <div className="status-actions">
-            {quote.status === "READY" && (
-              <button className="primary" disabled={busy} onClick={onAccept}>
-                บันทึกลูกค้าตอบรับ
-              </button>
-            )}
-            {actions.canCancel && !showCancellation && (
-              <button disabled={busy} onClick={() => setShowCancellation(true)}>
-                ยกเลิกใบเสนอราคา
-              </button>
-            )}
-          </div>
           {showCancellation && (
+            <Section title="ยืนยันการยกเลิกใบเสนอราคา">
             <div className="cancellation-form">
               <label className="field">
                 <span>เหตุผลการยกเลิก <em>*</em></span>
@@ -1470,6 +1662,7 @@ function Detail({
                 </button>
               </div>
             </div>
+            </Section>
           )}
           {quote.status === "CANCELLED" && (
             <p className="muted">เอกสารที่ยกเลิกแล้วดูรายละเอียดได้อย่างเดียว</p>
@@ -1477,7 +1670,6 @@ function Detail({
           {quote.status === "EXPIRED" && (
             <p className="muted">เอกสารหมดอายุตามวันใช้ได้ถึง และสามารถยกเลิกเพื่อปิดรายการได้</p>
           )}
-          </Section>
         </section>
         <Preview form={form} items={items} quotation={quote} paperRef={paperRef} />
       </div>

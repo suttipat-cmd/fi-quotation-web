@@ -11,11 +11,14 @@ export type Service = {
   id: string;
   code?: string;
   name: string;
+  default_description?: string | null;
   default_category: Category;
   default_billing_type: string;
   default_calculation_mode: string;
   default_unit: string | null;
   suggested_price_satang: number | null;
+  active?: boolean;
+  sort_order?: number;
 };
 
 export type QuotationItem = {

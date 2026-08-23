@@ -22,4 +22,13 @@ export default defineConfig({
     __APP_BUILD_ID__: JSON.stringify(buildId),
   },
   plugins: [react(), buildVersionFile()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "ag-grid": ["ag-grid-community", "ag-grid-react"],
+        },
+      },
+    },
+  },
 })
