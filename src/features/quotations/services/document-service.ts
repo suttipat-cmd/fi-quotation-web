@@ -12,11 +12,23 @@ const edgeErrorMessage = async (error: unknown) => {
   return error instanceof Error ? error.message : "ไม่สามารถดำเนินการได้";
 };
 
-export const uploadGeneratedPdf = async (quotation: Quotation) => {
+const blobToBase64 = async (blob: Blob) => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+};
+
+export const uploadGeneratedPdf = async (quotation: Quotation, pdf: Blob) => {
   const { data, error } = await supabase.functions.invoke("quotation-operations", {
     body: {
       action: "generate_pdf",
       quotation_id: quotation.id,
+      file_name: `${quotation.document_no}.pdf`,
+      pdf_base64: await blobToBase64(pdf),
     },
   });
   if (error) throw new Error(await edgeErrorMessage(error));

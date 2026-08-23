@@ -30,6 +30,7 @@ import { documentAddonName, documentServiceName } from "./features/quotations/do
 import { quotationActions } from "./features/quotations/domain/status";
 import { getQuotationItems, saveQuotationDraft } from "./features/quotations/services/quotation-service";
 import { sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
+import { createPreviewPdf } from "./features/quotations/services/preview-pdf";
 import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
 
 declare const __APP_BUILD_ID__: string;
@@ -157,6 +158,7 @@ function App() {
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const locked = useRef(false);
+  const detailPaperRef = useRef<HTMLElement | null>(null);
   const notify = (text: string, type: NonNullable<Toast>["type"] = "info") =>
     setToast({ text, type });
   const navigate = (next: View, id?: string, replace = false) => {
@@ -438,7 +440,11 @@ function App() {
       action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
       async () => {
         if (action === "generate_pdf") {
-          const result = await uploadGeneratedPdf(selected);
+          if (!detailPaperRef.current) {
+            throw new Error("ยังไม่พร้อมสร้าง PDF กรุณารอสักครู่แล้วลองใหม่");
+          }
+          const pdf = await createPreviewPdf(detailPaperRef.current);
+          const result = await uploadGeneratedPdf(selected, pdf);
           if (!result.pdf_drive_url) throw new Error(result.message || "สร้าง PDF ไม่สำเร็จ");
           setSelected({
             ...selected,
@@ -591,6 +597,7 @@ function App() {
             quote={selected}
             items={detailItems}
             busy={busy}
+            paperRef={detailPaperRef}
             onBack={() => navigate("dashboard")}
             onEdit={() => void startEdit(selected)}
             onRevision={() => void revision()}
@@ -1184,10 +1191,12 @@ function Preview({
   form,
   items,
   quotation,
+  paperRef: externalPaperRef,
 }: {
   form: Form;
   items: Item[];
   quotation?: Quote | null;
+  paperRef?: { current: HTMLElement | null };
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -1221,7 +1230,7 @@ function Preview({
       <div className="preview-scroll" ref={scrollRef}>
         <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
           <div className="preview-paper-scale" ref={paperRef} style={{ transform: `scale(${scale})` }}>
-            <QuotePaper form={form} items={items} group={group} documentNo={quotation?.document_no} />
+            <QuotePaper form={form} items={items} group={group} documentNo={quotation?.document_no} paperRef={externalPaperRef} />
           </div>
         </div>
       </div>
@@ -1229,11 +1238,11 @@ function Preview({
   );
 }
 
-function QuotePaper({ form, items, group, documentNo }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals>; documentNo?: string }) {
+function QuotePaper({ form, items, group, documentNo, paperRef }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals>; documentNo?: string; paperRef?: { current: HTMLElement | null } }) {
   const usedNoteLines = form.notes.split(/\r?\n/).filter((line) => line.trim()).length;
   const remainingNoteLines = Math.max(0, 5 - usedNoteLines);
   return (
-    <article className="paper quotation-paper">
+    <article className="paper quotation-paper" ref={paperRef}>
       <div className="document-topline">
         <div className="document-company"><Brand /><div><b>{COMPANY_DOCUMENT_CONFIG.name}</b><span>{COMPANY_DOCUMENT_CONFIG.addressLine1}</span><span>{COMPANY_DOCUMENT_CONFIG.addressLine2}</span><span>เลขที่ประจำตัวผู้เสียภาษี {COMPANY_DOCUMENT_CONFIG.taxId}</span></div></div>
         <div className="document-title"><h2>ใบเสนอราคา</h2><span>QUOTATION</span></div>
@@ -1274,6 +1283,7 @@ function Detail({
   quote,
   items,
   busy,
+  paperRef,
   onBack,
   onEdit,
   onRevision,
@@ -1286,6 +1296,7 @@ function Detail({
   quote: Quote;
   items: Item[];
   busy: boolean;
+  paperRef: { current: HTMLElement | null };
   onBack: () => void;
   onEdit: () => void;
   onRevision: () => void;
@@ -1459,7 +1470,7 @@ function Detail({
           )}
           </Section>
         </section>
-        <Preview form={form} items={items} quotation={quote} />
+        <Preview form={form} items={items} quotation={quote} paperRef={paperRef} />
       </div>
     </>
   );
