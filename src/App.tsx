@@ -1183,9 +1183,11 @@ function OneTimeItems({
 function Preview({
   form,
   items,
+  quotation,
 }: {
   form: Form;
   items: Item[];
+  quotation?: Quote | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -1219,7 +1221,7 @@ function Preview({
       <div className="preview-scroll" ref={scrollRef}>
         <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
           <div className="preview-paper-scale" ref={paperRef} style={{ transform: `scale(${scale})` }}>
-            <QuotePaper form={form} items={items} group={group} />
+            <QuotePaper form={form} items={items} group={group} documentNo={quotation?.document_no} />
           </div>
         </div>
       </div>
@@ -1227,7 +1229,7 @@ function Preview({
   );
 }
 
-function QuotePaper({ form, items, group }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals> }) {
+function QuotePaper({ form, items, group, documentNo }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals>; documentNo?: string }) {
   const usedNoteLines = form.notes.split(/\r?\n/).filter((line) => line.trim()).length;
   const remainingNoteLines = Math.max(0, 5 - usedNoteLines);
   return (
@@ -1236,7 +1238,7 @@ function QuotePaper({ form, items, group }: { form: Form; items: Item[]; group: 
         <div className="document-company"><Brand /><div><b>{COMPANY_DOCUMENT_CONFIG.name}</b><span>{COMPANY_DOCUMENT_CONFIG.addressLine1}</span><span>{COMPANY_DOCUMENT_CONFIG.addressLine2}</span><span>เลขที่ประจำตัวผู้เสียภาษี {COMPANY_DOCUMENT_CONFIG.taxId}</span></div></div>
         <div className="document-title"><h2>ใบเสนอราคา</h2><span>QUOTATION</span></div>
       </div>
-      <dl className="document-facts"><div><dt>เลขที่</dt><dd>จะออกเมื่อบันทึก</dd></div><div><dt>วันที่</dt><dd>{displayDate(form.issued_at)}</dd></div><div><dt>ใช้ได้ถึง</dt><dd>{displayDate(form.valid_until)}</dd></div></dl>
+      <dl className="document-facts"><div><dt>เลขที่</dt><dd>{documentNo || "จะออกเมื่อบันทึก"}</dd></div><div><dt>วันที่</dt><dd>{displayDate(form.issued_at)}</dd></div><div><dt>ใช้ได้ถึง</dt><dd>{displayDate(form.valid_until)}</dd></div></dl>
       <div className="document-customer"><div><span>ลูกค้า</span><p>{form.customer_name || "ชื่อลูกค้า"}</p></div><div><span>ที่อยู่</span><p>{form.customer_address || "ที่อยู่ลูกค้า"}</p></div></div>
       <PriceBlock category="RECURRING" form={form} items={items} summary={group("RECURRING")} />
       <PriceBlock category="ONE_TIME" form={form} items={items} summary={group("ONE_TIME")} />
@@ -1457,7 +1459,7 @@ function Detail({
           )}
           </Section>
         </section>
-        <Preview form={form} items={items} />
+        <Preview form={form} items={items} quotation={quote} />
       </div>
     </>
   );
