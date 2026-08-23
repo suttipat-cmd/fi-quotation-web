@@ -395,7 +395,7 @@ create trigger on_auth_user_created after insert on auth.users for each row exec
 -- Existing historical data is deliberately not imported. These are editable operational defaults only.
 insert into public.services (code, name, default_category, default_billing_type, default_calculation_mode, default_unit, suggested_price_satang, sort_order) values
   ('ERP_TRANSPORT', 'ERP ขนส่ง', 'RECURRING', 'MONTHLY', 'FIXED_PRICE', 'คัน', 450000, 10),
-  ('MAINTENANCE', 'ซ่อมบำรุง', 'RECURRING', 'MONTHLY', 'FIXED_PRICE', 'คัน', null, 20),
+  ('MAINTENANCE', 'อู่ซ่อมบำรุง', 'RECURRING', 'MONTHLY', 'FIXED_PRICE', 'คัน', null, 20),
   ('AI', 'AI', 'RECURRING', 'MONTHLY', 'FIXED_PRICE', 'เดือน', null, 30),
   ('WMS', 'WMS', 'RECURRING', 'MONTHLY', 'FIXED_PRICE', 'เดือน', null, 40),
   ('VEHICLE_SETUP', 'Setup ทะเบียนรถ', 'ONE_TIME', 'ONE_TIME', 'FIXED_PRICE', 'ครั้ง', 450000, 50),
