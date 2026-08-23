@@ -1,63 +1,42 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import logo from "./assets/forward-insight-logo.png";
+import { displayDate, money } from "./lib/format";
+import { Brand } from "./components/ui/Brand";
+import { Field } from "./components/ui/Field";
+import { MoneyInput } from "./components/ui/MoneyInput";
+import { Spinner } from "./components/ui/Spinner";
+import { QuotationStatusBadge } from "./components/ui/QuotationStatusBadge";
+import {
+  CANCELLATION_REASONS,
+  CUSTOM_FORM_LABEL,
+  ONSITE_TRAINING_LABEL,
+  PAYMENT_OPTIONS,
+  SETUP_LABEL,
+  SOFTWARE_SERVICE_LABEL,
+} from "./features/quotations/constants";
+import {
+  defaultQuotationItems,
+  formFromQuotation,
+  initialQuotationForm,
+  makeServiceItem,
+  normalizeQuotationItems,
+  validateQuotationDraft,
+} from "./features/quotations/domain/draft";
+import { calculateItemTotal, calculateQuotationTotals } from "./features/quotations/domain/calculator";
+import { quotationActions } from "./features/quotations/domain/status";
+import { getQuotationItems, saveQuotationDraft } from "./features/quotations/services/quotation-service";
+import { sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
+import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
 
 declare const __APP_BUILD_ID__: string;
 
-type Category = "RECURRING" | "ONE_TIME";
-type Service = {
-  id: string;
-  name: string;
-  default_category: Category;
-  default_billing_type: string;
-  default_calculation_mode: string;
-  default_unit: string | null;
-  suggested_price_satang: number | null;
-};
-type Item = {
-  id: string;
-  category: Category;
-  service_id: string | null;
-  service_name: string;
-  billing_type: string;
-  calculation_mode: string;
-  reference_quantity: number;
-  quantity: number;
-  unit: string;
-  unit_price_satang: number;
-  manual_amount_satang: number;
-  discount_type: string;
-  discount_value: number;
-};
-type Quote = Record<string, any>;
-type Form = {
-  customer_name: string;
-  customer_address: string;
-  contact_name: string;
-  contact_position: string;
-  contact_email: string;
-  recipient_emails: string[];
-  sales_name: string;
-  issued_at: string;
-  valid_until: string;
-  notes: string;
-  payment_terms: string;
-  vat_rate: number;
-  wht_rate: number;
-  quotation_discount_type: string;
-  quotation_discount_value: number;
-  package_reference_quantity: number;
-  package_reference_unit: string;
-  included_users: number;
-  billing_cycles: string[];
-  recurring_addons: string[];
-  additional_fees: string;
-  promotion_terms: string;
-};
 type Toast = { text: string; type: "success" | "error" | "info" } | null;
 type View = "dashboard" | "create" | "edit" | "detail";
 type Route = { view: View; id?: string };
+
+const createPdfBlob = async (props: { form: Form; items: Item[]; quotation?: Quote | null }) =>
+  (await import("./features/quotations/components/document/QuotationPdf")).createQuotationPdfBlob(props);
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
@@ -77,278 +56,6 @@ const routePath = (view: View, id?: string) =>
     ? `${appBasePath}/`
     : `${appBasePath}/${view}${id ? `/${id}` : ""}`;
 
-const paymentOptions = [
-  "ค่าบริการชำระรายเดือน",
-  "ค่าบริการชำระราย 6 เดือน",
-  "ค่าบริการชำระรายปี",
-];
-const softwareServiceLabel = "ค่าบริการซอฟต์แวร์";
-const setupChildServices = ["Setup ทะเบียนรถ", "Setup ข้อมูลทั่วไป"];
-const setupLabel = "Setup";
-const customFormLabel = "Custom Form";
-const onsiteTrainingLabel = "Onsite Training";
-const company = {
-  name: "บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด",
-  addressLine1: "38 ซอย เฉลิมพระเกียรติ ร.9 ซ.42 ถนนเฉลิมพระเกียรติ ร.9",
-  addressLine2: "แขวงหนองบอน เขตประเวศ กรุงเทพมหานคร 10250",
-  taxId: "0105565050099/สำนักงานใหญ่",
-  payment:
-    "ชื่อบัญชี บริษัท ฟอร์เวิร์ด อินไซต์ จำกัด\nธ.ไทยพาณิชย์ (SCB) 015-465-8438",
-};
-const defaultPaymentTerms =
-  "1. ค่าใช้โปรแกรมประเภทรายเดือน ชำระค่าใช้โปรแกรม ทุกวันที่ 1 ของเดือน โดยเริ่มชำระเมื่อทำการย้ายข้อมูล\n2. ค่านำข้อมูลเดิมเข้าในระบบใหม่และค่าฝึกอบรม ชำระ 100% เมื่อทำสัญญา (ค่าแรกเข้า)";
-const today = () => new Date().toISOString().slice(0, 10);
-const plusDays = (days: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-};
-const money = (value = 0) =>
-  new Intl.NumberFormat("th-TH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format((value || 0) / 100);
-const fromBaht = (value: string | number) =>
-  Math.round(Number(value || 0) * 100);
-const toBaht = (value = 0) => ((value || 0) / 100).toFixed(2);
-const displayDate = (value?: string) => {
-  const [year, month, day] = String(value || "").split("-");
-  return year && month && day ? `${day}-${month}-${year}` : "—";
-};
-const documentServiceName = (value?: string) => {
-  if (
-    !value ||
-    value === "ค่าบริการประจำ" ||
-    value === "ค่าบริการซอฟแวร์ระบบ" ||
-    value === "ค่าบริการซอฟแวร์"
-  ) {
-    return softwareServiceLabel;
-  }
-  return value;
-};
-const documentAddonName = (value: string) =>
-  value === "ซ่อมบำรุง" ? "อู่ซ่อมบำรุง" : value;
-const printQuotation = (documentNo?: string) => {
-  const previousTitle = document.title;
-  document.title = documentNo || "ใบเสนอราคา";
-  const restoreTitle = () => {
-    document.title = previousTitle;
-  };
-  window.addEventListener("afterprint", restoreTitle, { once: true });
-  window.print();
-};
-const edgeErrorMessage = async (error: unknown) => {
-  const context = (error as { context?: { clone?: () => Response } })?.context;
-  try {
-    const payload = await context?.clone?.().json();
-    if (payload && typeof payload.message === "string") return payload.message;
-  } catch {
-    // The response is not JSON; fall back to the client message below.
-  }
-  return error instanceof Error ? error.message : "ไม่สามารถดำเนินการได้";
-};
-const categoryText = (category: Category) =>
-  category === "RECURRING"
-    ? softwareServiceLabel
-    : "ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)";
-const statusText: Record<string, string> = {
-  DRAFT: "ฉบับร่าง",
-  READY: "ยืนยันแล้ว",
-  ACCEPTED: "ตอบรับแล้ว",
-  EXPIRED: "หมดอายุ",
-  CANCELLED: "ยกเลิก",
-};
-const cancellationReasons = [
-  "ลูกค้าปฏิเสธข้อเสนอ",
-  "ลูกค้าเลื่อนหรือยกเลิกโครงการ",
-  "ข้อมูลในเอกสารไม่ถูกต้อง",
-  "ออกใบเสนอราคาซ้ำ",
-  "อื่น ๆ",
-];
-const initialForm = (salesName = ""): Form => ({
-  customer_name: "",
-  customer_address: "",
-  contact_name: "",
-  contact_position: "",
-  contact_email: "",
-  recipient_emails: [],
-  sales_name: salesName,
-  issued_at: today(),
-  valid_until: plusDays(30),
-  notes: "",
-  payment_terms: defaultPaymentTerms,
-  vat_rate: 7,
-  wht_rate: 3,
-  quotation_discount_type: "NONE",
-  quotation_discount_value: 0,
-  package_reference_quantity: 0,
-  package_reference_unit: "คัน",
-  included_users: 0,
-  billing_cycles: ["ค่าบริการชำระรายเดือน"],
-  recurring_addons: [],
-  additional_fees: "",
-  promotion_terms: "",
-});
-const makeItem = (category: Category): Item => ({
-  id: crypto.randomUUID(),
-  category,
-  service_id: null,
-  service_name: "",
-  billing_type: category === "RECURRING" ? "MONTHLY" : "ONE_TIME",
-  calculation_mode: "FIXED_PRICE",
-  reference_quantity: 0,
-  quantity: 1,
-  unit: category === "RECURRING" ? "คัน" : "ครั้ง",
-  unit_price_satang: 0,
-  manual_amount_satang: 0,
-  discount_type: "NONE",
-  discount_value: 0,
-});
-const makeRecurringItem = (): Item => ({
-  ...makeItem("RECURRING"),
-  service_name: softwareServiceLabel,
-  quantity: 1,
-  unit: "คัน",
-});
-const makeServiceItem = (service: Service, quantity = 1): Item => ({
-  ...makeItem("ONE_TIME"),
-  service_id: service.id,
-  service_name: service.name,
-  billing_type: service.default_billing_type,
-  calculation_mode: service.default_calculation_mode,
-  quantity,
-  unit: service.default_unit || "ครั้ง",
-});
-const makeSetupItem = (services: Service[]): Item => {
-  const source = services.find((service) =>
-    setupChildServices.includes(service.name),
-  );
-  return {
-    ...makeItem("ONE_TIME"),
-    service_name: setupLabel,
-    billing_type: source?.default_billing_type || "ONE_TIME",
-    calculation_mode: "FIXED_PRICE",
-    quantity: 1,
-    unit: source?.default_unit || "ครั้ง",
-  };
-};
-const defaultItems = (services: Service[]) => [
-  makeRecurringItem(),
-  makeSetupItem(services),
-  ...services
-    .filter(
-      (service) =>
-        service.default_category === "ONE_TIME" &&
-        !setupChildServices.includes(service.name) &&
-        service.name !== customFormLabel,
-    )
-    .map((service) =>
-      makeServiceItem(
-        service,
-        service.name === onsiteTrainingLabel ? 0 : 1,
-      ),
-    ),
-];
-const formFromQuote = (quote: Quote): Form => ({
-  customer_name: quote.customer_name || "",
-  customer_address: quote.customer_address || "",
-  contact_name: quote.contact_name || "",
-  contact_position: quote.contact_position || "",
-  contact_email: quote.contact_email || "",
-  recipient_emails: Array.isArray(quote.recipient_emails)
-    ? quote.recipient_emails
-    : quote.contact_email
-      ? [quote.contact_email]
-      : [],
-  sales_name: quote.sales_name || "",
-  issued_at: quote.issued_at || today(),
-  valid_until: quote.valid_until || plusDays(30),
-  notes: quote.notes || "",
-  payment_terms: quote.payment_terms || defaultPaymentTerms,
-  vat_rate: Number(quote.vat_rate || 0),
-  wht_rate: Number(quote.wht_rate || 0),
-  quotation_discount_type: quote.quotation_discount_type || "NONE",
-  quotation_discount_value: Number(quote.quotation_discount_value || 0),
-  package_reference_quantity: Number(quote.package_reference_quantity || 0),
-  package_reference_unit: quote.package_reference_unit || "คัน",
-  included_users: Number(quote.included_users || 0),
-  billing_cycles:
-    Array.isArray(quote.billing_cycles) && quote.billing_cycles.length
-      ? quote.billing_cycles
-      : quote.billing_cycle
-        ? [quote.billing_cycle]
-        : [],
-  recurring_addons: Array.isArray(quote.recurring_addons)
-    ? quote.recurring_addons
-    : [],
-  additional_fees: quote.additional_fees || "",
-  promotion_terms: quote.promotion_terms || "",
-});
-const itemTotal = (item: Item) => {
-  const raw =
-    item.category === "ONE_TIME" && item.quantity === 0
-      ? 0
-      : item.calculation_mode === "INCLUDED"
-        ? 0
-        : item.calculation_mode === "MANUAL_AMOUNT"
-          ? item.manual_amount_satang
-          : item.calculation_mode === "QUANTITY_X_UNIT_PRICE"
-            ? Math.round(item.quantity * item.unit_price_satang)
-            : item.unit_price_satang;
-  const discount =
-    item.discount_type === "PERCENTAGE"
-      ? Math.round((raw * item.discount_value) / 100)
-      : item.discount_type === "FIXED_AMOUNT"
-        ? fromBaht(item.discount_value)
-        : 0;
-  return {
-    subtotal: raw,
-    discount: Math.min(raw, discount),
-    net: Math.max(0, raw - discount),
-  };
-};
-function thaiBaht(value: number) {
-  if (!value) return "ศูนย์บาทถ้วน";
-  const digits = [
-    "",
-    "หนึ่ง",
-    "สอง",
-    "สาม",
-    "สี่",
-    "ห้า",
-    "หก",
-    "เจ็ด",
-    "แปด",
-    "เก้า",
-  ];
-  const units = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"];
-  const speak = (number: number): string => {
-    if (!number) return "";
-    const chunk = number % 1000000;
-    let output =
-      number >= 1000000 ? `${speak(Math.floor(number / 1000000))}ล้าน` : "";
-    String(chunk)
-      .padStart(6, "0")
-      .split("")
-      .forEach((char, index) => {
-        const digit = Number(char);
-        const position = 5 - index;
-        if (digit)
-          output +=
-            position === 1 && digit === 1
-              ? "สิบ"
-              : position === 1 && digit === 2
-                ? "ยี่สิบ"
-                : position === 0 && digit === 1 && chunk > 1
-                  ? "เอ็ด"
-                  : `${digits[digit]}${units[position]}`;
-      });
-    return output;
-  };
-  const baht = Math.floor(value / 100);
-  const satang = value % 100;
-  return `${speak(baht)}บาท${satang ? `${speak(satang)}สตางค์` : "ถ้วน"}`;
-}
 const friendlyError = (message?: string) =>
   !message
     ? "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
@@ -359,22 +66,6 @@ const friendlyError = (message?: string) =>
         : /network|fetch/i.test(message)
           ? "เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต"
           : message;
-function Spinner() {
-  return <i className="spinner" aria-label="กำลังดำเนินการ" />;
-}
-function Brand({ hideText = false }: { hideText?: boolean }) {
-  return (
-    <div className="brand">
-      <img src={logo} alt="Forward Insight" />
-      <span className={hideText ? "sr-only" : ""}>
-        FORWARD
-        <br />
-        INSIGHT
-      </span>
-    </div>
-  );
-}
-
 function Auth({ onSession }: { onSession: (value: Session) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -453,17 +144,14 @@ function App() {
   const restoredRoute = useRef(false);
   const [session, setSession] = useState<Session | null>(null);
   const [booting, setBooting] = useState(true);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [view, setView] = useState<View>(initialRoute.current.view);
   const [selected, setSelected] = useState<Quote | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<Form>(initialForm());
-  const [items, setItems] = useState<Item[]>([
-    makeItem("RECURRING"),
-    makeItem("ONE_TIME"),
-  ]);
+  const [form, setForm] = useState<Form>(initialQuotationForm());
+  const [items, setItems] = useState<Item[]>([]);
   const [detailItems, setDetailItems] = useState<Item[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
@@ -577,33 +265,7 @@ function App() {
       })),
     );
   }
-  const totals = useMemo(() => {
-    const subtotal = items.reduce((sum, item) => sum + itemTotal(item).net, 0);
-    const discount = Math.min(
-      subtotal,
-      form.quotation_discount_type === "PERCENTAGE"
-        ? Math.round((subtotal * form.quotation_discount_value) / 100)
-        : form.quotation_discount_type === "FIXED_AMOUNT"
-          ? fromBaht(form.quotation_discount_value)
-          : 0,
-    );
-    const taxBase = subtotal - discount;
-    const vat = Math.round((taxBase * form.vat_rate) / 100);
-    const wht = Math.round((taxBase * form.wht_rate) / 100);
-    return { subtotal, discount, taxBase, vat, wht, net: taxBase + vat - wht };
-  }, [items, form]);
-  const group = (category: Category) => {
-    const subtotal = items
-      .filter((item) => item.category === category && item.service_name.trim())
-      .reduce((sum, item) => sum + itemTotal(item).net, 0);
-    const discount = totals.subtotal
-      ? Math.round((totals.discount * subtotal) / totals.subtotal)
-      : 0;
-    const taxBase = subtotal - discount;
-    const vat = Math.round((taxBase * form.vat_rate) / 100);
-    const wht = Math.round((taxBase * form.wht_rate) / 100);
-    return { subtotal, discount, vat, wht, net: taxBase + vat - wht };
-  };
+  const totals = useMemo(() => calculateQuotationTotals(form, items), [items, form]);
   async function run(label: string, task: () => Promise<void>) {
     if (locked.current) return;
     locked.current = true;
@@ -621,8 +283,8 @@ function App() {
     }
   }
   const reset = () => {
-    setForm(initialForm(profile?.display_name || ""));
-    setItems(defaultItems(services));
+    setForm(initialQuotationForm(profile?.display_name || ""));
+    setItems(defaultQuotationItems(services));
     setSelected(null);
     setEditingId(null);
   };
@@ -644,7 +306,7 @@ function App() {
   };
   const addCustomForm = () => {
     const customForm = services.find(
-      (service) => service.name === customFormLabel,
+      (service) => service.name === CUSTOM_FORM_LABEL,
     );
     if (!customForm) {
       notify("ไม่พบรายการ Custom Form ในรายการบริการ", "error");
@@ -663,67 +325,9 @@ function App() {
       return;
     }
     await run("กำลังเปิดหน้าแก้ไข", async () => {
-      const result = await supabase
-        .from("quotation_items")
-        .select("*")
-        .eq("quotation_id", quote.id)
-        .order("sort_order");
-      if (result.error) throw result.error;
-      const saved = result.data || [];
-      const recurring =
-        saved.find((item) => item.category === "RECURRING") ||
-        makeRecurringItem();
-      const savedOneTime = saved.filter((item) => item.category === "ONE_TIME");
-      const savedSetup = savedOneTime.find(
-        (item) => item.service_name === setupLabel,
-      );
-      const legacySetup = savedOneTime.filter((item) =>
-        setupChildServices.includes(item.service_name),
-      );
-      const setup = savedSetup
-        ? { ...savedSetup, id: savedSetup.id || crypto.randomUUID() }
-        : legacySetup.length
-          ? {
-              ...makeSetupItem(services),
-              unit_price_satang: legacySetup.reduce(
-                (sum, item) => sum + Number(item.line_net_satang || 0),
-                0,
-              ),
-              quantity: legacySetup.some((item) => Number(item.quantity) > 0)
-                ? 1
-                : 0,
-            }
-          : makeSetupItem(services);
-      const standardItems = services
-        .filter(
-          (service) =>
-            service.default_category === "ONE_TIME" &&
-            !setupChildServices.includes(service.name) &&
-            service.name !== customFormLabel,
-        )
-        .map((service) => {
-          const found = savedOneTime.find(
-            (item) =>
-              item.service_id === service.id ||
-              item.service_name === service.name,
-          );
-          return found
-            ? { ...found, id: found.id || crypto.randomUUID() }
-            : makeServiceItem(
-                service,
-                service.name === onsiteTrainingLabel ? 0 : 1,
-              );
-        });
-      const customFormRows = savedOneTime
-        .filter((item) => item.service_name === customFormLabel)
-        .map((item) => ({ ...item, id: item.id || crypto.randomUUID() }));
-      setForm(formFromQuote(quote));
-      setItems([
-        { ...recurring, id: recurring.id || crypto.randomUUID() },
-        setup,
-        ...standardItems,
-        ...customFormRows,
-      ]);
+      const saved = await getQuotationItems(quote.id);
+      setForm(formFromQuotation(quote));
+      setItems(normalizeQuotationItems(saved, services));
       setSelected(quote);
       setEditingId(quote.id);
       navigate("edit", quote.id);
@@ -731,191 +335,40 @@ function App() {
   }
   async function openDetail(quote: Quote) {
     await run("กำลังเปิดรายละเอียดใบเสนอราคา", async () => {
-      const result = await supabase
-        .from("quotation_items")
-        .select("*")
-        .eq("quotation_id", quote.id)
-        .order("sort_order");
-      if (result.error) throw result.error;
-      setDetailItems(
-        (result.data || []).map((item) => ({
-          ...item,
-          id: item.id || crypto.randomUUID(),
-        })),
-      );
+      setDetailItems(await getQuotationItems(quote.id));
       setSelected(quote);
       navigate("detail", quote.id);
     });
   }
   async function save() {
     await run("กำลังบันทึกใบเสนอราคา", async () => {
-      if (
-        !form.customer_name.trim() ||
-        !items.some((item) => item.service_name.trim())
-      ) {
-        notify("กรุณาระบุชื่อลูกค้าและอย่างน้อยหนึ่งบริการ", "error");
+      const validationError = validateQuotationDraft(items, form);
+      if (validationError) {
+        notify(validationError, "error");
         return;
       }
-      const payload = {
-        document_no: "PENDING",
-        customer_name: form.customer_name.trim(),
-        customer_address: form.customer_address || null,
-        contact_name: form.contact_name || null,
-        contact_position: form.contact_position || null,
-        contact_email: form.contact_email || null,
-        recipient_emails: form.recipient_emails,
-        sales_name: form.sales_name || profile?.display_name || null,
-        issued_at: form.issued_at,
-        valid_until: form.valid_until,
-        notes: form.notes || null,
-        payment_terms: form.payment_terms || null,
-        vat_rate: form.vat_rate,
-        wht_rate: form.wht_rate,
-        quotation_discount_type: form.quotation_discount_type,
-        quotation_discount_value: form.quotation_discount_value,
-        quotation_discount_satang: totals.discount,
-        subtotal_satang: totals.subtotal,
-        tax_base_satang: totals.taxBase,
-        vat_amount_satang: totals.vat,
-        wht_amount_satang: totals.wht,
-        net_amount_satang: totals.net,
-        package_reference_quantity: form.package_reference_quantity || null,
-        package_reference_unit: form.package_reference_unit || null,
-        included_users: form.included_users || null,
-        billing_cycle: form.billing_cycles[0] || null,
-        billing_cycles: form.billing_cycles,
-        recurring_addons: form.recurring_addons,
-        additional_fees: form.additional_fees || null,
-        promotion_terms: form.promotion_terms || null,
-      };
-      const quote = await supabase
-        .from("quotations")
-        .insert(payload)
-        .select()
-        .single();
-      if (quote.error || !quote.data)
-        throw new Error(quote.error?.message || "บันทึกใบเสนอราคาไม่สำเร็จ");
-      const rows = items
-        .filter((item) => item.service_name.trim())
-        .map((item, index) => {
-          const value = itemTotal(item);
-          return {
-            quotation_id: quote.data.id,
-            category: item.category,
-            service_id: item.service_id,
-            service_name: item.service_name,
-            billing_type: item.billing_type,
-            calculation_mode: item.calculation_mode,
-            reference_quantity: item.reference_quantity || null,
-            quantity: item.quantity,
-            unit: item.unit || null,
-            unit_price_satang: item.unit_price_satang,
-            manual_amount_satang: item.manual_amount_satang,
-            discount_type: item.discount_type,
-            discount_value: item.discount_value,
-            discount_amount_satang: value.discount,
-            line_subtotal_satang: value.subtotal,
-            line_net_satang: value.net,
-            sort_order: index,
-          };
-        });
-      const itemResult = await supabase.from("quotation_items").insert(rows);
-      if (itemResult.error) {
-        await supabase.from("quotations").delete().eq("id", quote.data.id);
-        throw itemResult.error;
-      }
-      setSelected(quote.data);
+      const quote = await saveQuotationDraft({ form, items, totals, profile });
+      setSelected(quote);
       setDetailItems(items);
       await load();
-      navigate("detail", quote.data.id);
-      notify(`${quote.data.document_no} บันทึกเป็นฉบับร่างแล้ว`, "success");
+      navigate("detail", quote.id);
+      notify(`${quote.document_no} บันทึกเป็นฉบับร่างแล้ว`, "success");
     });
   }
   async function saveEdit() {
     if (!editingId || !selected) return;
     await run("กำลังบันทึกการแก้ไข", async () => {
-      if (
-        !form.customer_name.trim() ||
-        !items.some((item) => item.service_name.trim() && item.quantity > 0)
-      ) {
-        notify("กรุณาระบุชื่อลูกค้าและอย่างน้อยหนึ่งบริการ", "error");
+      const validationError = validateQuotationDraft(items, form);
+      if (validationError) {
+        notify(validationError, "error");
         return;
       }
-      const payload = {
-        customer_name: form.customer_name.trim(),
-        customer_address: form.customer_address || null,
-        contact_name: form.contact_name || null,
-        contact_position: form.contact_position || null,
-        contact_email: form.contact_email || null,
-        recipient_emails: form.recipient_emails,
-        sales_name: form.sales_name || profile?.display_name || null,
-        issued_at: form.issued_at,
-        valid_until: form.valid_until,
-        notes: form.notes || null,
-        payment_terms: form.payment_terms || null,
-        vat_rate: form.vat_rate,
-        wht_rate: form.wht_rate,
-        quotation_discount_type: form.quotation_discount_type,
-        quotation_discount_value: form.quotation_discount_value,
-        quotation_discount_satang: totals.discount,
-        subtotal_satang: totals.subtotal,
-        tax_base_satang: totals.taxBase,
-        vat_amount_satang: totals.vat,
-        wht_amount_satang: totals.wht,
-        net_amount_satang: totals.net,
-        package_reference_quantity: form.package_reference_quantity || null,
-        package_reference_unit: form.package_reference_unit || null,
-        included_users: form.included_users || null,
-        billing_cycle: form.billing_cycles[0] || null,
-        billing_cycles: form.billing_cycles,
-        recurring_addons: form.recurring_addons,
-        additional_fees: form.additional_fees || null,
-        promotion_terms: form.promotion_terms || null,
-      };
-      const quote = await supabase
-        .from("quotations")
-        .update(payload)
-        .eq("id", editingId)
-        .select()
-        .single();
-      if (quote.error || !quote.data)
-        throw new Error(quote.error?.message || "บันทึกการแก้ไขไม่สำเร็จ");
-      const deleted = await supabase
-        .from("quotation_items")
-        .delete()
-        .eq("quotation_id", editingId);
-      if (deleted.error) throw deleted.error;
-      const rows = items
-        .filter((item) => item.service_name.trim())
-        .map((item, index) => {
-          const value = itemTotal(item);
-          return {
-            quotation_id: editingId,
-            category: item.category,
-            service_id: item.service_id,
-            service_name: item.service_name,
-            billing_type: item.billing_type,
-            calculation_mode: item.calculation_mode,
-            reference_quantity: item.reference_quantity || null,
-            quantity: item.quantity,
-            unit: item.unit || null,
-            unit_price_satang: item.unit_price_satang,
-            manual_amount_satang: item.manual_amount_satang,
-            discount_type: item.discount_type,
-            discount_value: item.discount_value,
-            discount_amount_satang: value.discount,
-            line_subtotal_satang: value.subtotal,
-            line_net_satang: value.net,
-            sort_order: index,
-          };
-        });
-      const inserted = await supabase.from("quotation_items").insert(rows);
-      if (inserted.error) throw inserted.error;
-      setSelected(quote.data);
+      const quote = await saveQuotationDraft({ id: editingId, form, items, totals, profile });
+      setSelected(quote);
       setDetailItems(items);
       setEditingId(null);
       await load();
-      navigate("detail", quote.data.id);
+      navigate("detail", quote.id);
       notify("บันทึกการแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
@@ -981,27 +434,25 @@ function App() {
     await run(
       action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
       async () => {
-        const body =
-          action === "generate_pdf"
-            ? { action, quotation_id: selected.id }
-            : {
-                action,
-                quotation_id: selected.id,
-                to: recipients,
-                subject: `ใบเสนอราคา ${selected.document_no}`,
-                message: `เรียน ${selected.contact_name || ""}\n\nขอส่งใบเสนอราคา ${selected.document_no} ตามเอกสารแนบ\n\nขอบคุณค่ะ\nForward Insight`,
-              };
-        const result = await supabase.functions.invoke("quotation-operations", {
-          body,
-        });
-        if (result.error) throw new Error(await edgeErrorMessage(result.error));
         if (action === "generate_pdf") {
-          if (!result.data?.pdf_drive_url)
-            throw new Error(result.data?.message || "สร้าง PDF ไม่สำเร็จ");
+          const pdf = await createPdfBlob({
+            form: formFromQuotation(selected),
+            items: detailItems,
+            quotation: selected,
+          });
+          const result = await uploadGeneratedPdf(selected, pdf);
+          if (!result.pdf_drive_url) throw new Error(result.message || "สร้าง PDF ไม่สำเร็จ");
           setSelected({
             ...selected,
-            status: result.data?.status || "READY",
-            pdf_drive_url: result.data.pdf_drive_url,
+            status: (result.status || "READY") as Quote["status"],
+            pdf_drive_url: result.pdf_drive_url,
+          });
+        } else {
+          await sendQuotationEmail({
+            quotationId: selected.id,
+            to: recipients,
+            subject: `ใบเสนอราคา ${selected.document_no}`,
+            message: `เรียน ${selected.contact_name || ""}\n\nขอส่งใบเสนอราคา ${selected.document_no} ตามเอกสารแนบ\n\nขอบคุณค่ะ\nForward Insight`,
           });
         }
         await load();
@@ -1013,6 +464,28 @@ function App() {
         );
       },
     );
+  }
+  async function printSelectedQuotation() {
+    if (!selected) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      notify("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่", "error");
+      return;
+    }
+    await run("กำลังเตรียมไฟล์สำหรับพิมพ์", async () => {
+      const blob = await createPdfBlob({
+        form: formFromQuotation(selected),
+        items: detailItems,
+        quotation: selected,
+      });
+      const url = URL.createObjectURL(blob);
+      printWindow.location.href = url;
+      window.setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        URL.revokeObjectURL(url);
+      }, 900);
+    });
   }
   if (booting)
     return (
@@ -1104,8 +577,6 @@ function App() {
             setForm={setForm}
             items={items}
             services={services}
-            totals={totals}
-            group={group}
             busy={busy}
             onSave={() => void save()}
             onCancel={() => navigate("dashboard")}
@@ -1121,8 +592,6 @@ function App() {
             setForm={setForm}
             items={items}
             services={services}
-            totals={totals}
-            group={group}
             busy={busy}
             onSave={() => void saveEdit()}
             onCancel={() => {
@@ -1144,6 +613,7 @@ function App() {
             onRevision={() => void revision()}
             onPdf={() => void documentAction("generate_pdf")}
             onEmail={() => void documentAction("send_email")}
+            onPrint={() => void printSelectedQuotation()}
             onAccept={() => void acceptQuotation()}
             onCancel={(reason, note) => void cancelQuotation(reason, note)}
           />
@@ -1169,53 +639,6 @@ function App() {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-function MoneyInput({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const [display, setDisplay] = useState(value ? toBaht(value) : "");
-  const focused = useRef(false);
-  useEffect(() => {
-    if (!focused.current) setDisplay(value ? toBaht(value) : "");
-  }, [value]);
-  const normalize = (input: string) => {
-    const cleaned = input.replace(/[^0-9.]/g, "");
-    const [whole = "", ...decimals] = cleaned.split(".");
-    return decimals.length ? `${whole}.${decimals.join("").slice(0, 2)}` : whole;
-  };
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      placeholder="ระบุราคา"
-      value={display}
-      onFocus={() => {
-        focused.current = true;
-        setDisplay(value ? String(value / 100) : "");
-      }}
-      onChange={(event) => {
-        const next = normalize(event.target.value);
-        setDisplay(next);
-        onChange(fromBaht(next));
-      }}
-      onBlur={() => {
-        focused.current = false;
-        setDisplay(value ? toBaht(value) : "");
-      }}
-    />
-  );
-}
 function EmailTags({
   emails,
   onChange,
@@ -1335,11 +758,9 @@ function Dashboard({
                 <span>{quote.customer_name}</span>
                 <span>{displayDate(quote.valid_until)}</span>
                 <span>
-                  <i className={`badge ${quote.status.toLowerCase()}`}>
-                    {statusText[quote.status] || quote.status}
-                  </i>
+                  <QuotationStatusBadge status={quote.status} />
                 </span>
-                <strong>{money(quote.net_amount_satang)}</strong>
+                <strong>{money(quote.net_amount_satang ?? 0)}</strong>
               </button>
             ))}
           </div>
@@ -1373,8 +794,6 @@ function Editor({
   setForm,
   items,
   services,
-  totals,
-  group,
   busy,
   onSave,
   onCancel,
@@ -1387,8 +806,6 @@ function Editor({
   setForm: (form: Form) => void;
   items: Item[];
   services: Service[];
-  totals: any;
-  group: (category: Category) => any;
   busy: boolean;
   onSave: () => void;
   onCancel: () => void;
@@ -1414,9 +831,6 @@ function Editor({
         <div className="actions">
           <button disabled={busy} onClick={onCancel}>
             ยกเลิก
-          </button>
-          <button type="button" onClick={() => printQuotation()}>
-            พิมพ์
           </button>
           <button className="primary" disabled={busy} onClick={onSave}>
             {busy && <Spinner />}
@@ -1579,7 +993,7 @@ function Editor({
             </Field>
           </Section>
         </section>
-        <Preview form={form} items={items} totals={totals} group={group} />
+        <Preview form={form} items={items} />
       </div>
     </>
   );
@@ -1608,7 +1022,7 @@ function RecurringPlan({
         : [...form[key], value],
     } as Partial<Form>);
   return (
-    <Section title={softwareServiceLabel}>
+    <Section title={SOFTWARE_SERVICE_LABEL}>
       <p className="muted section-note">
         เลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox โดยระบบจะแสดงเป็นราคา
         ค่าบริการซอฟต์แวร์หนึ่งรายการในใบเสนอราคา
@@ -1616,7 +1030,7 @@ function RecurringPlan({
       <fieldset className="check-field">
         <legend>รอบชำระค่าบริการ</legend>
         <div className="check-grid">
-          {paymentOptions.map((option) => (
+          {PAYMENT_OPTIONS.map((option) => (
             <label className="check-row" key={option}>
               <input
                 type="checkbox"
@@ -1689,10 +1103,10 @@ function OneTimeItems({
   onRemoveItem: (id: string) => void;
 }) {
   const hasCustomForm = items.some(
-    (item) => item.service_name === customFormLabel,
+    (item) => item.service_name === CUSTOM_FORM_LABEL,
   );
   return (
-    <Section title={categoryText("ONE_TIME")}>
+    <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)">
       <div className="section-heading">
         <p className="muted">
           Setup มีทะเบียนรถและข้อมูลทั่วไปรวมอยู่ในรายการเดียว สามารถแก้ไขจำนวน
@@ -1714,12 +1128,12 @@ function OneTimeItems({
             <Field label="บริการ">
               <input value={item.service_name} readOnly />
             </Field>
-            {item.service_name === setupLabel && (
+            {item.service_name === SETUP_LABEL && (
               <p className="item-detail">รวม: ทะเบียนรถ และข้อมูลทั่วไป</p>
             )}
             <div
               className={
-                item.service_name === onsiteTrainingLabel ? "two" : "three"
+                item.service_name === ONSITE_TRAINING_LABEL ? "two" : "three"
               }
             >
               <Field label="จำนวน">
@@ -1743,7 +1157,7 @@ function OneTimeItems({
                   }
                 />
               </Field>
-              {item.service_name !== onsiteTrainingLabel && (
+              {item.service_name !== ONSITE_TRAINING_LABEL && (
                 <Field label="ราคา/หน่วย">
                   <MoneyInput
                     value={item.unit_price_satang}
@@ -1762,8 +1176,8 @@ function OneTimeItems({
             </div>
           </div>
           <div className="item-total">
-            <strong>{money(itemTotal(item).net)}</strong>
-            {item.service_name === customFormLabel && (
+            <strong>{money(calculateItemTotal(item).net)}</strong>
+            {item.service_name === CUSTOM_FORM_LABEL && (
               <button
                 className="text-button danger-text"
                 type="button"
@@ -1782,284 +1196,41 @@ function OneTimeItems({
 function Preview({
   form,
   items,
-  totals,
-  group,
+  quotation,
 }: {
   form: Form;
   items: Item[];
-  totals: any;
-  group: (category: Category) => any;
+  quotation?: Quote | null;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const paperRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  const [isPaperOverflow, setIsPaperOverflow] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-    const updateScale = () =>
-      setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
-    updateScale();
-    const observer = new ResizeObserver(updateScale);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
-  useEffect(() => {
-    const checkOverflow = () => {
-      const paper = paperRef.current?.querySelector<HTMLElement>(".quotation-paper");
-      setIsPaperOverflow(Boolean(paper && paper.scrollHeight > paper.clientHeight + 1));
-    };
-    const frame = requestAnimationFrame(checkOverflow);
-    const observer = new ResizeObserver(checkOverflow);
-    if (paperRef.current) observer.observe(paperRef.current);
+    let active = true;
+    let objectUrl: string | null = null;
+    setError(null);
+    void createPdfBlob({ form, items, quotation }).then((blob) => {
+      if (!active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
+    }).catch(() => {
+      if (active) setError("ไม่สามารถสร้างตัวอย่าง PDF ได้");
+    });
     return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [form, items, totals, scale]);
+  }, [form, items, quotation]);
   return (
     <aside className="preview-panel">
-      <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
-      {isPaperOverflow && (
-        <p className="preview-overflow" role="alert">
-          เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF
-        </p>
-      )}
-      <div className="preview-scroll" ref={scrollRef}>
-        <div
-          className="preview-paper-frame"
-          style={{
-            width: `${A4_WIDTH_PX * scale}px`,
-            height: `${A4_HEIGHT_PX * scale}px`,
-          }}
-        >
-          <div
-            className="preview-paper-scale"
-            ref={paperRef}
-            style={{ transform: `scale(${scale})` }}
-          >
-            <QuotePaper form={form} items={items} totals={totals} group={group} />
-          </div>
-        </div>
+      <p className="preview-label">ตัวอย่าง PDF</p>
+      {error && <p className="preview-overflow" role="alert">{error}</p>}
+      <div className="pdf-preview-scroll">
+        {url ? <iframe className="pdf-preview" title="ตัวอย่างใบเสนอราคา PDF" src={url} /> : <div className="pdf-preview-loading"><Spinner /> กำลังสร้างตัวอย่าง PDF</div>}
       </div>
     </aside>
   );
 }
 
-function QuotePaper({
-  form,
-  items,
-  totals,
-  group,
-}: {
-  form: Form;
-  items: Item[];
-  totals: any;
-  group: (category: Category) => any;
-}) {
-  const usedNoteLines = form.notes
-    .split(/\r?\n/)
-    .filter((line) => line.trim()).length;
-  const remainingNoteLines = Math.max(0, 5 - usedNoteLines);
-  return (
-    <article className="paper quotation-paper">
-      <div className="document-topline">
-        <div className="document-company">
-          <Brand />
-          <div>
-            <b>{company.name}</b>
-            <span>{company.addressLine1}</span>
-            <span>{company.addressLine2}</span>
-            <span>เลขที่ประจำตัวผู้เสียภาษี {company.taxId}</span>
-          </div>
-        </div>
-        <div className="document-title">
-          <h2>ใบเสนอราคา</h2>
-          <span>QUOTATION</span>
-        </div>
-      </div>
-      <dl className="document-facts">
-        <div>
-          <dt>เลขที่</dt>
-          <dd>จะออกเมื่อบันทึก</dd>
-        </div>
-        <div>
-          <dt>วันที่</dt>
-          <dd>{displayDate(form.issued_at)}</dd>
-        </div>
-        <div>
-          <dt>ใช้ได้ถึง</dt>
-          <dd>{displayDate(form.valid_until)}</dd>
-        </div>
-      </dl>
-      <div className="document-customer">
-        <div>
-          <span>ลูกค้า</span>
-          <p>{form.customer_name || "ชื่อลูกค้า"}</p>
-        </div>
-        <div>
-          <span>ที่อยู่</span>
-          <p>{form.customer_address || "ที่อยู่ลูกค้า"}</p>
-        </div>
-      </div>
-      <PriceBlock
-        category="RECURRING"
-        form={form}
-        items={items}
-        summary={group("RECURRING")}
-        vat={form.vat_rate}
-        wht={form.wht_rate}
-      />
-      <PriceBlock
-        category="ONE_TIME"
-        form={form}
-        items={items}
-        summary={group("ONE_TIME")}
-        vat={form.vat_rate}
-        wht={form.wht_rate}
-      />
-      <div className="document-footer-grid">
-        <section className="document-notes">
-          <h3>หมายเหตุ</h3>
-          {form.notes && <p className="multiline">{form.notes}</p>}
-          <div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">
-            {Array.from({ length: remainingNoteLines }, (_, index) => (
-              <i key={index} />
-            ))}
-          </div>
-        </section>
-        <section className="document-payment-terms">
-          <h3>เงื่อนไขการชำระเงิน</h3>
-          <p className="multiline">{form.payment_terms || defaultPaymentTerms}</p>
-        </section>
-        <section className="document-payment-info">
-          <h3>ข้อมูลการชำระเงิน</h3>
-          <p className="multiline">{company.payment}</p>
-        </section>
-      </div>
-      <div className="signatures compact-signatures">
-        <div>
-          <h3>ยืนยันรับข้อเสนอ</h3>
-          <span>
-            <label>ลงชื่อ</label><i />
-          </span>
-          <span>
-            <label>วันที่</label><i />
-          </span>
-        </div>
-        <div>
-          <h3>ผู้เสนอราคา</h3>
-          <span>
-            <label>ลงชื่อ</label>
-            <i>{form.sales_name && <b>{form.sales_name}</b>}</i>
-          </span>
-          <span>
-            <label>วันที่</label>
-            <i><b>{displayDate(form.issued_at)}</b></i>
-          </span>
-        </div>
-      </div>
-    </article>
-  );
-}
-function PriceBlock({
-  category,
-  form,
-  items,
-  summary,
-  vat,
-  wht,
-}: {
-  category: Category;
-  form: Form;
-  items: Item[];
-  summary: any;
-  vat: number;
-  wht: number;
-}) {
-  const rows = items.filter(
-    (item) => item.category === category && item.service_name.trim(),
-  );
-  const recurring = category === "RECURRING";
-  const main = rows[0];
-  return (
-    <section className={`price-block ${recurring ? "recurring-price-block" : "one-time-price-block"}`}>
-      <div className="price-title">
-        <h3>
-          {recurring
-            ? `1. ${form.billing_cycles.join(" / ") || softwareServiceLabel}`
-            : "2. ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)"}
-        </h3>
-      </div>
-      <div className="mini-head">
-        <span>รายละเอียด</span>
-        <span>{recurring ? "จำนวนรถ" : "จำนวน"}</span>
-        <span>ราคารวม</span>
-      </div>
-      <div className="price-rows">
-        {recurring ? (
-          <div className="mini-row">
-            <span className="service-cell">
-              {documentServiceName(main?.service_name)}
-              {form.recurring_addons.length > 0 && (
-                <small>{form.recurring_addons.map(documentAddonName).join(", ")}</small>
-              )}
-            </span>
-            <span>{form.package_reference_quantity || "—"} คัน</span>
-            <b>{money(summary.subtotal)}</b>
-          </div>
-        ) : rows.length ? (
-          rows.map((item, index) => (
-            <div className="mini-row" key={item.id}>
-              <span className="service-cell">
-                {index + 1}. {item.service_name}
-                {item.service_name === setupLabel && (
-                  <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>
-                )}
-              </span>
-              <span>
-                {item.quantity} {item.unit}
-              </span>
-              <b>{money(itemTotal(item).net)}</b>
-            </div>
-          ))
-        ) : (
-          <div className="mini-row muted">
-            <span>ยังไม่มีรายการ</span>
-            <span>—</span>
-            <b>—</b>
-          </div>
-        )}
-      </div>
-      <div className="price-summary price-summary-card">
-        <span className="summary-kicker">สรุปค่าบริการ</span>
-        <p>
-          <span>รวมก่อนภาษี</span>
-          <b>{money(summary.subtotal)}</b>
-        </p>
-        {summary.discount > 0 && (
-          <p>
-            <span>ส่วนลด</span>
-            <b>-{money(summary.discount)}</b>
-          </p>
-        )}
-        <p>
-          <span>หัก ณ ที่จ่าย {wht}%</span>
-          <b>-{money(summary.wht)}</b>
-        </p>
-        <p>
-          <span>ภาษีมูลค่าเพิ่ม {vat}%</span>
-          <b>{money(summary.vat)}</b>
-        </p>
-        <p className="net">
-          <span>ยอดรวมสุทธิ</span>
-          <b>{money(summary.net)}</b>
-        </p>
-      </div>
-      <p className="table-amount-in-words">{thaiBaht(summary.net)}</p>
-    </section>
-  );
-}
 function Detail({
   quote,
   items,
@@ -2069,6 +1240,7 @@ function Detail({
   onRevision,
   onPdf,
   onEmail,
+  onPrint,
   onAccept,
   onCancel,
 }: {
@@ -2080,42 +1252,18 @@ function Detail({
   onRevision: () => void;
   onPdf: () => void;
   onEmail: () => void;
+  onPrint: () => void;
   onAccept: () => void;
   onCancel: (reason: string, note: string) => void;
 }) {
   const [showCancellation, setShowCancellation] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancellationNote, setCancellationNote] = useState("");
-  const form = formFromQuote(quote);
-  const canCreateRevision = ["READY", "ACCEPTED", "EXPIRED"].includes(quote.status);
-  const canCancel = ["DRAFT", "READY", "ACCEPTED", "EXPIRED"].includes(quote.status);
-  const canSendEmail = ["READY", "ACCEPTED"].includes(quote.status);
-  const canPrint = ["READY", "ACCEPTED"].includes(quote.status);
+  const form = formFromQuotation(quote);
+  const actions = quotationActions(quote.status);
   const emailReady =
     Boolean(quote.pdf_drive_url) &&
     Boolean(quote.recipient_emails?.length || quote.contact_email);
-  const totals = items.reduce(
-    (sum, item) => {
-      const value = itemTotal(item);
-      return {
-        subtotal: sum.subtotal + value.net,
-        discount: sum.discount,
-        taxBase: sum.taxBase,
-        vat: sum.vat,
-        wht: sum.wht,
-        net: sum.net,
-      };
-    },
-    { subtotal: 0, discount: 0, taxBase: 0, vat: 0, wht: 0, net: 0 },
-  );
-  const group = (category: Category) => {
-    const subtotal = items
-      .filter((item) => item.category === category)
-      .reduce((sum, item) => sum + itemTotal(item).net, 0);
-    const vat = Math.round((subtotal * form.vat_rate) / 100);
-    const wht = Math.round((subtotal * form.wht_rate) / 100);
-    return { subtotal, discount: 0, vat, wht, net: subtotal + vat - wht };
-  };
   return (
     <>
       <header className="topbar">
@@ -2138,7 +1286,7 @@ function Detail({
               แก้ไขฉบับร่าง
             </button>
           )}
-          {canCreateRevision && (
+          {actions.canCreateRevision && (
             <button disabled={busy} onClick={onRevision}>
               สร้างฉบับแก้ไข
             </button>
@@ -2148,7 +1296,7 @@ function Detail({
               ยืนยันสร้าง PDF
             </button>
           )}
-          {canSendEmail && (
+          {actions.canSendEmail && (
             <button
               disabled={busy || !emailReady}
               title={!emailReady ? "ต้องมีไฟล์ PDF บน Google Drive และอีเมลผู้รับก่อน" : undefined}
@@ -2157,8 +1305,8 @@ function Detail({
               ส่งอีเมล
             </button>
           )}
-          {canPrint && (
-            <button type="button" onClick={() => printQuotation(quote.document_no)}>
+          {actions.canPrint && (
+            <button type="button" disabled={busy} onClick={onPrint}>
               พิมพ์
             </button>
           )}
@@ -2167,10 +1315,8 @@ function Detail({
       <div className="editor detail-editor">
         <section className="form-panel">
           <Section title="สถานะเอกสาร">
-          <i className={`badge ${quote.status.toLowerCase()}`}>
-            {statusText[quote.status] || quote.status}
-          </i>
-          <h2 className="detail-total">{money(quote.net_amount_satang)}</h2>
+          <QuotationStatusBadge status={quote.status} />
+          <h2 className="detail-total">{money(quote.net_amount_satang ?? 0)}</h2>
           <p className="muted">ยอดสุทธิของเอกสาร</p>
           <hr />
           <dl>
@@ -2217,7 +1363,7 @@ function Detail({
                 บันทึกลูกค้าตอบรับ
               </button>
             )}
-            {canCancel && !showCancellation && (
+            {actions.canCancel && !showCancellation && (
               <button disabled={busy} onClick={() => setShowCancellation(true)}>
                 ยกเลิกใบเสนอราคา
               </button>
@@ -2232,7 +1378,7 @@ function Detail({
                   onChange={(event) => setCancellationReason(event.target.value)}
                 >
                   <option value="">เลือกเหตุผล</option>
-                  {cancellationReasons.map((reason) => (
+                  {CANCELLATION_REASONS.map((reason) => (
                     <option value={reason} key={reason}>{reason}</option>
                   ))}
                 </select>
@@ -2274,7 +1420,7 @@ function Detail({
           )}
           </Section>
         </section>
-        <Preview form={form} items={items} totals={totals} group={group} />
+        <Preview form={form} items={items} quotation={quote} />
       </div>
     </>
   );

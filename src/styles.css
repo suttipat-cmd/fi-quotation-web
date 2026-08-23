@@ -573,6 +573,29 @@ button:disabled {
   padding: 0 9px 12px 0;
   scrollbar-color: #9cb3cf transparent;
 }
+.pdf-preview-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  border: 1px solid #d6e1ec;
+  border-radius: 12px;
+  background: #eaf0f6;
+}
+.pdf-preview {
+  display: block;
+  width: 100%;
+  min-width: 560px;
+  height: min(76vh, 980px);
+  border: 0;
+  background: #fff;
+}
+.pdf-preview-loading {
+  min-height: 380px;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  color: #315f92;
+}
 .preview-paper-frame {
   position: relative;
   overflow: hidden;
