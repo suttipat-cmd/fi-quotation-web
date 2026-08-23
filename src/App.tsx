@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
-import { displayDate, money } from "./lib/format";
+import { displayDate, money, thaiBaht } from "./lib/format";
 import { Brand } from "./components/ui/Brand";
 import { Field } from "./components/ui/Field";
 import { MoneyInput } from "./components/ui/MoneyInput";
@@ -9,7 +9,9 @@ import { Spinner } from "./components/ui/Spinner";
 import { QuotationStatusBadge } from "./components/ui/QuotationStatusBadge";
 import {
   CANCELLATION_REASONS,
+  COMPANY_DOCUMENT_CONFIG,
   CUSTOM_FORM_LABEL,
+  DEFAULT_PAYMENT_TERMS,
   ONSITE_TRAINING_LABEL,
   PAYMENT_OPTIONS,
   SETUP_LABEL,
@@ -23,7 +25,8 @@ import {
   normalizeQuotationItems,
   validateQuotationDraft,
 } from "./features/quotations/domain/draft";
-import { calculateItemTotal, calculateQuotationTotals } from "./features/quotations/domain/calculator";
+import { calculateCategoryTotals, calculateItemTotal, calculateQuotationTotals } from "./features/quotations/domain/calculator";
+import { documentAddonName, documentServiceName } from "./features/quotations/domain/document";
 import { quotationActions } from "./features/quotations/domain/status";
 import { getQuotationItems, saveQuotationDraft } from "./features/quotations/services/quotation-service";
 import { sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
@@ -34,12 +37,6 @@ declare const __APP_BUILD_ID__: string;
 type Toast = { text: string; type: "success" | "error" | "info" } | null;
 type View = "dashboard" | "create" | "edit" | "detail";
 type Route = { view: View; id?: string };
-
-const createPdfBlob = async (props: { form: Form; items: Item[]; quotation?: Quote | null }) =>
-  (await import("./features/quotations/components/document/QuotationPdf")).createQuotationPdfBlob(props);
-const PdfPreview = lazy(async () => ({
-  default: (await import("./features/quotations/components/document/PdfPreview")).PdfPreview,
-}));
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
@@ -441,12 +438,7 @@ function App() {
       action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
       async () => {
         if (action === "generate_pdf") {
-          const pdf = await createPdfBlob({
-            form: formFromQuotation(selected),
-            items: detailItems,
-            quotation: selected,
-          });
-          const result = await uploadGeneratedPdf(selected, pdf);
+          const result = await uploadGeneratedPdf(selected);
           if (!result.pdf_drive_url) throw new Error(result.message || "สร้าง PDF ไม่สำเร็จ");
           setSelected({
             ...selected,
@@ -473,25 +465,10 @@ function App() {
   }
   async function printSelectedQuotation() {
     if (!selected) return;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      notify("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่", "error");
-      return;
-    }
-    await run("กำลังเตรียมไฟล์สำหรับพิมพ์", async () => {
-      const blob = await createPdfBlob({
-        form: formFromQuotation(selected),
-        items: detailItems,
-        quotation: selected,
-      });
-      const url = URL.createObjectURL(blob);
-      printWindow.location.href = url;
-      window.setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-        URL.revokeObjectURL(url);
-      }, 900);
-    });
+    const previousTitle = document.title;
+    document.title = selected.document_no || "ใบเสนอราคา";
+    window.addEventListener("afterprint", () => { document.title = previousTitle; }, { once: true });
+    window.print();
   }
   if (booting)
     return (
@@ -1206,57 +1183,88 @@ function OneTimeItems({
 function Preview({
   form,
   items,
-  quotation,
 }: {
   form: Form;
   items: Item[];
-  quotation?: Quote | null;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
-  const [snapshot, setSnapshot] = useState(() => ({ form, items, quotation }));
-  const currentUrl = useRef<string | null>(null);
-
-  // PDF generation is intentionally delayed while a user is still typing.
-  // The editor remains responsive and the document action still uses current form data.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const paperRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [isPaperOverflow, setIsPaperOverflow] = useState(false);
+  const totals = useMemo(() => calculateQuotationTotals(form, items), [form, items]);
+  const group = (category: Item["category"]) => calculateCategoryTotals(category, form, items, totals);
   useEffect(() => {
-    setUpdating(true);
-    const timer = window.setTimeout(() => {
-      setSnapshot({ form, items, quotation });
-      setUpdating(false);
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [form, items, quotation]);
-
-  useEffect(() => {
-    let active = true;
-    setError(null);
-    void createPdfBlob(snapshot).then((blob) => {
-      if (!active) return;
-      const objectUrl = URL.createObjectURL(blob);
-      const previousUrl = currentUrl.current;
-      currentUrl.current = objectUrl;
-      setUrl(objectUrl);
-      if (previousUrl) URL.revokeObjectURL(previousUrl);
-    }).catch(() => {
-      if (active) setError("ไม่สามารถสร้างตัวอย่าง PDF ได้");
-    });
-    return () => {
-      active = false;
-    };
-  }, [snapshot]);
-  useEffect(() => () => {
-    if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+    const node = scrollRef.current;
+    if (!node) return;
+    const updateScale = () => setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    const checkOverflow = () => {
+      const paper = paperRef.current?.querySelector<HTMLElement>(".quotation-paper");
+      setIsPaperOverflow(Boolean(paper && paper.scrollHeight > paper.clientHeight + 1));
+    };
+    const frame = requestAnimationFrame(checkOverflow);
+    const observer = new ResizeObserver(checkOverflow);
+    if (paperRef.current) observer.observe(paperRef.current);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [form, items, totals, scale]);
   return (
     <aside className="preview-panel">
-      <p className="preview-label">ตัวอย่าง PDF {updating && <small>กำลังอัปเดต…</small>}</p>
-      {error && <p className="preview-overflow" role="alert">{error}</p>}
-      <div className="pdf-preview-scroll">
-        {url ? <Suspense fallback={<div className="pdf-preview-loading"><Spinner /> กำลังแสดงตัวอย่าง PDF</div>}><PdfPreview file={url} /></Suspense> : <div className="pdf-preview-loading"><Spinner /> กำลังสร้างตัวอย่าง PDF</div>}
+      <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
+      {isPaperOverflow && <p className="preview-overflow" role="alert">เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF</p>}
+      <div className="preview-scroll" ref={scrollRef}>
+        <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
+          <div className="preview-paper-scale" ref={paperRef} style={{ transform: `scale(${scale})` }}>
+            <QuotePaper form={form} items={items} group={group} />
+          </div>
+        </div>
       </div>
     </aside>
+  );
+}
+
+function QuotePaper({ form, items, group }: { form: Form; items: Item[]; group: (category: Item["category"]) => ReturnType<typeof calculateCategoryTotals> }) {
+  const usedNoteLines = form.notes.split(/\r?\n/).filter((line) => line.trim()).length;
+  const remainingNoteLines = Math.max(0, 5 - usedNoteLines);
+  return (
+    <article className="paper quotation-paper">
+      <div className="document-topline">
+        <div className="document-company"><Brand /><div><b>{COMPANY_DOCUMENT_CONFIG.name}</b><span>{COMPANY_DOCUMENT_CONFIG.addressLine1}</span><span>{COMPANY_DOCUMENT_CONFIG.addressLine2}</span><span>เลขที่ประจำตัวผู้เสียภาษี {COMPANY_DOCUMENT_CONFIG.taxId}</span></div></div>
+        <div className="document-title"><h2>ใบเสนอราคา</h2><span>QUOTATION</span></div>
+      </div>
+      <dl className="document-facts"><div><dt>เลขที่</dt><dd>จะออกเมื่อบันทึก</dd></div><div><dt>วันที่</dt><dd>{displayDate(form.issued_at)}</dd></div><div><dt>ใช้ได้ถึง</dt><dd>{displayDate(form.valid_until)}</dd></div></dl>
+      <div className="document-customer"><div><span>ลูกค้า</span><p>{form.customer_name || "ชื่อลูกค้า"}</p></div><div><span>ที่อยู่</span><p>{form.customer_address || "ที่อยู่ลูกค้า"}</p></div></div>
+      <PriceBlock category="RECURRING" form={form} items={items} summary={group("RECURRING")} />
+      <PriceBlock category="ONE_TIME" form={form} items={items} summary={group("ONE_TIME")} />
+      <div className="document-footer-grid">
+        <section className="document-notes"><h3>หมายเหตุ</h3>{form.notes && <p className="multiline">{form.notes}</p>}<div className="blank-note-lines" aria-label="พื้นที่สำหรับหมายเหตุ">{Array.from({ length: remainingNoteLines }, (_, index) => <i key={index} />)}</div></section>
+        <section className="document-payment-terms"><h3>เงื่อนไขการชำระเงิน</h3><p className="multiline">{form.payment_terms || DEFAULT_PAYMENT_TERMS}</p></section>
+        <section className="document-payment-info"><h3>ข้อมูลการชำระเงิน</h3><p className="multiline">{COMPANY_DOCUMENT_CONFIG.payment}</p></section>
+      </div>
+      <div className="signatures compact-signatures">
+        <div><h3>ยืนยันรับข้อเสนอ</h3><span><label>ลงชื่อ</label><i /></span><span><label>วันที่</label><i /></span></div>
+        <div><h3>ผู้เสนอราคา</h3><span><label>ลงชื่อ</label><i>{form.sales_name && <b>{form.sales_name}</b>}</i></span><span><label>วันที่</label><i><b>{displayDate(form.issued_at)}</b></i></span></div>
+      </div>
+    </article>
+  );
+}
+
+function PriceBlock({ category, form, items, summary }: { category: Item["category"]; form: Form; items: Item[]; summary: ReturnType<typeof calculateCategoryTotals> }) {
+  const rows = items.filter((item) => item.category === category && item.service_name.trim());
+  const recurring = category === "RECURRING";
+  const main = rows[0];
+  return (
+    <section className={`price-block ${recurring ? "recurring-price-block" : "one-time-price-block"}`}>
+      <div className="price-title"><h3>{recurring ? `1. ${form.billing_cycles.join(" / ") || SOFTWARE_SERVICE_LABEL}` : "2. ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)"}</h3></div>
+      <div className="mini-head"><span>รายละเอียด</span><span>{recurring ? "จำนวนรถ" : "จำนวน"}</span><span>ราคารวม</span></div>
+      <div className="price-rows">{recurring ? <div className="mini-row"><span className="service-cell">{documentServiceName(main?.service_name)}{form.recurring_addons.length > 0 && <small>{form.recurring_addons.map(documentAddonName).join(", ")}</small>}</span><span>{form.package_reference_quantity || "—"} คัน</span><b>{money(summary.subtotal)}</b></div> : rows.length ? rows.map((item, index) => <div className="mini-row" key={item.id}><span className="service-cell">{index + 1}. {item.service_name}{item.service_name === SETUP_LABEL && <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>}</span><span>{item.quantity} {item.unit}</span><b>{money(calculateItemTotal(item).net)}</b></div>) : <div className="mini-row muted"><span>ยังไม่มีรายการ</span><span>—</span><b>—</b></div>}</div>
+      <div className="price-summary price-summary-card"><span className="summary-kicker">สรุปค่าบริการ</span><p><span>รวมก่อนภาษี</span><b>{money(summary.subtotal)}</b></p>{summary.discount > 0 && <p><span>ส่วนลด</span><b>-{money(summary.discount)}</b></p>}<p><span>หัก ณ ที่จ่าย {form.wht_rate}%</span><b>-{money(summary.wht)}</b></p><p><span>ภาษีมูลค่าเพิ่ม {form.vat_rate}%</span><b>{money(summary.vat)}</b></p><p className="net"><span>ยอดรวมสุทธิ</span><b>{money(summary.net)}</b></p></div>
+      <p className="table-amount-in-words">{thaiBaht(summary.net)}</p>
+    </section>
   );
 }
 
@@ -1449,7 +1457,7 @@ function Detail({
           )}
           </Section>
         </section>
-        <Preview form={form} items={items} quotation={quote} />
+        <Preview form={form} items={items} />
       </div>
     </>
   );

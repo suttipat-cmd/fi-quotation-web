@@ -45,21 +45,8 @@ Deno.serve(async (req) => {
     if (payload.action === 'generate_pdf') {
       if (quote.status !== 'DRAFT') return json({ message: 'สร้าง PDF ได้เฉพาะใบเสนอราคาฉบับร่างเท่านั้น' }, 409)
       if (existing?.pdf_drive_url) return json({ message: 'ใช้ไฟล์ PDF ที่สร้างไว้แล้ว', pdf_drive_url: existing.pdf_drive_url, reused: true })
-      if (typeof payload.pdf_base64 !== 'string' || !payload.pdf_base64.length) {
-        return json({ message: 'ไม่พบไฟล์ PDF ที่สร้างจากหน้าเว็บ' }, 422)
-      }
-      if (payload.pdf_base64.length > 12_000_000) {
-        return json({ message: 'ไฟล์ PDF มีขนาดใหญ่เกินกำหนด กรุณาลดเนื้อหาหรือรูปภาพในเอกสาร' }, 413)
-      }
       const snapshot = { quotation: quote, items: items || [] }
-      // The browser generated this exact PDF for the user-facing preview. Apps
-      // Script stores the same bytes; it must not render a second document.
-      const result = await callAppsScript(scriptUrl, {
-        action: 'store_pdf',
-        secret,
-        file_name: typeof payload.file_name === 'string' ? payload.file_name : `${quote.document_no}.pdf`,
-        pdf_base64: payload.pdf_base64,
-      })
+      const result = await callAppsScript(scriptUrl, { action: 'generate_pdf', secret, snapshot })
       const { error: revisionError } = await adminDb.from('quotation_revisions').upsert({ quotation_id: quote.id, revision_no: quote.revision_no, snapshot, pdf_drive_file_id: result.fileId, pdf_drive_url: result.url, pdf_generated_at: new Date().toISOString(), generated_by: user.id }, { onConflict: 'quotation_id,revision_no' })
       if (revisionError) throw revisionError
       const { data: confirmedQuote, error: quoteError } = await adminDb
@@ -86,9 +73,5 @@ Deno.serve(async (req) => {
       return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว' })
     }
     return json({ message: 'ไม่รองรับคำสั่งนี้' }, 400)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ระบบ'
-    console.error('quotation-operations failed', { message })
-    return json({ message }, 500)
-  }
+  } catch (error) { return json({ message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ระบบ' }, 500) }
 })
