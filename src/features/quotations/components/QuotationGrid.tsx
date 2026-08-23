@@ -69,11 +69,13 @@ function RowActions({
   open,
   onAction,
   onOpenChange,
+  canManage,
 }: {
   quote: Quotation;
   open: boolean;
   onAction: (quote: Quotation, action: QuotationListAction) => void;
   onOpenChange: (open: boolean) => void;
+  canManage: boolean;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -93,10 +95,10 @@ function RowActions({
     if (!bounds) return;
     const width = 210;
     const actionCount = 1
-      + Number(actions.canEdit)
-      + Number(actions.canSendEmail)
-      + Number(actions.canAccept)
-      + Number(actions.canCreateRevision);
+      + Number(canManage && actions.canEdit)
+      + Number(canManage && actions.canSendEmail)
+      + Number(canManage && actions.canAccept)
+      + Number(canManage && actions.canCreateRevision);
     const height = 10 + actionCount * 39;
     const left = Math.max(12, Math.min(bounds.right - width, window.innerWidth - width - 12));
     const top = bounds.bottom + height + 8 > window.innerHeight
@@ -141,8 +143,8 @@ function RowActions({
           <button type="button" className="grid-action-backdrop" aria-label="ปิดเมนูการดำเนินการ" onClick={() => onOpenChange(false)} />
           <div className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
           <button type="button" role="menuitem" onClick={() => choose("view")}><PixelIcon name="actions/action-search" />ดูรายละเอียด</button>
-          {actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}><PixelIcon name="actions/action-edit" />แก้ไข</button>}
-          {actions.canSendEmail && (
+          {canManage && actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}><PixelIcon name="actions/action-edit" />แก้ไข</button>}
+          {canManage && actions.canSendEmail && (
             <button
               type="button"
               role="menuitem"
@@ -153,8 +155,8 @@ function RowActions({
               <PixelIcon name="actions/action-email" />ส่งอีเมล
             </button>
           )}
-          {actions.canAccept && <button className="menu-accept" type="button" role="menuitem" onClick={() => choose("accept")}><PixelIcon name="actions/action-accept" />ตอบรับ</button>}
-          {actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}><PixelIcon name="actions/action-duplicate" />สร้างสำเนา</button>}
+          {canManage && actions.canAccept && <button className="menu-accept" type="button" role="menuitem" onClick={() => choose("accept")}><PixelIcon name="actions/action-accept" />ตอบรับ</button>}
+          {canManage && actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}><PixelIcon name="actions/action-duplicate" />สร้างสำเนา</button>}
           </div>
         </>,
         document.body,
@@ -167,10 +169,12 @@ export default function QuotationGrid({
   quotes,
   onSelect,
   onAction,
+  canManage,
 }: {
   quotes: Quotation[];
   onSelect: (quote: Quotation) => void;
   onAction: (quote: Quotation, action: QuotationListAction) => void;
+  canManage: (quote: Quotation) => boolean;
 }) {
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const columns = useMemo<ColDef<Quotation>[]>(
@@ -260,10 +264,10 @@ export default function QuotationGrid({
         suppressHeaderMenuButton: true,
         cellClass: "grid-action-cell",
         cellRenderer: ({ data }: { data?: Quotation }) =>
-          data ? <RowActions quote={data} open={activeActionId === data.id} onAction={onAction} onOpenChange={(open) => setActiveActionId(open ? data.id : null)} /> : null,
+          data ? <RowActions quote={data} open={activeActionId === data.id} onAction={onAction} onOpenChange={(open) => setActiveActionId(open ? data.id : null)} canManage={canManage(data)} /> : null,
       },
     ],
-    [activeActionId, onAction],
+    [activeActionId, canManage, onAction],
   );
 
   return (

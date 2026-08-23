@@ -67,6 +67,7 @@ export default function QuotationListView({
   onCreate,
   onSelect,
   onAction,
+  canManage,
 }: {
   quotes: Quotation[];
   busy: boolean;
@@ -75,6 +76,7 @@ export default function QuotationListView({
   onCreate: () => void;
   onSelect: (quote: Quotation) => void;
   onAction: (quote: Quotation, action: QuotationListAction) => void;
+  canManage: (quote: Quotation) => boolean;
 }) {
   const [search, setSearch] = useState("");
   const [sales, setSales] = useState<string[]>([]);
@@ -207,7 +209,7 @@ export default function QuotationListView({
           <button className="primary" onClick={onCreate}><PixelIcon name="actions/action-create-quotation" /> สร้างใบเสนอราคา</button>
         </div>
       ) : filteredQuotes.length ? (
-        <div className="list-grid-section"><QuotationGrid quotes={filteredQuotes} onSelect={onSelect} onAction={onAction} /></div>
+        <div className="list-grid-section"><QuotationGrid quotes={filteredQuotes} onSelect={onSelect} onAction={onAction} canManage={canManage} /></div>
       ) : !loadError ? (
         <div className="empty empty-search list-no-results">
           <img src={pixelAsset("illustrations/feedback/empty-no-search-results@2x.png")} alt="" aria-hidden="true" />

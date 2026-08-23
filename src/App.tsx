@@ -124,24 +124,17 @@ function Auth({ onSession }: { onSession: (value: Session) => void }) {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  async function submit(signUp: boolean) {
+  async function submit() {
     if (busy) return;
     if (!email || !password) {
       setMessage("กรุณาระบุอีเมลและรหัสผ่าน");
       return;
     }
     setBusy(true);
-    const result = signUp
-      ? await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { full_name: email.split("@")[0] } },
-        })
-      : await supabase.auth.signInWithPassword({ email, password });
+    const result = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (result.error) setMessage(friendlyError(result.error.message));
     else if (result.data.session) onSession(result.data.session);
-    else setMessage("สร้างบัญชีแล้ว กรุณาตรวจสอบอีเมลเพื่อยืนยันบัญชี");
   }
   return (
     <main className="auth-shell">
@@ -175,16 +168,9 @@ function Auth({ onSession }: { onSession: (value: Session) => void }) {
         <button
           className="primary full"
           disabled={busy}
-          onClick={() => void submit(false)}
+          onClick={() => void submit()}
         >
           {busy && <Spinner />}เข้าสู่ระบบ
-        </button>
-        <button
-          className="text-button full"
-          disabled={busy}
-          onClick={() => void submit(true)}
-        >
-          สร้างบัญชีผู้ใช้ใหม่
         </button>
         {message && <p className="auth-message">{message}</p>}
       </section>
@@ -459,6 +445,7 @@ function App() {
     setInitialDataReady(true);
   }
   const totals = useMemo(() => calculateQuotationTotals(form, items), [items, form]);
+  const canManageQuote = (quote: Quote) => profile?.role === "ADMIN" || quote.owner_id === profile?.id;
   async function run(label: string, task: () => Promise<void>) {
     if (locked.current) return;
     locked.current = true;
@@ -517,6 +504,10 @@ function App() {
   const removeItem = (id: string) =>
     setItems((current) => current.filter((item) => item.id !== id));
   async function startEdit(quote: Quote) {
+    if (!canManageQuote(quote)) {
+      notify("คุณมีสิทธิ์ดูเอกสารนี้ แต่แก้ไขได้เฉพาะเจ้าของเอกสารหรือผู้ดูแลระบบ", "error");
+      return;
+    }
     if (quote.status !== "DRAFT") {
       notify("แก้ไขได้เฉพาะใบเสนอราคาฉบับร่าง", "error");
       return;
@@ -586,6 +577,10 @@ function App() {
     });
   }
   async function performAcceptQuotation(target: Quote) {
+    if (!canManageQuote(target)) {
+      notify("คุณไม่มีสิทธิ์ตอบรับเอกสารนี้", "error");
+      return;
+    }
     await run("กำลังบันทึกการตอบรับ", async () => {
       const result = await supabase.rpc("change_quotation_status", {
         p_quotation_id: target.id,
@@ -607,6 +602,10 @@ function App() {
     });
   }
   async function performCancelQuotation(target: Quote, reason: string, note: string) {
+    if (!canManageQuote(target)) {
+      notify("คุณไม่มีสิทธิ์ยกเลิกเอกสารนี้", "error");
+      return;
+    }
     await run("กำลังยกเลิกใบเสนอราคา", async () => {
       const result = await supabase.rpc("cancel_quotation", {
         p_quotation_id: target.id,
@@ -624,6 +623,10 @@ function App() {
     void performCancelQuotation(selected, reason, note);
   }
   async function performRevision(target: Quote) {
+    if (!canManageQuote(target)) {
+      notify("คุณไม่มีสิทธิ์สร้างสำเนาเอกสารนี้", "error");
+      return;
+    }
     await run("กำลังสร้างฉบับแก้ไข", async () => {
       const result = await supabase.rpc("create_quotation_revision", {
         p_quotation_id: target.id,
@@ -645,6 +648,10 @@ function App() {
   }
   async function performDocumentAction(action: "generate_pdf" | "send_email", target: Quote) {
     if (!target) return;
+    if (!canManageQuote(target)) {
+      notify("คุณไม่มีสิทธิ์ดำเนินการกับเอกสารนี้", "error");
+      return;
+    }
     const recipients = Array.isArray(target.recipient_emails)
       ? target.recipient_emails
       : target.contact_email
@@ -734,6 +741,10 @@ function App() {
   }
   async function runListAction(quote: Quote, action: QuotationListAction) {
     if (action === "view") return openDetail(quote);
+    if (!canManageQuote(quote)) {
+      notify("คุณมีสิทธิ์ดูเอกสารนี้ แต่ดำเนินการต่อได้เฉพาะเจ้าของเอกสารหรือผู้ดูแลระบบ", "error");
+      return;
+    }
     if (action === "edit") return startEdit(quote);
     if (action === "email") return documentAction("send_email", quote);
     if (action === "accept") return acceptQuotation(quote);
@@ -870,6 +881,7 @@ function App() {
             }}
             onSelect={(quote) => void openDetail(quote)}
             onListAction={(quote, action) => void runListAction(quote, action)}
+            canManage={canManageQuote}
             onRetry={() => void load()}
           />
         )}
@@ -931,6 +943,7 @@ function App() {
             onAccept={() => void acceptQuotation()}
             onCancel={(reason, note) => void cancelQuotation(reason, note)}
             onSaveRecipients={(input) => void saveRecipientDetails(input)}
+            canManage={canManageQuote(selected)}
           />
         )}
         {view === "settings" && profile?.role === "ADMIN" && (
@@ -947,6 +960,7 @@ function App() {
             }}
             onSelect={(quote) => void openDetail(quote)}
             onListAction={(quote, action) => void runListAction(quote, action)}
+            canManage={canManageQuote}
             onRetry={() => void load()}
           />
         )}
@@ -1108,6 +1122,7 @@ function Dashboard({
   onCreate,
   onSelect,
   onListAction,
+  canManage,
   onRetry,
 }: {
   quotes: Quote[];
@@ -1116,6 +1131,7 @@ function Dashboard({
   onCreate: () => void;
   onSelect: (quote: Quote) => void;
   onListAction: (quote: Quote, action: QuotationListAction) => void;
+  canManage: (quote: Quote) => boolean;
   onRetry: () => void;
 }) {
   return (
@@ -1147,6 +1163,7 @@ function Dashboard({
             onCreate={onCreate}
             onSelect={onSelect}
             onAction={onListAction}
+            canManage={canManage}
             onRetry={onRetry}
           />
         </Suspense>
@@ -2023,6 +2040,7 @@ function Detail({
   onAccept,
   onCancel,
   onSaveRecipients,
+  canManage,
 }: {
   quote: Quote;
   items: Item[];
@@ -2037,6 +2055,7 @@ function Detail({
   onAccept: () => void;
   onCancel: (reason: string, note: string) => void;
   onSaveRecipients: (input: { quote: Quote; contactName: string; contactPosition: string; recipientEmails: string[] }) => void;
+  canManage: boolean;
 }) {
   const [showCancellation, setShowCancellation] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
@@ -2064,22 +2083,22 @@ function Detail({
           <button type="button" aria-label="กลับไปรายการใบเสนอราคา" title="กลับไปรายการใบเสนอราคา" disabled={busy} onClick={onBack}>
             <PixelIcon name="actions/action-back" />
           </button>
-          {quote.status === "DRAFT" && (
+          {canManage && quote.status === "DRAFT" && (
             <button disabled={busy} onClick={onEdit}>
               <PixelIcon name="actions/action-edit" /> แก้ไข
             </button>
           )}
-          {actions.canCreateRevision && (
+          {canManage && actions.canCreateRevision && (
             <button disabled={busy} onClick={onRevision}>
               <PixelIcon name="actions/action-duplicate" /> สร้างสำเนา
             </button>
           )}
-          {quote.status === "DRAFT" && (
+          {canManage && quote.status === "DRAFT" && (
             <button className="primary" disabled={busy} onClick={onPdf}>
               <PixelIcon name="actions/action-pdf" /> สร้าง PDF
             </button>
           )}
-          {actions.canSendEmail && (
+          {canManage && actions.canSendEmail && (
             <button
               disabled={busy || !emailReady}
               title={!emailReady ? "ต้องมีไฟล์ PDF บน Google Drive และอีเมลผู้รับก่อน" : undefined}
@@ -2093,12 +2112,12 @@ function Detail({
               <PixelIcon name="actions/action-print" /> พิมพ์
             </button>
           )}
-          {quote.status === "READY" && (
+          {canManage && quote.status === "READY" && (
             <button className="accept-action" disabled={busy} onClick={onAccept}>
               <PixelIcon name="actions/action-accept" /> ตอบรับ
             </button>
           )}
-          {actions.canCancel && (
+          {canManage && actions.canCancel && (
             <button className="danger-text-action" disabled={busy} onClick={() => setShowCancellation(true)}>
               ยกเลิกใบเสนอราคา
             </button>
