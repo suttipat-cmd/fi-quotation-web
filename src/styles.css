@@ -805,7 +805,7 @@ button:disabled {
 .quotation-paper {
   display: flex;
   flex-direction: column;
-  padding: 15px 22px 14px;
+  padding: 20px 22px 14px;
   font-family: "Sarabun", "Noto Sans Thai", sans-serif;
   font-size: 11.7px;
   color: #26384f;
@@ -817,7 +817,7 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 14px;
-  padding: 3px 2px 8px;
+  padding: 4px 2px 11px;
   border-bottom: 1px solid #bfd0e1;
 }
 .document-company {
@@ -839,7 +839,7 @@ button:disabled {
 }
 .document-company > div:last-child {
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 .document-company b {
   font-size: 13.5px;
@@ -867,7 +867,7 @@ button:disabled {
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin: 0;
-  padding: 7px 0 6px;
+  padding: 9px 0 8px;
   border-bottom: 1px solid #d8e2ec;
 }
 .document-facts > div {
@@ -892,7 +892,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   gap: 10px;
-  padding: 7px 0 6px;
+  padding: 9px 0 8px;
   border-bottom: 1px solid #d8e2ec;
 }
 .document-customer > div {
