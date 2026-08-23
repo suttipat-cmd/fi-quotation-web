@@ -3,6 +3,7 @@ import { STATUS_TEXT } from "../constants";
 import QuotationGrid, { type QuotationListAction } from "./QuotationGrid";
 import type { QuoteStatus, Quotation } from "../types";
 import { onsiteTraining } from "../domain/list-summary";
+import { PixelIcon, pixelAsset } from "../../../components/ui/PixelIcon";
 
 type DateRange = { from: string; to: string };
 
@@ -193,22 +194,25 @@ export default function QuotationListView({
 
       {loadError && (
         <div className="list-error" role="alert">
+          <PixelIcon name="status/status-cancelled" className="list-error-icon" />
           <div><strong>โหลดรายการใบเสนอราคาไม่สำเร็จ</strong><span>{loadError}</span></div>
-          <button type="button" disabled={busy} onClick={onRetry}>ลองใหม่</button>
+          <button type="button" disabled={busy} onClick={onRetry}><PixelIcon name="actions/action-reset" />ลองใหม่</button>
         </div>
       )}
 
       {!loadError && quotes.length === 0 ? (
         <div className="empty empty-documents">
-          <span aria-hidden="true">▤</span><h3>คลังเอกสารยังว่าง</h3><p>เริ่มสร้างใบเสนอราคาฉบับแรกเพื่อเพิ่มลงในคลังของคุณ</p>
-          <button className="primary" onClick={onCreate}>สร้างใบเสนอราคา</button>
+          <img src={pixelAsset("illustrations/feedback/empty-no-quotation@2x.png")} alt="" aria-hidden="true" />
+          <h3>คลังเอกสารยังว่าง</h3><p>เริ่มสร้างใบเสนอราคาฉบับแรกเพื่อเพิ่มลงในคลังของคุณ</p>
+          <button className="primary" onClick={onCreate}><PixelIcon name="actions/action-create-quotation" /> สร้างใบเสนอราคา</button>
         </div>
       ) : filteredQuotes.length ? (
         <div className="list-grid-section"><QuotationGrid quotes={filteredQuotes} onSelect={onSelect} onAction={onAction} /></div>
       ) : !loadError ? (
         <div className="empty empty-search list-no-results">
-          <span aria-hidden="true">⌕</span><h3>ไม่พบเอกสารในพื้นที่ค้นหา</h3><p>ลองเปลี่ยนคำค้นหา วันที่ หรือสถานะที่เลือก</p>
-          <button type="button" onClick={clearFilters}>ล้างตัวกรอง</button>
+          <img src={pixelAsset("illustrations/feedback/empty-no-search-results@2x.png")} alt="" aria-hidden="true" />
+          <h3>ไม่พบเอกสารในพื้นที่ค้นหา</h3><p>ลองเปลี่ยนคำค้นหา วันที่ หรือสถานะที่เลือก</p>
+          <button type="button" onClick={clearFilters}><PixelIcon name="actions/action-reset" /> ล้างตัวกรอง</button>
         </div>
       ) : null}
     </>

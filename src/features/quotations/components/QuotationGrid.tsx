@@ -15,6 +15,7 @@ import {
 import { AgGridProvider, AgGridReact } from "ag-grid-react";
 import { displayDate, money } from "../../../lib/format";
 import { QuotationStatusBadge } from "../../../components/ui/QuotationStatusBadge";
+import { PixelIcon } from "../../../components/ui/PixelIcon";
 import { quotationActions } from "../domain/status";
 import { categoryNetAmount, onsiteTraining } from "../domain/list-summary";
 import type { Quotation } from "../types";
@@ -133,14 +134,14 @@ function RowActions({
         onMouseDown={(event) => event.stopPropagation()}
         onClick={toggleMenu}
       >
-        ⋯
+        <PixelIcon name="actions/action-more" />
       </button>
       {open && createPortal(
         <>
           <button type="button" className="grid-action-backdrop" aria-label="ปิดเมนูการดำเนินการ" onClick={() => onOpenChange(false)} />
           <div className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
-          <button type="button" role="menuitem" onClick={() => choose("view")}>ดูรายละเอียด</button>
-          {actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}>แก้ไข</button>}
+          <button type="button" role="menuitem" onClick={() => choose("view")}><PixelIcon name="actions/action-search" />ดูรายละเอียด</button>
+          {actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}><PixelIcon name="actions/action-edit" />แก้ไข</button>}
           {actions.canSendEmail && (
             <button
               type="button"
@@ -149,11 +150,11 @@ function RowActions({
               title={!emailReady ? "ต้องมีไฟล์ PDF บน Google Drive และอีเมลผู้รับก่อน" : undefined}
               onClick={() => choose("email")}
             >
-              ส่งอีเมล
+              <PixelIcon name="actions/action-email" />ส่งอีเมล
             </button>
           )}
-          {actions.canAccept && <button className="menu-accept" type="button" role="menuitem" onClick={() => choose("accept")}>ตอบรับ</button>}
-          {actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}>สร้างสำเนา</button>}
+          {actions.canAccept && <button className="menu-accept" type="button" role="menuitem" onClick={() => choose("accept")}><PixelIcon name="actions/action-accept" />ตอบรับ</button>}
+          {actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}><PixelIcon name="actions/action-duplicate" />สร้างสำเนา</button>}
           </div>
         </>,
         document.body,

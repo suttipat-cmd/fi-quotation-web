@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money, thaiBaht } from "./lib/format";
@@ -7,6 +7,7 @@ import { Field } from "./components/ui/Field";
 import { MoneyInput } from "./components/ui/MoneyInput";
 import { Spinner } from "./components/ui/Spinner";
 import { QuotationStatusBadge } from "./components/ui/QuotationStatusBadge";
+import { PixelIcon, pixelAsset } from "./components/ui/PixelIcon";
 import {
   CANCELLATION_REASONS,
   COMPANY_DOCUMENT_CONFIG,
@@ -636,7 +637,7 @@ function App() {
           className={view === "dashboard" ? "active" : ""}
           onClick={() => navigate("dashboard")}
         >
-          <span>▦</span>
+          <PixelIcon name="navigation/nav-dashboard" />
           <b>ภาพรวม</b>
         </button>
         {profile?.role === "ADMIN" && (
@@ -644,7 +645,7 @@ function App() {
             className={view === "settings" ? "active" : ""}
             onClick={() => navigate("settings")}
           >
-            <span>⚙</span>
+            <PixelIcon name="navigation/nav-settings" />
             <b>ตั้งค่า</b>
           </button>
         )}
@@ -669,14 +670,23 @@ function App() {
             })
           }
         >
-          <span>↪</span>
+          <PixelIcon name="navigation/nav-logout" />
           <b>ออกจากระบบ</b>
         </button>
       </div>
     </aside>
   );
   return (
-    <div className={`app-shell ${collapsed ? "sidebar-is-collapsed" : ""}`}>
+    <div
+      className={`app-shell ${collapsed ? "sidebar-is-collapsed" : ""}`}
+      style={{
+        "--pixel-sidebar-texture": `url(${pixelAsset("textures/sidebar-navy-stone@2x.png")})`,
+        "--pixel-grid-texture": `url(${pixelAsset("textures/hud-blueprint-grid@2x.png")})`,
+        "--pixel-paper-texture": `url(${pixelAsset("textures/app-background-parchment@2x.png")})`,
+        "--pixel-table-header": `url(${pixelAsset("borders/table-header-accent@2x.png")})`,
+        "--pixel-crystal": `url(${pixelAsset("decorative/crystal-cluster@2x.png")})`,
+      } as CSSProperties}
+    >
       <header className="app-topbar">
         <div className="app-topbar-start">
           <button
@@ -792,6 +802,7 @@ function App() {
       {loading && (
         <div className="operation">
           <Spinner />
+          <img className="operation-mascot" src={pixelAsset("characters/robot/robot-processing@2x.png")} alt="" aria-hidden="true" />
           <span><small>กำลังดำเนินภารกิจ</small><b>{loading}</b></span>
         </div>
       )}
@@ -800,7 +811,7 @@ function App() {
           className={`toast ${toast.type}`}
           onClick={() => setToast(null)}
         >
-          <i aria-hidden="true">{toast.type === "success" ? "✦" : toast.type === "error" ? "!" : "i"}</i>
+          <i aria-hidden="true"><PixelIcon name={toast.type === "success" ? "status/status-accepted" : toast.type === "error" ? "status/status-cancelled" : "system/system-crystal-core"} /></i>
           <span>{toast.type === "success" && <small>ภารกิจสำเร็จ</small>}{toast.text}</span>
           <small>×</small>
         </button>
@@ -925,7 +936,7 @@ function Dashboard({
           <p className="muted">ติดตามและจัดการเอกสารได้จากที่เดียว</p>
         </div>
         <button className="primary" disabled={busy} onClick={onCreate}>
-          ＋ สร้างใบเสนอราคา
+          <PixelIcon name="actions/action-create-quotation" /> สร้างใบเสนอราคา
         </button>
       </header>
       <section className="card table-card quotation-list-panel">
@@ -1787,21 +1798,21 @@ function Detail({
         </div>
         <div className="actions">
           <button type="button" aria-label="กลับไปรายการใบเสนอราคา" title="กลับไปรายการใบเสนอราคา" disabled={busy} onClick={onBack}>
-            ←
+            <PixelIcon name="actions/action-back" />
           </button>
           {quote.status === "DRAFT" && (
             <button disabled={busy} onClick={onEdit}>
-              แก้ไข
+              <PixelIcon name="actions/action-edit" /> แก้ไข
             </button>
           )}
           {actions.canCreateRevision && (
             <button disabled={busy} onClick={onRevision}>
-              สร้างสำเนา
+              <PixelIcon name="actions/action-duplicate" /> สร้างสำเนา
             </button>
           )}
           {quote.status === "DRAFT" && (
             <button className="primary" disabled={busy} onClick={onPdf}>
-              สร้าง PDF
+              <PixelIcon name="actions/action-pdf" /> สร้าง PDF
             </button>
           )}
           {actions.canSendEmail && (
@@ -1810,17 +1821,17 @@ function Detail({
               title={!emailReady ? "ต้องมีไฟล์ PDF บน Google Drive และอีเมลผู้รับก่อน" : undefined}
               onClick={onEmail}
             >
-              ส่งอีเมล
+              <PixelIcon name="actions/action-email" /> ส่งอีเมล
             </button>
           )}
           {actions.canPrint && (
             <button type="button" disabled={busy} onClick={onPrint}>
-              พิมพ์
+              <PixelIcon name="actions/action-print" /> พิมพ์
             </button>
           )}
           {quote.status === "READY" && (
             <button className="accept-action" disabled={busy} onClick={onAccept}>
-              ตอบรับ
+              <PixelIcon name="actions/action-accept" /> ตอบรับ
             </button>
           )}
           {actions.canCancel && !showCancellation && (
