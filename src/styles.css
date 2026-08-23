@@ -320,8 +320,9 @@ button:disabled {
   text-align: right;
 }
 .quotation-grid {
-  height: min(580px, calc(100vh - 330px));
-  min-height: 340px;
+  /* Fits the default seven-document view without letting pagination overlap rows. */
+  height: 600px;
+  min-height: 600px;
   margin-top: 18px;
   --ag-font-family: "Noto Sans Thai", system-ui, sans-serif;
   --ag-font-size: 13px;
