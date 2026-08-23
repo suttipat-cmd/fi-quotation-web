@@ -2,17 +2,31 @@
 
 :root {
   font-family: "Noto Sans Thai", system-ui, sans-serif;
-  color: #1d2a3d;
-  background: #f3f7fb;
+  color: #1b3145;
+  background: #edf4f3;
   --app-topbar-height: 68px;
   --app-sidebar-width: 264px;
   --app-sidebar-collapsed-width: 76px;
+  --pixel-ink: #18344a;
+  --pixel-navy: #12395d;
+  --pixel-blue: #1f6bb5;
+  --pixel-cyan: #45cbc3;
+  --pixel-gold: #d6a947;
+  --pixel-moss: #3d9265;
+  --pixel-paper: #fbfdf9;
+  --pixel-stone: #d6e3e4;
+  --pixel-shadow: #12395d26;
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
+  background-color: #edf4f3;
+  background-image:
+    linear-gradient(90deg, #dfeceb66 1px, transparent 1px),
+    linear-gradient(#dfeceb66 1px, transparent 1px);
+  background-size: 16px 16px;
 }
 button,
 input,
@@ -41,7 +55,12 @@ button:disabled {
   transition: padding-left .2s ease;
 }
 .sidebar {
-  background: #0d315f;
+  background-color: var(--pixel-navy);
+  background-image:
+    linear-gradient(90deg, #0d2c4b55 1px, transparent 1px),
+    linear-gradient(#0d2c4b55 1px, transparent 1px),
+    linear-gradient(145deg, #164b76, #103554 70%);
+  background-size: 12px 12px, 12px 12px, auto;
   color: #eaf4ff;
   width: var(--app-sidebar-width);
   position: fixed;
@@ -94,7 +113,8 @@ button:disabled {
 .account .text-button {
   color: #c9dbf2;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 5px;
+  border: 1px solid transparent;
   padding: 12px;
   display: flex;
   gap: 11px;
@@ -109,7 +129,9 @@ button:disabled {
   text-align: center;
 }
 .sidebar nav button.active {
-  background: #2363a9;
+  border-color: #58cfc9;
+  background: #216aac;
+  box-shadow: 3px 3px 0 #092945;
   color: #fff;
 }
 .sidebar.collapsed b,
@@ -160,9 +182,11 @@ button:disabled {
   grid-template-columns: minmax(360px, 1fr) auto minmax(360px, 1fr);
   align-items: center;
   gap: 20px;
-  border-bottom: 1px solid #25558b;
-  background: #0d315f;
-  box-shadow: 0 2px 12px #0c25461f;
+  border-bottom: 2px solid #52c8c0;
+  background-color: var(--pixel-navy);
+  background-image: linear-gradient(90deg, #0d2c4b55 1px, transparent 1px), linear-gradient(#0d2c4b55 1px, transparent 1px);
+  background-size: 12px 12px;
+  box-shadow: 0 3px 0 #0b2944, 0 6px 14px #0c25461f;
   padding: 0 24px;
   color: #fff;
 }
@@ -181,8 +205,9 @@ button:disabled {
   height: 34px;
   place-items: center;
   border: 1px solid #3b6493;
-  border-radius: 8px;
-  background: #173f70;
+  border-radius: 4px;
+  background: #174975;
+  box-shadow: 2px 2px 0 #0a2946;
   color: #fff;
   font-size: 18px;
 }
@@ -195,8 +220,10 @@ button:disabled {
   white-space: nowrap;
 }
 .app-topbar-context {
-  border-radius: 7px;
-  background: #2870b6;
+  border: 1px solid #58d2cc;
+  border-radius: 4px;
+  background: #246fb3;
+  box-shadow: 2px 2px 0 #0a2946;
   padding: 7px 16px;
   font-size: 13px;
   font-weight: 700;
@@ -209,8 +236,10 @@ button:disabled {
   height: 34px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 50%;
+  border: 2px solid #8be4d5;
+  border-radius: 7px;
   background: linear-gradient(135deg, #2a84d0, #41d3c6);
+  box-shadow: 2px 2px 0 #0a2946;
   color: #fff;
   font-size: 13px;
   font-weight: 800;
@@ -274,17 +303,20 @@ button:disabled {
 .actions button,
 .status-actions button,
 .small-button {
-  border: 1px solid #d0dce8;
-  background: #fff;
-  color: #274568;
+  border: 1px solid #b8d0d1;
+  border-radius: 5px;
+  background: var(--pixel-paper);
+  color: var(--pixel-ink);
   padding: 10px 14px;
-  border-radius: 8px;
   font-weight: 600;
+  box-shadow: 2px 2px 0 #aac4c4;
 }
+.actions button:hover:not(:disabled), .status-actions button:hover:not(:disabled), .small-button:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #9dbbbb; }
 .primary {
-  background: #16559b !important;
+  background: var(--pixel-blue) !important;
   color: #fff !important;
-  border-color: #16559b !important;
+  border-color: #175490 !important;
+  box-shadow: 2px 2px 0 #0d3e70 !important;
 }
 .full {
   width: 100%;
@@ -314,10 +346,10 @@ button:disabled {
 }
 .card,
 .form-section {
-  background: #fff;
-  border: 1px solid #dfe7f0;
-  border-radius: 13px;
-  box-shadow: 0 7px 20px #1e4d7610;
+  background: var(--pixel-paper);
+  border: 1px solid #c8dada;
+  border-radius: 6px;
+  box-shadow: 4px 4px 0 var(--pixel-shadow);
 }
 .card {
   padding: 24px;
@@ -359,16 +391,16 @@ button:disabled {
 .status-summary-card {
   min-height: 104px;
   padding: 16px;
-  border: 1px solid #dfe7f0;
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid #cbdcda;
+  border-radius: 5px;
+  background: var(--pixel-paper);
   color: #53657c;
   text-align: left;
-  box-shadow: 0 7px 20px #1e4d7610;
+  box-shadow: 3px 3px 0 #c4d7d533;
   transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
 .status-summary-card:hover { border-color: #91b4d6; transform: translateY(-1px); }
-.status-summary-card.active { border-color: #1d5b9f; box-shadow: 0 0 0 2px #dcecff, 0 7px 20px #1e4d7610; }
+.status-summary-card.active { border-color: #2589c9; box-shadow: inset 0 0 0 1px #7bddd3, 3px 3px 0 #9ac6c2; }
 .status-summary-card span { display: block; font-size: 13px; font-weight: 600; }
 .status-summary-card strong { display: inline-block; margin-top: 8px; color: #173c6b; font-size: 27px; }
 .status-summary-card small { margin-left: 5px; color: #8794a7; }
@@ -469,14 +501,14 @@ button:disabled {
   margin: 0;
   --ag-font-family: "Noto Sans Thai", system-ui, sans-serif;
   --ag-font-size: 13px;
-  --ag-header-background-color: #edf3f8;
-  --ag-header-foreground-color: #51647c;
-  --ag-row-hover-color: #f5f9fe;
-  --ag-border-color: #dfe7f0;
-  --ag-row-border-color: #e4eaf1;
-  --ag-selected-row-background-color: #eaf3fc;
-  --ag-accent-color: #16559b;
-  --ag-wrapper-border-radius: 9px;
+  --ag-header-background-color: #e2efed;
+  --ag-header-foreground-color: #3b5a69;
+  --ag-row-hover-color: #eef9f6;
+  --ag-border-color: #c6d9d7;
+  --ag-row-border-color: #dbe7e5;
+  --ag-selected-row-background-color: #e2f4f1;
+  --ag-accent-color: #2379bd;
+  --ag-wrapper-border-radius: 5px;
 }
 .quotation-grid .ag-row { cursor: pointer; }
 .quotation-grid .ag-cell { display: flex; align-items: center; }
@@ -490,7 +522,7 @@ button:disabled {
 .grid-money { justify-content: flex-end; font-weight: 700; }
 .grid-action-cell { justify-content: center; overflow: visible !important; }
 .grid-row-actions { display: flex; justify-content: center; width: 100%; }
-.grid-action-trigger { width: 32px; height: 30px; border: 1px solid #cbd8e6; border-radius: 7px; background: #fff; color: #31577f; font-size: 20px; line-height: 1; }
+.grid-action-trigger { width: 32px; height: 30px; border: 1px solid #b8d0d1; border-radius: 4px; background: #fbfdf9; color: #31577f; font-size: 20px; line-height: 1; box-shadow: 1px 1px 0 #b7cccc; }
 .grid-action-trigger:hover { border-color: #759dc4; background: #edf5fc; }
 .grid-action-menu { position: fixed; z-index: 50; display: grid; min-width: 210px; padding: 5px; border: 1px solid #cbd8e6; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px #173c6b2a; }
 .grid-action-backdrop { position: fixed; z-index: 49; inset: 0; width: 100%; height: 100%; cursor: default; border: 0; background: transparent; }
@@ -609,6 +641,7 @@ button:disabled {
 }
 .form-section {
   padding: 20px;
+  border-left: 3px solid #74cfc5;
 }
 .form-section h2 {
   font-size: 16px;
@@ -645,15 +678,16 @@ button:disabled {
 .field input,
 .field select,
 .field textarea {
-  border: 1px solid #ccd8e5;
-  border-radius: 8px;
+  border: 1px solid #bed2d1;
+  border-radius: 4px;
   padding: 9px 10px;
   color: #1e2d40;
-  background: #fff;
+  background: #fcfefa;
   min-width: 0;
   width: 100%;
   font-weight: 400;
 }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #2a8eca; outline: 2px solid #7edbd233; }
 .field-help {
   color: #7b8a9d;
   font-size: 11px;
@@ -665,9 +699,9 @@ button:disabled {
   gap: 6px;
   min-height: 42px;
   padding: 6px;
-  border: 1px solid #ccd8e5;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid #bed2d1;
+  border-radius: 4px;
+  background: #fcfefa;
   cursor: text;
 }
 .email-tags > span {
@@ -713,8 +747,8 @@ button:disabled {
 .editor-section-nav button {
   flex: 0 0 auto;
   border: 1px solid #d3dfeb;
-  border-radius: 999px;
-  background: #fff;
+  border-radius: 3px;
+  background: #fcfefa;
   color: #48627d;
   padding: 5px 9px;
   font-size: 11px;
