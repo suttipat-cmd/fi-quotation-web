@@ -230,6 +230,9 @@ button:disabled {
   white-space: nowrap;
 }
 .app-topbar-user { justify-content: flex-end; gap: 9px; min-width: 0; }
+.sound-toggle { width: 31px; height: 31px; border: 1px solid #48789d; border-radius: 4px; background: #163f68; color: #a9cfe8; box-shadow: 2px 2px 0 #092945; font-weight: 800; }
+.sound-toggle.active { border-color: #6ce1c8; background: #1f6e82; color: #ecffed; }
+.sound-toggle:hover { transform: translate(-1px, -1px); }
 .app-user-avatar {
   display: grid;
   width: 34px;
@@ -491,7 +494,7 @@ button:disabled {
 .date-range-actions .text-button { border: 0; padding-left: 0; color: #6c7e91; text-decoration: underline; }
 .date-range-actions .primary { border-color: #1760a9; background: #1b64ad; color: #fff; }
 .quotation-list-skeleton { display: grid; gap: 10px; margin-top: 20px; }
-.skeleton-toolbar, .skeleton-row { border-radius: 8px; background: linear-gradient(90deg, #edf2f7 20%, #f8fafc 40%, #edf2f7 60%); background-size: 200% 100%; animation: list-shimmer 1.2s infinite; }
+.skeleton-toolbar, .skeleton-row { border: 1px solid #d1e4e1; border-radius: 4px; background: linear-gradient(90deg, #e5f1ee 20%, #f8fdf9 40%, #c7eee7 52%, #f8fdf9 64%, #e5f1ee 80%); background-size: 240% 100%; animation: list-shimmer 1.35s infinite; }
 .skeleton-toolbar { height: 74px; }
 .skeleton-row { height: 54px; }
 @keyframes list-shimmer { to { background-position: -200% 0; } }
@@ -577,6 +580,7 @@ button:disabled {
   line-height: 1.2;
   font-weight: 700;
 }
+.badge > span { display: inline-grid; width: 14px; height: 14px; margin-right: 4px; place-items: center; border: 1px solid currentColor; border-radius: 2px; font-size: 10px; line-height: 1; }
 .badge.draft {
   background: #fff7d6;
   border-color: #f4dfa1;
@@ -633,6 +637,8 @@ button:disabled {
 .empty p {
   margin: 0 0 15px;
 }
+.empty-documents > span::after { content: "✦"; position: absolute; margin: -22px 0 0 37px; color: var(--pixel-gold); font-size: 15px; }
+.empty-search > span { background: #e9f3ff; border-color: #87b7e4; box-shadow: 3px 3px 0 #b3d3ef; }
 .editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 440px;
@@ -1585,6 +1591,9 @@ button:disabled {
   box-shadow: 0 8px 30px #102f5740;
   font-size: 14px;
 }
+.operation > span { display: grid; gap: 1px; }
+.operation small { color: #8ee4d5; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+.operation b { font-size: 13px; }
 .spinner {
   width: 15px;
   height: 15px;
@@ -1614,15 +1623,14 @@ button:disabled {
   box-shadow: 4px 4px 0 #12395d22;
   text-align: left;
 }
-.toast span {
-  flex: 1;
-}
-.toast small {
-  font-size: 19px;
-}
+.toast > i { display: inline-grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border: 1px solid currentColor; border-radius: 3px; font-style: normal; font-weight: 900; }
+.toast span { display: grid; flex: 1; gap: 1px; }
+.toast span small { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.toast > small { font-size: 19px; }
 .toast.success {
   background: #e2f6e9;
   color: #18734b;
+  animation: achievement-pop .28s steps(3, end);
 }
 .toast.error {
   background: #ffebeb;
@@ -1631,6 +1639,10 @@ button:disabled {
 .toast.info {
   background: #e5f0fc;
   color: #185a9e;
+}
+@keyframes achievement-pop { 0% { transform: translateY(-8px) scale(.94); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 .auth-shell,
 .page-loader {

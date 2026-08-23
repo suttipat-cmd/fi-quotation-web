@@ -199,15 +199,15 @@ export default function QuotationListView({
       )}
 
       {!loadError && quotes.length === 0 ? (
-        <div className="empty">
-          <span>◫</span><h3>ยังไม่มีใบเสนอราคา</h3><p>เริ่มสร้างใบเสนอราคาฉบับแรกของคุณได้เลย</p>
+        <div className="empty empty-documents">
+          <span aria-hidden="true">▤</span><h3>คลังเอกสารยังว่าง</h3><p>เริ่มสร้างใบเสนอราคาฉบับแรกเพื่อเพิ่มลงในคลังของคุณ</p>
           <button className="primary" onClick={onCreate}>สร้างใบเสนอราคา</button>
         </div>
       ) : filteredQuotes.length ? (
         <div className="list-grid-section"><QuotationGrid quotes={filteredQuotes} onSelect={onSelect} onAction={onAction} /></div>
       ) : !loadError ? (
-        <div className="empty list-no-results">
-          <span>⌕</span><h3>ไม่พบเอกสารตามตัวกรอง</h3><p>ลองเปลี่ยนคำค้นหา วันที่ หรือสถานะที่เลือก</p>
+        <div className="empty empty-search list-no-results">
+          <span aria-hidden="true">⌕</span><h3>ไม่พบเอกสารในพื้นที่ค้นหา</h3><p>ลองเปลี่ยนคำค้นหา วันที่ หรือสถานะที่เลือก</p>
           <button type="button" onClick={clearFilters}>ล้างตัวกรอง</button>
         </div>
       ) : null}

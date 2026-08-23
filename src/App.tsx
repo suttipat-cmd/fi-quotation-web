@@ -62,6 +62,24 @@ type BankAccount = { id: string; bank_name: string; account_name: string; accoun
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
 const A4_HEIGHT_PX = (297 / 25.4) * 96;
+const playSuccessTone = () => {
+  try {
+    const context = new AudioContext();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "square";
+    oscillator.frequency.setValueAtTime(660, context.currentTime);
+    oscillator.frequency.setValueAtTime(880, context.currentTime + 0.11);
+    gain.gain.setValueAtTime(0.035, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.26);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.27);
+    oscillator.addEventListener("ended", () => void context.close());
+  } catch {
+    // Sound is decorative only; unsupported browsers must continue normally.
+  }
+};
 const routeFromLocation = (): Route => {
   const path = window.location.pathname
     .replace(appBasePath, "")
@@ -193,11 +211,20 @@ function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
   const detailPaperRef = useRef<HTMLElement | null>(null);
-  const notify = (text: string, type: NonNullable<Toast>["type"] = "info") =>
+  const notify = (text: string, type: NonNullable<Toast>["type"] = "info") => {
+    if (soundEnabled && type === "success") playSuccessTone();
     setToast({ text, type });
+  };
+  const toggleSound = () => setSoundEnabled((current) => {
+    const next = !current;
+    window.localStorage.setItem("fi-quotation-sound", next ? "on" : "off");
+    if (next) playSuccessTone();
+    return next;
+  });
   const navigate = (next: View, id?: string, replace = false, skipDirtyCheck = false) => {
     if (
       !skipDirtyCheck &&
@@ -664,6 +691,7 @@ function App() {
         </div>
         <span className="app-topbar-context">{pageContext}</span>
         <div className="app-topbar-user" aria-label="ข้อมูลผู้ใช้งาน">
+          <button type="button" className={`sound-toggle${soundEnabled ? " active" : ""}`} aria-label={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} title={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} onClick={toggleSound}>{soundEnabled ? "♬" : "♩"}</button>
           <span className="app-user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
           <span className="app-user-copy">
             <strong>{userName}</strong>
@@ -764,7 +792,7 @@ function App() {
       {loading && (
         <div className="operation">
           <Spinner />
-          {loading}
+          <span><small>กำลังดำเนินภารกิจ</small><b>{loading}</b></span>
         </div>
       )}
       {toast && (
@@ -772,8 +800,8 @@ function App() {
           className={`toast ${toast.type}`}
           onClick={() => setToast(null)}
         >
-          {toast.type === "success" ? "✓" : toast.type === "error" ? "!" : "i"}
-          <span>{toast.text}</span>
+          <i aria-hidden="true">{toast.type === "success" ? "✦" : toast.type === "error" ? "!" : "i"}</i>
+          <span>{toast.type === "success" && <small>ภารกิจสำเร็จ</small>}{toast.text}</span>
           <small>×</small>
         </button>
       )}
