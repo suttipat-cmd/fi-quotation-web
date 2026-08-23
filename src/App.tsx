@@ -985,13 +985,6 @@ function App() {
           />
         )}
       </main>
-      {loading && (
-        <div className="operation">
-          <Spinner />
-          <img className="operation-mascot" src={pixelAsset("characters/robot/robot-processing@2x.png")} alt="" aria-hidden="true" />
-          <span><small>กำลังดำเนินภารกิจ</small><b>{loading}</b></span>
-        </div>
-      )}
       {(loading === "กำลังสร้าง PDF" || loading === "กำลังส่งอีเมล") && (
         <div className="operation-overlay" role="status" aria-live="polite">
           <div className="operation-modal">
@@ -1156,7 +1149,7 @@ function Dashboard({
 }) {
   return (
     <>
-      <header className="page-header editor-page-header">
+      <header className="page-header editor-page-header dashboard-page-header">
         <div className="page-header-copy dashboard-header-copy">
           <div>
             <p className="eyebrow">ภาพรวมระบบ</p>

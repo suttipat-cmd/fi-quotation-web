@@ -308,6 +308,10 @@ button:disabled {
   font-size: 12px;
   line-height: 1.25;
 }
+.dashboard-page-header {
+  padding: 8px 18px 12px;
+  margin: -2px 0 14px;
+}
 .eyebrow {
   color: #2363a9;
   margin: 0;
@@ -1623,28 +1627,6 @@ button:disabled {
   background: #fff1f1;
   color: #b82020;
 }
-.operation {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #102f57;
-  color: #fff;
-  border: 1px solid #55c5bc;
-  border-radius: 4px;
-  box-shadow: 4px 4px 0 #081f36;
-  padding: 11px 18px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  z-index: 40;
-  box-shadow: 4px 4px 0 #081f36, 0 8px 30px #102f5740;
-  font-size: 14px;
-}
-.operation > span { display: grid; gap: 1px; }
-.operation-mascot { width: 38px; height: 38px; object-fit: contain; image-rendering: pixelated; }
-.operation small { color: #8ee4d5; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
-.operation b { font-size: 13px; }
 .operation-overlay,
 .achievement-overlay { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b3088; }
 .operation-modal { width: min(370px, 100%); display: grid; justify-items: center; gap: 8px; padding: 22px; border: 2px solid #1b5b94; border-radius: 6px; background: #f8fcfb; box-shadow: 7px 7px 0 #071a2e80; color: #193c61; text-align: center; }
