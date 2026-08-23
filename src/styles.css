@@ -246,14 +246,12 @@ button:disabled {
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
-  place-items: center;
   border: 2px solid #8be4d5;
   border-radius: 7px;
-  background: linear-gradient(135deg, #2a84d0, #41d3c6);
+  background: #173e67;
   box-shadow: 2px 2px 0 #0a2946;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 .app-user-copy { display: grid; min-width: 0; line-height: 1.2; }
 .app-user-copy strong { max-width: 180px; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
@@ -275,6 +273,10 @@ button:disabled {
   font-size: 16px;
   color: #74849a;
 }
+.page-header-copy { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.page-header-copy > div { min-width: 0; }
+.page-header-copy > img { width: 76px; height: 76px; flex: 0 0 auto; object-fit: contain; image-rendering: pixelated; }
+.settings-header-copy > img { width: 68px; height: 68px; }
 .editor-page-header {
   position: sticky;
   /* The editor itself scrolls below the global application bar. */
@@ -774,7 +776,11 @@ button:disabled {
   counter-reset: quest-step;
   overflow-x: auto;
   padding: 2px 0 8px;
-  background: #f3f7fb;
+  background-color: #f3f7fb;
+  background-image: linear-gradient(#f3f7fbf2, #f3f7fbf2), var(--pixel-route);
+  background-repeat: repeat, repeat-x;
+  background-position: 0 0, 0 calc(100% - 2px);
+  background-size: auto, auto 3px;
   scrollbar-width: none;
 }
 .editor-section-nav::-webkit-scrollbar { display: none; }
@@ -1564,6 +1570,9 @@ button:disabled {
   border-radius: 9px;
   background: #fff9f9;
 }
+.cancellation-warning { display: flex; align-items: center; gap: 12px; margin: 0 0 13px; padding: 10px 12px; border: 1px solid #edc2a3; border-radius: 4px; background: #fff8e9; color: #805529; }
+.cancellation-warning img { width: 50px; height: 50px; flex: 0 0 auto; object-fit: contain; image-rendering: pixelated; }
+.cancellation-warning p { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.45; }
 .cancellation-form .field {
   margin: 0;
 }
@@ -1611,6 +1620,22 @@ button:disabled {
 .operation-mascot { width: 38px; height: 38px; object-fit: contain; image-rendering: pixelated; }
 .operation small { color: #8ee4d5; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
 .operation b { font-size: 13px; }
+.operation-overlay,
+.achievement-overlay { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b3088; }
+.operation-modal { width: min(370px, 100%); display: grid; justify-items: center; gap: 8px; padding: 22px; border: 2px solid #1b5b94; border-radius: 6px; background: #f8fcfb; box-shadow: 7px 7px 0 #071a2e80; color: #193c61; text-align: center; }
+.operation-modal > img { width: 176px; height: 141px; object-fit: contain; image-rendering: pixelated; }
+.operation-modal .spinner { width: 24px; height: 24px; background-size: 192px 24px; }
+.operation-modal strong { font-size: 17px; }
+.operation-modal span { color: #6a7a8e; font-size: 12px; }
+.achievement-overlay { z-index: 80; }
+.achievement-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; }
+.achievement-modal { position: relative; width: min(410px, 100%); display: grid; justify-items: center; gap: 7px; padding: 22px 26px 24px; border: 3px solid #1463a0; border-radius: 6px; background: #f9f6e8; box-shadow: 8px 8px 0 #08274a, inset 0 0 0 3px #bff3e9; color: #1a3d68; text-align: center; animation: achievement-pop .28s steps(3, end); }
+.achievement-modal > img { width: 220px; height: 138px; object-fit: contain; image-rendering: pixelated; }
+.achievement-modal > p { margin: 0; color: #217a70; font-size: 11px; font-weight: 900; letter-spacing: .13em; }
+.achievement-modal h2 { margin: 0; font-size: 21px; }
+.achievement-modal > span { color: #5d6f84; font-size: 13px; }
+.achievement-modal > .primary { margin-top: 8px; }
+.achievement-close { position: absolute; top: 7px; right: 8px; width: 27px; height: 27px; border: 1px solid #bdd4d0; border-radius: 3px; background: #fff; color: #4d6580; font-size: 20px; line-height: 1; }
 .spinner {
   width: 20px;
   height: 20px;

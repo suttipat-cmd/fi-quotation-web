@@ -40,6 +40,7 @@ const QuotationListView = lazy(() => import("./features/quotations/components/Qu
 declare const __APP_BUILD_ID__: string;
 
 type Toast = { text: string; type: "success" | "error" | "info" } | null;
+type Achievement = { title: string; message: string } | null;
 type View = "dashboard" | "create" | "edit" | "detail" | "settings";
 type Route = { view: View; id?: string };
 type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts";
@@ -212,6 +213,7 @@ function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  const [achievement, setAchievement] = useState<Achievement>(null);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
@@ -263,6 +265,11 @@ function App() {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+  useEffect(() => {
+    if (!achievement) return;
+    const timer = window.setTimeout(() => setAchievement(null), 7000);
+    return () => window.clearTimeout(timer);
+  }, [achievement]);
   useEffect(() => {
     let cancelled = false;
     const checkForNewBuild = async () => {
@@ -586,6 +593,12 @@ function App() {
           });
         }
         await load();
+        if (action === "generate_pdf") {
+          setAchievement({
+            title: "ภารกิจ PDF สำเร็จ",
+            message: `${target.document_no} ถูกบันทึกลง Google Drive แล้ว`,
+          });
+        }
         notify(
           action === "generate_pdf"
             ? "สร้าง PDF เรียบร้อยแล้ว"
@@ -685,6 +698,7 @@ function App() {
         "--pixel-paper-texture": `url(${pixelAsset("textures/app-background-parchment@2x.png")})`,
         "--pixel-table-header": `url(${pixelAsset("borders/table-header-accent@2x.png")})`,
         "--pixel-crystal": `url(${pixelAsset("decorative/crystal-cluster@2x.png")})`,
+        "--pixel-route": `url(${pixelAsset("decorative/route-dotted-line@2x.png")})`,
       } as CSSProperties}
     >
       <header className="app-topbar">
@@ -702,7 +716,12 @@ function App() {
         <span className="app-topbar-context">{pageContext}</span>
         <div className="app-topbar-user" aria-label="ข้อมูลผู้ใช้งาน">
           <button type="button" className={`sound-toggle${soundEnabled ? " active" : ""}`} aria-label={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} title={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} onClick={toggleSound}>{soundEnabled ? "♬" : "♩"}</button>
-          <span className="app-user-avatar" aria-hidden="true">{userName.charAt(0).toUpperCase()}</span>
+          <img
+            className="app-user-avatar"
+            src={pixelAsset(profile?.role === "ADMIN" ? "brand/avatar-robot@2x.png" : "brand/avatar-whale@2x.png")}
+            alt=""
+            aria-hidden="true"
+          />
           <span className="app-user-copy">
             <strong>{userName}</strong>
             <small>{profile?.role === "ADMIN" ? "ผู้ดูแลระบบ" : profile?.role === "SALE" ? "ฝ่ายขาย" : "ผู้ใช้งาน"}</small>
@@ -804,6 +823,29 @@ function App() {
           <Spinner />
           <img className="operation-mascot" src={pixelAsset("characters/robot/robot-processing@2x.png")} alt="" aria-hidden="true" />
           <span><small>กำลังดำเนินภารกิจ</small><b>{loading}</b></span>
+        </div>
+      )}
+      {(loading === "กำลังสร้าง PDF" || loading === "กำลังส่งอีเมล") && (
+        <div className="operation-overlay" role="status" aria-live="polite">
+          <div className="operation-modal">
+            <img src={pixelAsset("illustrations/feedback/loading-operation@2x.png")} alt="" aria-hidden="true" />
+            <Spinner />
+            <strong>{loading}</strong>
+            <span>กำลังจัดเตรียมเอกสาร กรุณารอสักครู่</span>
+          </div>
+        </div>
+      )}
+      {achievement && (
+        <div className="achievement-overlay" role="dialog" aria-modal="true" aria-labelledby="achievement-title">
+          <button type="button" className="achievement-backdrop" aria-label="ปิดข้อความสำเร็จ" onClick={() => setAchievement(null)} />
+          <section className="achievement-modal">
+            <button type="button" className="achievement-close" aria-label="ปิด" onClick={() => setAchievement(null)}>×</button>
+            <img src={pixelAsset("characters/duo/duo-success-team@2x.png")} alt="" aria-hidden="true" />
+            <p>QUEST COMPLETE</p>
+            <h2 id="achievement-title">{achievement.title}</h2>
+            <span>{achievement.message}</span>
+            <button className="primary" type="button" onClick={() => setAchievement(null)}>เรียบร้อย</button>
+          </section>
         </div>
       )}
       {toast && (
@@ -930,10 +972,13 @@ function Dashboard({
   return (
     <>
       <header className="page-header editor-page-header">
-        <div>
-          <p className="eyebrow">ภาพรวมระบบ</p>
-          <h1>ใบเสนอราคาของคุณ</h1>
-          <p className="muted">ติดตามและจัดการเอกสารได้จากที่เดียว</p>
+        <div className="page-header-copy dashboard-header-copy">
+          <div>
+            <p className="eyebrow">ภาพรวมระบบ</p>
+            <h1>ใบเสนอราคาของคุณ</h1>
+            <p className="muted">ติดตามและจัดการเอกสารได้จากที่เดียว</p>
+          </div>
+          <img src={pixelAsset("characters/whale/whale-presenting-document@2x.png")} alt="" aria-hidden="true" />
         </div>
         <button className="primary" disabled={busy} onClick={onCreate}>
           <PixelIcon name="actions/action-create-quotation" /> สร้างใบเสนอราคา
@@ -1096,10 +1141,13 @@ function Settings({
   return (
     <>
       <header className="page-header editor-page-header">
-        <div>
-          <p className="eyebrow">ผู้ดูแลระบบ</p>
-          <h1>ตั้งค่าระบบ</h1>
-          <p className="muted">จัดการข้อมูลตั้งต้นที่ใช้ในใบเสนอราคา</p>
+        <div className="page-header-copy settings-header-copy">
+          <div>
+            <p className="eyebrow">ผู้ดูแลระบบ</p>
+            <h1>ตั้งค่าระบบ</h1>
+            <p className="muted">จัดการข้อมูลตั้งต้นที่ใช้ในใบเสนอราคา</p>
+          </div>
+          <img src={pixelAsset("characters/robot/robot-configuring@2x.png")} alt="" aria-hidden="true" />
         </div>
         <div className="actions">
           {tab === "services" && <button disabled={saving || busy} onClick={addService}>＋ เพิ่มบริการ</button>}
@@ -1847,6 +1895,10 @@ function Detail({
           {showCancellation && (
             <Section title="ยืนยันการยกเลิกใบเสนอราคา">
             <div className="cancellation-form">
+              <aside className="cancellation-warning">
+                <img src={pixelAsset("characters/robot/robot-warning-alert@2x.png")} alt="" aria-hidden="true" />
+                <p>การยกเลิกจะทำให้เอกสารเป็นแบบดูได้อย่างเดียว และไม่สามารถย้อนสถานะกลับได้</p>
+              </aside>
               <label className="field">
                 <span>เหตุผลการยกเลิก <em>*</em></span>
                 <select
