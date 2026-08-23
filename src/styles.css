@@ -229,37 +229,12 @@ button:disabled {
   background: #fff1f1;
   color: #b82020;
 }
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-.stat,
 .card,
 .form-section {
   background: #fff;
   border: 1px solid #dfe7f0;
   border-radius: 13px;
   box-shadow: 0 7px 20px #1e4d7610;
-}
-.stat {
-  padding: 19px;
-}
-.stat span {
-  display: block;
-  color: #728198;
-  font-size: 13px;
-}
-.stat strong {
-  font-size: 30px;
-  color: #173c6b;
-  margin: 6px 0 0;
-  display: inline-block;
-}
-.stat small {
-  color: #8794a7;
-  margin-left: 5px;
 }
 .card {
   padding: 24px;
@@ -279,46 +254,58 @@ button:disabled {
 .section-heading p {
   margin: 4px 0 0;
 }
-.quote-table {
-  margin-top: 18px;
-}
-.quote-head,
-.quote-row {
+.status-summary {
   display: grid;
-  grid-template-columns: 1.1fr 1.6fr 0.9fr 0.9fr 1fr;
-  gap: 16px;
-  align-items: center;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 20px;
 }
-.quote-head {
-  padding: 0 12px 9px;
-  color: #78869a;
-  font-size: 12px;
-  font-weight: 700;
-}
-.quote-row {
-  width: 100%;
+.status-summary-card {
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid #dfe7f0;
+  border-radius: 12px;
   background: #fff;
-  border-top: 1px solid #e4eaf1;
-  padding: 14px 12px;
+  color: #53657c;
   text-align: left;
-  color: #2a3b53;
+  box-shadow: 0 7px 20px #1e4d7610;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
-.quote-row:hover {
-  background: #f5f9fe;
-}
-.quote-row b {
+.status-summary-card:hover { border-color: #91b4d6; transform: translateY(-1px); }
+.status-summary-card.active { border-color: #1d5b9f; box-shadow: 0 0 0 2px #dcecff, 0 7px 20px #1e4d7610; }
+.status-summary-card span { display: block; font-size: 13px; font-weight: 600; }
+.status-summary-card strong { display: inline-block; margin-top: 8px; color: #173c6b; font-size: 27px; }
+.status-summary-card small { margin-left: 5px; color: #8794a7; }
+.status-summary-card.draft strong { color: #806500; }
+.status-summary-card.ready strong { color: #21609c; }
+.status-summary-card.accepted strong { color: #1f7d50; }
+.status-summary-card.expired strong { color: #73529a; }
+.status-summary-card.cancelled strong { color: #bd3c3c; }
+.quotation-list-toolbar {
   display: grid;
-  gap: 2px;
-  color: #194476;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(480px, 2fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin: 20px 0 4px;
+  padding: 16px;
+  border: 1px solid #dfe7f0;
+  border-radius: 11px;
+  background: #f8fbfe;
 }
-.quote-row small {
-  font-size: 11px;
-  color: #8190a4;
-  font-weight: 500;
-}
-.quote-row strong {
-  text-align: right;
-}
+.quotation-list-toolbar label { display: grid; gap: 5px; color: #60718a; font-size: 12px; font-weight: 700; }
+.quotation-list-toolbar input { min-width: 0; height: 38px; padding: 7px 10px; border: 1px solid #ccd9e6; border-radius: 7px; background: #fff; color: #1e3048; }
+.list-date-filters { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 8px; }
+.list-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 38px; white-space: nowrap; color: #60718a; font-size: 12px; }
+.list-toolbar-actions .text-button { padding: 7px 0; }
+.list-error { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding: 13px 15px; border: 1px solid #f2b4b4; border-radius: 9px; background: #fff3f3; color: #9a3030; }
+.list-error div { display: grid; gap: 2px; }
+.list-error span { font-size: 13px; }
+.list-error button { padding: 8px 12px; border: 1px solid #dfa2a2; border-radius: 7px; background: #fff; color: #9a3030; font-weight: 700; }
+.quotation-list-skeleton { display: grid; gap: 10px; margin-top: 20px; }
+.skeleton-toolbar, .skeleton-row { border-radius: 8px; background: linear-gradient(90deg, #edf2f7 20%, #f8fafc 40%, #edf2f7 60%); background-size: 200% 100%; animation: list-shimmer 1.2s infinite; }
+.skeleton-toolbar { height: 74px; }
+.skeleton-row { height: 54px; }
+@keyframes list-shimmer { to { background-position: -200% 0; } }
 .quotation-grid {
   /* Fits the default seven-document view without letting pagination overlap rows. */
   height: 600px;
@@ -339,6 +326,15 @@ button:disabled {
 .quotation-grid .ag-cell { display: flex; align-items: center; }
 .grid-document-number { color: #194476; font-weight: 700; }
 .grid-money { justify-content: flex-end; font-weight: 700; }
+.grid-action-cell { justify-content: center; overflow: visible !important; }
+.grid-row-actions { display: flex; justify-content: center; width: 100%; }
+.grid-action-trigger { width: 32px; height: 30px; border: 1px solid #cbd8e6; border-radius: 7px; background: #fff; color: #31577f; font-size: 20px; line-height: 1; }
+.grid-action-trigger:hover { border-color: #759dc4; background: #edf5fc; }
+.grid-action-menu { position: fixed; z-index: 50; display: grid; min-width: 210px; padding: 5px; border: 1px solid #cbd8e6; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px #173c6b2a; }
+.grid-action-menu button { padding: 9px 10px; border-radius: 6px; background: transparent; color: #294865; text-align: left; font-size: 13px; }
+.grid-action-menu button:hover:not(:disabled) { background: #edf5fc; }
+.grid-action-menu button:disabled { color: #9aa6b5; }
+.list-no-results { padding: 42px 10px; }
 .settings-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1382,6 +1378,16 @@ button:disabled {
   .sidebar.collapsed + .work {
     width: calc(100% - 76px);
   }
+  .status-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .quotation-list-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .list-date-filters,
+  .list-toolbar-actions {
+    grid-column: span 2;
+  }
 }
 @media (max-width: 760px) {
   .sidebar {
@@ -1405,25 +1411,19 @@ button:disabled {
   .actions {
     justify-content: flex-start;
   }
-  .stats,
   .detail-grid {
     grid-template-columns: 1fr;
   }
-  .quote-head {
-    display: none;
+  .status-summary,
+  .quotation-list-toolbar,
+  .list-date-filters {
+    grid-template-columns: 1fr;
   }
-  .quote-row {
-    grid-template-columns: 1fr auto;
-    gap: 7px;
+  .list-date-filters,
+  .list-toolbar-actions {
+    grid-column: auto;
   }
-  .quote-row span:nth-of-type(2),
-  .quote-row span:nth-of-type(3) {
-    display: none;
-  }
-  .quote-row strong {
-    grid-column: 2;
-    grid-row: 1;
-  }
+  .list-toolbar-actions { justify-content: space-between; }
   .two,
   .three,
   .scope-grid,

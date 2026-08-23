@@ -32,8 +32,9 @@ import { getQuotationItems, saveQuotationDraft } from "./features/quotations/ser
 import { quotationPdfBaseName, sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
 import { createPreviewPdf } from "./features/quotations/services/preview-pdf";
 import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
+import type { QuotationListAction } from "./features/quotations/components/QuotationGrid";
 
-const QuotationGrid = lazy(() => import("./features/quotations/components/QuotationGrid"));
+const QuotationListView = lazy(() => import("./features/quotations/components/QuotationListView"));
 
 declare const __APP_BUILD_ID__: string;
 
@@ -181,6 +182,7 @@ function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [quotesLoadError, setQuotesLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>(initialRoute.current.view);
   const [selected, setSelected] = useState<Quote | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -294,8 +296,11 @@ function App() {
       setProfile(profileResult.data);
     }
     if (quotesResult.error) {
-      notify(`โหลดใบเสนอราคาไม่สำเร็จ: ${friendlyError(quotesResult.error.message)}`, "error");
+      const message = friendlyError(quotesResult.error.message);
+      setQuotesLoadError(message);
+      notify(`โหลดใบเสนอราคาไม่สำเร็จ: ${message}`, "error");
     } else {
+      setQuotesLoadError(null);
       setQuotes(
         (quotesResult.data || []).map((row: any) => ({
           ...row,
@@ -418,12 +423,12 @@ function App() {
       notify("บันทึกการแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
-  async function acceptQuotation() {
-    if (!selected) return;
+  async function acceptQuotation(target = selected) {
+    if (!target) return;
     if (!window.confirm("ยืนยันว่าลูกค้าตอบรับใบเสนอราคานี้แล้วใช่หรือไม่?")) return;
     await run("กำลังบันทึกการตอบรับ", async () => {
       const result = await supabase.rpc("change_quotation_status", {
-        p_quotation_id: selected.id,
+        p_quotation_id: target.id,
         p_status: "ACCEPTED",
       });
       if (result.error) throw result.error;
@@ -447,17 +452,17 @@ function App() {
       notify("ยกเลิกใบเสนอราคาเรียบร้อยแล้ว", "success");
     });
   }
-  async function revision() {
+  async function revision(target = selected) {
     if (
-      !selected ||
+      !target ||
       !window.confirm(
-        `ต้องการสร้างฉบับแก้ไข ${String(selected.revision_no + 1).padStart(2, "0")} ใช่หรือไม่?`,
+        `ต้องการสร้างฉบับแก้ไข ${String(target.revision_no + 1).padStart(2, "0")} ใช่หรือไม่?`,
       )
     )
       return;
     await run("กำลังสร้างฉบับแก้ไข", async () => {
       const result = await supabase.rpc("create_quotation_revision", {
-        p_quotation_id: selected.id,
+        p_quotation_id: target.id,
       });
       if (result.error) throw result.error;
       setSelected(result.data);
@@ -465,12 +470,12 @@ function App() {
       notify("สร้างฉบับแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
-  async function documentAction(action: "generate_pdf" | "send_email") {
-    if (!selected) return;
-    const recipients = Array.isArray(selected.recipient_emails)
-      ? selected.recipient_emails
-      : selected.contact_email
-        ? [selected.contact_email]
+  async function documentAction(action: "generate_pdf" | "send_email", target = selected) {
+    if (!target) return;
+    const recipients = Array.isArray(target.recipient_emails)
+      ? target.recipient_emails
+      : target.contact_email
+        ? [target.contact_email]
         : [];
     const question =
       action === "generate_pdf"
@@ -485,19 +490,19 @@ function App() {
             throw new Error("ยังไม่พร้อมสร้าง PDF กรุณารอสักครู่แล้วลองใหม่");
           }
           const pdf = await createPreviewPdf(detailPaperRef.current);
-          const result = await uploadGeneratedPdf(selected, pdf);
+          const result = await uploadGeneratedPdf(target, pdf);
           if (!result.pdf_drive_url) throw new Error(result.message || "สร้าง PDF ไม่สำเร็จ");
           setSelected({
-            ...selected,
+            ...target,
             status: (result.status || "READY") as Quote["status"],
             pdf_drive_url: result.pdf_drive_url,
           });
         } else {
           await sendQuotationEmail({
-            quotationId: selected.id,
+            quotationId: target.id,
             to: recipients,
-            subject: `ใบเสนอราคา ${selected.document_no}`,
-            message: `เรียน ${selected.contact_name || ""}\n\nขอส่งใบเสนอราคา ${selected.document_no} ตามเอกสารแนบ\n\nขอบคุณค่ะ\nForward Insight`,
+            subject: `ใบเสนอราคา ${target.document_no}`,
+            message: `เรียน ${target.contact_name || ""}\n\nขอส่งใบเสนอราคา ${target.document_no} ตามเอกสารแนบ\n\nขอบคุณค่ะ\nForward Insight`,
           });
         }
         await load();
@@ -516,6 +521,13 @@ function App() {
     document.title = quotationPdfBaseName(selected) || "ใบเสนอราคา";
     window.addEventListener("afterprint", () => { document.title = previousTitle; }, { once: true });
     window.print();
+  }
+  async function runListAction(quote: Quote, action: QuotationListAction) {
+    if (action === "view") return openDetail(quote);
+    if (action === "edit") return startEdit(quote);
+    if (action === "email") return documentAction("send_email", quote);
+    if (action === "accept") return acceptQuotation(quote);
+    return revision(quote);
   }
   if (booting)
     return (
@@ -545,16 +557,6 @@ function App() {
         >
           <span>▦</span>
           <b>ภาพรวม</b>
-        </button>
-        <button
-          className={view === "create" ? "active" : ""}
-          onClick={() => {
-            reset();
-            navigate("create");
-          }}
-        >
-          <span>＋</span>
-          <b>สร้างใบเสนอราคา</b>
         </button>
         {profile?.role === "ADMIN" && (
           <button
@@ -602,11 +604,14 @@ function App() {
           <Dashboard
             quotes={quotes}
             busy={busy}
+            loadError={quotesLoadError}
             onCreate={() => {
               reset();
               navigate("create");
             }}
             onSelect={(quote) => void openDetail(quote)}
+            onListAction={(quote, action) => void runListAction(quote, action)}
+            onRetry={() => void load()}
           />
         )}
         {view === "create" && (
@@ -665,11 +670,14 @@ function App() {
           <Dashboard
             quotes={quotes}
             busy={busy}
+            loadError={quotesLoadError}
             onCreate={() => {
               reset();
               navigate("create");
             }}
             onSelect={(quote) => void openDetail(quote)}
+            onListAction={(quote, action) => void runListAction(quote, action)}
+            onRetry={() => void load()}
           />
         )}
       </main>
@@ -753,15 +761,20 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Dashboard({
   quotes,
   busy,
+  loadError,
   onCreate,
   onSelect,
+  onListAction,
+  onRetry,
 }: {
   quotes: Quote[];
   busy: boolean;
+  loadError: string | null;
   onCreate: () => void;
   onSelect: (quote: Quote) => void;
+  onListAction: (quote: Quote, action: QuotationListAction) => void;
+  onRetry: () => void;
 }) {
-  const drafts = quotes.filter((quote) => quote.status === "DRAFT").length;
   return (
     <>
       <header className="topbar editor-topbar">
@@ -774,36 +787,34 @@ function Dashboard({
           ＋ สร้างใบเสนอราคา
         </button>
       </header>
-      <section className="stats">
-        <Stat label="เอกสารทั้งหมด" value={quotes.length} />
-        <Stat label="ฉบับร่าง" value={drafts} />
-        <Stat
-          label="ยืนยันแล้ว"
-          value={quotes.filter((quote) => quote.status === "READY").length}
-        />
-      </section>
       <section className="card table-card">
         <div className="section-heading">
           <div>
             <h2>เอกสารล่าสุด</h2>
           </div>
         </div>
-        {quotes.length ? (
-          <Suspense fallback={<div className="empty"><Spinner /><p>กำลังโหลดตารางข้อมูล</p></div>}>
-            <QuotationGrid quotes={quotes} onSelect={onSelect} />
-          </Suspense>
-        ) : (
-          <div className="empty">
-            <span>◫</span>
-            <h3>ยังไม่มีใบเสนอราคา</h3>
-            <p>เริ่มสร้างใบเสนอราคาฉบับแรกของคุณได้เลย</p>
-            <button className="primary" onClick={onCreate}>
-              สร้างใบเสนอราคา
-            </button>
-          </div>
-        )}
+        <Suspense fallback={<QuotationListSkeleton />}>
+          <QuotationListView
+            quotes={quotes}
+            busy={busy}
+            loadError={loadError}
+            onCreate={onCreate}
+            onSelect={onSelect}
+            onAction={onListAction}
+            onRetry={onRetry}
+          />
+        </Suspense>
       </section>
     </>
+  );
+}
+
+function QuotationListSkeleton() {
+  return (
+    <div className="quotation-list-skeleton" aria-busy="true" aria-label="กำลังโหลดรายการใบเสนอราคา">
+      <div className="skeleton-toolbar" />
+      {Array.from({ length: 6 }, (_, index) => <div className="skeleton-row" key={index} />)}
+    </div>
   );
 }
 
@@ -974,16 +985,6 @@ function Settings({
         </section>
       )}
     </>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <article className="stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>รายการ</small>
-    </article>
   );
 }
 
