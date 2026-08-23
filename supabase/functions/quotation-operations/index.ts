@@ -2,6 +2,16 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const cors = { 'Access-Control-Allow-Origin': 'https://suttipat-cmd.github.io', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Content-Type': 'application/json' }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors })
+const errorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object') {
+    const value = error as { message?: unknown, details?: unknown, hint?: unknown, code?: unknown }
+    for (const candidate of [value.message, value.details, value.hint, value.code]) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate
+    }
+  }
+  return 'เกิดข้อผิดพลาดที่ระบบ'
+}
 const callAppsScript = async (scriptUrl: string, payload: unknown) => {
   const response = await fetch(scriptUrl, {
     method: 'POST',
@@ -86,5 +96,8 @@ Deno.serve(async (req) => {
       return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว' })
     }
     return json({ message: 'ไม่รองรับคำสั่งนี้' }, 400)
-  } catch (error) { return json({ message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ระบบ' }, 500) }
+  } catch (error) {
+    console.error('quotation-operations failed', error)
+    return json({ message: errorMessage(error) }, 500)
+  }
 })

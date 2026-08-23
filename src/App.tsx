@@ -67,6 +67,17 @@ const friendlyError = (message?: string) =>
         : /network|fetch/i.test(message)
           ? "เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต"
           : message;
+const errorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const value = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    for (const candidate of [value.message, value.details, value.hint, value.code]) {
+      if (typeof candidate === "string" && candidate.trim()) return candidate;
+    }
+  }
+  return undefined;
+};
 function Auth({ onSession }: { onSession: (value: Session) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -279,7 +290,7 @@ function App() {
       await task();
     } catch (error) {
       notify(
-        friendlyError(error instanceof Error ? error.message : undefined),
+        friendlyError(errorMessage(error)),
         "error",
       );
     } finally {
