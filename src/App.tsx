@@ -212,6 +212,14 @@ function App() {
       window.history[replace ? "replaceState" : "pushState"]({}, "", path);
     }
     setView(next);
+    if (next === "create" || next === "edit" || next === "detail") {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        document.querySelectorAll<HTMLElement>(".editor-work, .form-panel, .preview-scroll").forEach((element) => {
+          element.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        });
+      });
+    }
     return true;
   };
   useEffect(() => {

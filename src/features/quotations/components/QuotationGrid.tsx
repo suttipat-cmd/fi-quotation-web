@@ -90,8 +90,13 @@ function RowActions({
   const placeMenu = () => {
     const bounds = triggerRef.current?.getBoundingClientRect();
     if (!bounds) return;
-    const width = 190;
-    const height = 190;
+    const width = 210;
+    const actionCount = 1
+      + Number(actions.canEdit)
+      + Number(actions.canSendEmail)
+      + Number(actions.canAccept)
+      + Number(actions.canCreateRevision);
+    const height = 10 + actionCount * 39;
     const left = Math.max(12, Math.min(bounds.right - width, window.innerWidth - width - 12));
     const top = bounds.bottom + height + 8 > window.innerHeight
       ? Math.max(12, bounds.top - height - 8)
@@ -209,16 +214,15 @@ export default function QuotationGrid({
         cellClass: "grid-service-list",
       },
       {
-        headerName: "Onsite Training",
+        headerName: "นอกสถานที่",
         colId: "onsite",
         flex: 0.85,
-        minWidth: 120,
+        minWidth: 118,
         valueGetter: ({ data }) => {
           const item = data ? onsiteTraining(data) : undefined;
           return item && Number(item.quantity) ? `${item.quantity} ${item.unit || "ครั้ง"}` : "—";
         },
       },
-      { headerName: "วันที่ออก", field: "issued_at", flex: 0.82, minWidth: 112, valueFormatter: ({ value }) => displayDate(value) },
       {
         headerName: "ยอดเงิน",
         colId: "recurringAmount",
@@ -237,6 +241,7 @@ export default function QuotationGrid({
         valueGetter: ({ data }) => data ? categoryNetAmount(data, "ONE_TIME") : 0,
         valueFormatter: ({ value }) => money(Number(value || 0)),
       },
+      { headerName: "วันที่ออก", field: "issued_at", flex: 0.82, minWidth: 112, valueFormatter: ({ value }) => displayDate(value) },
       {
         headerName: "สถานะ",
         field: "status",
@@ -276,10 +281,9 @@ export default function QuotationGrid({
           paginationPageSize={10}
           paginationPageSizeSelector={[10, 25, 50]}
           suppressPaginationPanel={quotes.length <= 10}
-          defaultColDef={{ sortable: true, filter: false, resizable: true, suppressHeaderMenuButton: true }}
+          defaultColDef={{ sortable: true, filter: false, resizable: true, suppressHeaderMenuButton: true, wrapHeaderText: true, autoHeaderHeight: true }}
           localeText={THAI_GRID_TEXT}
           theme={quotationGridTheme}
-          headerHeight={48}
           rowHeight={60}
         />
       </AgGridProvider>

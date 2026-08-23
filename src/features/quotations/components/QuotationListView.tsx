@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { STATUS_TEXT } from "../constants";
 import QuotationGrid, { type QuotationListAction } from "./QuotationGrid";
 import type { QuoteStatus, Quotation } from "../types";
@@ -23,17 +23,25 @@ const yearRange = (offset = 0): DateRange => {
   return { from: `${year}-01-01`, to: `${year}-12-31` };
 };
 const displayRange = (range: DateRange) =>
-  range.from || range.to ? `${range.from ? range.from.split("-").reverse().join("-") : "ไม่กำหนด"} – ${range.to ? range.to.split("-").reverse().join("-") : "ไม่กำหนด"}` : "ไม่กำหนดช่วงเวลา";
+  `${range.from ? range.from.split("-").reverse().join("-") : "ไม่กำหนด"} - ${range.to ? range.to.split("-").reverse().join("-") : "ไม่กำหนด"}`;
 
-function DateRangeModal({ range, onChange, onClose }: { range: DateRange; onChange: (range: DateRange) => void; onClose: () => void }) {
+function DateRangePopover({ range, onChange, onClose }: { range: DateRange; onChange: (range: DateRange) => void; onClose: () => void }) {
   const [draft, setDraft] = useState(range);
+  const popoverRef = useRef<HTMLElement>(null);
   const apply = () => { onChange(draft); onClose(); };
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (popoverRef.current?.contains(event.target as Node)) return;
+      if ((event.target as Element).closest(".date-range-trigger")) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [onClose]);
   return (
-    <div className="date-range-overlay" role="presentation" onMouseDown={onClose}>
-      <section className="date-range-modal" role="dialog" aria-modal="true" aria-label="เลือกช่วงวันที่ออกเอกสาร" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="date-range-heading"><div><strong>เลือกช่วงเวลา</strong><small>อ้างอิงจากวันที่ออกเอกสาร</small></div><button type="button" aria-label="ปิด" onClick={onClose}>×</button></div>
+      <section ref={popoverRef} className="date-range-popover" role="dialog" aria-label="เลือกช่วงวันที่ออกเอกสาร">
+        <div className="date-range-heading"><div><strong>เลือกช่วงเวลา</strong></div><button type="button" aria-label="ปิด" onClick={onClose}>×</button></div>
         <div className="date-presets">
-          <button type="button" onClick={() => setDraft({ from: isoDate(new Date()), to: isoDate(new Date()) })}>วันนี้</button>
           <button type="button" onClick={() => setDraft(monthRange())}>เดือนนี้</button>
           <button type="button" onClick={() => setDraft(monthRange(-1))}>เดือนที่แล้ว</button>
           <button type="button" onClick={() => setDraft(yearRange())}>ปีนี้</button>
@@ -43,9 +51,8 @@ function DateRangeModal({ range, onChange, onClose }: { range: DateRange; onChan
           <label><span>จากวันที่</span><input type="date" value={draft.from} onChange={(event) => setDraft({ ...draft, from: event.target.value })} /></label>
           <label><span>ถึงวันที่</span><input type="date" value={draft.to} min={draft.from || undefined} onChange={(event) => setDraft({ ...draft, to: event.target.value })} /></label>
         </div>
-        <div className="date-range-actions"><button type="button" className="text-button" onClick={() => setDraft({ from: "", to: "" })}>ล้างค่า</button><span /><button type="button" onClick={onClose}>ยกเลิก</button><button type="button" className="primary" onClick={apply}>ใช้ตัวกรอง</button></div>
+        <div className="date-range-actions"><button type="button" className="text-button" onClick={() => setDraft({ from: "", to: "" })}>ล้างค่า</button><span /><button type="button" onClick={onClose}>ยกเลิก</button><button type="button" className="primary" onClick={apply}>บันทึก</button></div>
       </section>
-    </div>
   );
 }
 
@@ -141,8 +148,10 @@ export default function QuotationListView({
         ))}
       </section>
 
-      <section className="quotation-list-toolbar" aria-label="ค้นหาและกรองรายการใบเสนอราคา">
-        <div className="list-toolbar-row">
+      <details className="quotation-filter-disclosure" aria-label="ค้นหาและกรองรายการใบเสนอราคา">
+        <summary><span aria-hidden="true">⌄</span> ค้นหาและตัวกรอง</summary>
+        <div className="quotation-list-toolbar">
+          <div className="list-toolbar-row">
           <label className="list-search">
             <span>ค้นหา</span>
             <input
@@ -152,21 +161,21 @@ export default function QuotationListView({
               placeholder="เลขที่เอกสาร, ลูกค้า, ผู้เสนอราคา"
             />
           </label>
-          <button type="button" className={`date-range-trigger${dateRange.from || dateRange.to ? " active" : ""}`} onClick={() => setDateRangeOpen(true)}><span>ช่วงวันที่ออกเอกสาร</span><strong>{displayRange(dateRange)}</strong></button>
+          <div className="date-range-control">
+            <button type="button" className={`date-range-trigger${dateRange.from || dateRange.to ? " active" : ""}`} aria-haspopup="dialog" aria-expanded={dateRangeOpen} onClick={() => setDateRangeOpen((open) => !open)}><span>ช่วงวันที่ออกเอกสาร</span><strong>{displayRange(dateRange)}</strong></button>
+            {dateRangeOpen && <DateRangePopover range={dateRange} onChange={setDateRange} onClose={() => setDateRangeOpen(false)} />}
+          </div>
           <div className="list-toolbar-actions">
             <span>แสดง {filteredQuotes.length} จาก {quotes.length} รายการ</span>
             <button type="button" className="text-button" disabled={!hasFilters} onClick={clearFilters}>ล้างตัวกรอง</button>
           </div>
-        </div>
-        <details className="quotation-advanced-filters">
-          <summary>ตัวกรองเพิ่มเติม</summary>
+          </div>
           <div className="list-filter-groups">
             <fieldset><legend>สถานะ</legend>{STATUS_ORDER.map((status) => <label key={status}><input type="checkbox" checked={statuses.includes(status)} onChange={() => toggleStatus(status)} />{STATUS_TEXT[status]}</label>)}</fieldset>
             <fieldset><legend>ผู้เสนอราคา</legend>{salesPeople.length ? salesPeople.map((name) => <label key={name}><input type="checkbox" checked={sales.includes(name)} onChange={() => toggleValue(name, sales, setSales)} />{name}</label>) : <small>ยังไม่มีข้อมูล</small>}</fieldset>
             <fieldset><legend>บริการหลัก</legend>{serviceOptions.length ? serviceOptions.map((service) => <label key={service}><input type="checkbox" checked={services.includes(service)} onChange={() => toggleValue(service, services, setServices)} />{service}</label>) : <small>ยังไม่มีข้อมูล</small>}</fieldset>
-            <fieldset><legend>Onsite Training</legend><label><input type="radio" name="onsite-filter" checked={!onsite} onChange={() => setOnsite("")} />ทั้งหมด</label><label><input type="radio" name="onsite-filter" checked={onsite === "WITH"} onChange={() => setOnsite("WITH")} />มีบริการ</label><label><input type="radio" name="onsite-filter" checked={onsite === "WITHOUT"} onChange={() => setOnsite("WITHOUT")} />ไม่มีบริการ</label></fieldset>
+            <fieldset><legend>นอกสถานที่</legend><label><input type="radio" name="onsite-filter" checked={!onsite} onChange={() => setOnsite("")} />ทั้งหมด</label><label><input type="radio" name="onsite-filter" checked={onsite === "WITH"} onChange={() => setOnsite("WITH")} />มีบริการ</label><label><input type="radio" name="onsite-filter" checked={onsite === "WITHOUT"} onChange={() => setOnsite("WITHOUT")} />ไม่มีบริการ</label></fieldset>
           </div>
-        </details>
         {hasFilters && (
           <div className="list-filter-chips" aria-live="polite" aria-label="ตัวกรองที่ใช้งาน">
             {normalizedSearch && <button type="button" onClick={() => setSearch("")}>ค้นหา: {search.trim()} <span aria-hidden="true">×</span></button>}
@@ -174,10 +183,11 @@ export default function QuotationListView({
             {sales.length > 0 && <button type="button" onClick={() => setSales([])}>ผู้เสนอราคา: {sales.join(", ")} <span aria-hidden="true">×</span></button>}
             {statuses.length > 0 && <button type="button" onClick={() => setStatuses([])}>สถานะ: {statuses.map((status) => STATUS_TEXT[status]).join(", ")} <span aria-hidden="true">×</span></button>}
             {services.length > 0 && <button type="button" onClick={() => setServices([])}>บริการ: {services.join(", ")} <span aria-hidden="true">×</span></button>}
-            {onsite && <button type="button" onClick={() => setOnsite("")}>Onsite Training: {onsite === "WITH" ? "มีบริการ" : "ไม่มีบริการ"} <span aria-hidden="true">×</span></button>}
+            {onsite && <button type="button" onClick={() => setOnsite("")}>นอกสถานที่: {onsite === "WITH" ? "มีบริการ" : "ไม่มีบริการ"} <span aria-hidden="true">×</span></button>}
           </div>
         )}
-      </section>
+        </div>
+      </details>
 
       {loadError && (
         <div className="list-error" role="alert">
@@ -199,7 +209,6 @@ export default function QuotationListView({
           <button type="button" onClick={clearFilters}>ล้างตัวกรอง</button>
         </div>
       ) : null}
-      {dateRangeOpen && <DateRangeModal range={dateRange} onChange={setDateRange} onClose={() => setDateRangeOpen(false)} />}
     </>
   );
 }
