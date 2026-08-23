@@ -34,7 +34,7 @@ const line = "#cad8e6";
 
 const styles = StyleSheet.create({
   page: { fontFamily: "Sarabun", paddingTop: 30, paddingRight: 34, paddingBottom: 30, paddingLeft: 34, color: ink, fontSize: 9.1, lineHeight: 1.28 },
-  content: { flex: 1 },
+  content: { flexGrow: 0, flexShrink: 1 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 14, paddingBottom: 10, borderBottomWidth: 1.3, borderBottomColor: navy },
   company: { flex: 1, flexDirection: "row", gap: 9, alignItems: "flex-start", minWidth: 0 },
   companyDetails: { flex: 1, minWidth: 0 },
@@ -68,8 +68,8 @@ const styles = StyleSheet.create({
   netRow: { borderTopWidth: 1, borderTopColor: navy, borderBottomWidth: 0, marginTop: 1, paddingTop: 2 },
   netText: { color: navy, fontWeight: 700, fontSize: 10.4 },
   words: { color: muted, fontSize: 7.8, textAlign: "right", marginTop: 2 },
-  footer: { marginTop: 10, borderTopWidth: 1, borderTopColor: line },
-  notes: { minHeight: 94, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: line },
+  footer: { marginTop: 8, flexShrink: 1, borderTopWidth: 1, borderTopColor: line },
+  notes: { minHeight: 64, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: line },
   footerHeading: { color: navy, fontSize: 9.2, fontWeight: 700, marginBottom: 3 },
   noteText: { fontSize: 8.2, lineHeight: 1.35 },
   terms: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: line },

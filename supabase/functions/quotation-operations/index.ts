@@ -86,5 +86,9 @@ Deno.serve(async (req) => {
       return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว' })
     }
     return json({ message: 'ไม่รองรับคำสั่งนี้' }, 400)
-  } catch (error) { return json({ message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ระบบ' }, 500) }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดที่ระบบ'
+    console.error('quotation-operations failed', { message })
+    return json({ message }, 500)
+  }
 })

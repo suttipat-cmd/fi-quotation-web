@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money } from "./lib/format";
@@ -37,6 +37,9 @@ type Route = { view: View; id?: string };
 
 const createPdfBlob = async (props: { form: Form; items: Item[]; quotation?: Quote | null }) =>
   (await import("./features/quotations/components/document/QuotationPdf")).createQuotationPdfBlob(props);
+const PdfPreview = lazy(async () => ({
+  default: (await import("./features/quotations/components/document/PdfPreview")).PdfPreview,
+}));
 
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
@@ -817,6 +820,7 @@ function Editor({
   onRemoveItem: (id: string) => void;
 }) {
   const patch = (value: Partial<Form>) => setForm({ ...form, ...value });
+  const noteLength = form.notes.length;
   return (
     <>
       <header className="topbar editor-topbar">
@@ -994,6 +998,9 @@ function Editor({
                 onChange={(event) => patch({ notes: event.target.value })}
               />
             </Field>
+            <p className={`field-help ${noteLength > 450 ? "warning" : ""}`}>
+              {noteLength}/450 ตัวอักษร{noteLength > 450 ? " — หมายเหตุยาวเกินพื้นที่ที่แนะนำสำหรับเอกสาร A4 หน้าเดียว" : ""}
+            </p>
           </Section>
         </section>
         <Preview form={form} items={items} />
@@ -1247,7 +1254,7 @@ function Preview({
       <p className="preview-label">ตัวอย่าง PDF {updating && <small>กำลังอัปเดต…</small>}</p>
       {error && <p className="preview-overflow" role="alert">{error}</p>}
       <div className="pdf-preview-scroll">
-        {url ? <iframe className="pdf-preview" title="ตัวอย่างใบเสนอราคา PDF" src={`${url}#page=1&zoom=page-width`} /> : <div className="pdf-preview-loading"><Spinner /> กำลังสร้างตัวอย่าง PDF</div>}
+        {url ? <Suspense fallback={<div className="pdf-preview-loading"><Spinner /> กำลังแสดงตัวอย่าง PDF</div>}><PdfPreview file={url} /></Suspense> : <div className="pdf-preview-loading"><Spinner /> กำลังสร้างตัวอย่าง PDF</div>}
       </div>
     </aside>
   );
