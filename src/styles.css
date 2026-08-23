@@ -362,6 +362,7 @@ button:disabled {
   min-height: 64px;
   padding: 18px 22px;
   border-bottom: 1px solid #dfe7f0;
+  background: linear-gradient(90deg, #f5fbf9, #fbfdf9 55%, #eef8f6);
 }
 .section-heading {
   display: flex;
@@ -524,7 +525,7 @@ button:disabled {
 .grid-row-actions { display: flex; justify-content: center; width: 100%; }
 .grid-action-trigger { width: 32px; height: 30px; border: 1px solid #b8d0d1; border-radius: 4px; background: #fbfdf9; color: #31577f; font-size: 20px; line-height: 1; box-shadow: 1px 1px 0 #b7cccc; }
 .grid-action-trigger:hover { border-color: #759dc4; background: #edf5fc; }
-.grid-action-menu { position: fixed; z-index: 50; display: grid; min-width: 210px; padding: 5px; border: 1px solid #cbd8e6; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px #173c6b2a; }
+.grid-action-menu { position: fixed; z-index: 50; display: grid; min-width: 210px; padding: 5px; border: 1px solid #a9cbca; border-radius: 4px; background: #fbfdf9; box-shadow: 4px 4px 0 #0e3a5c33, 0 12px 28px #173c6b1a; }
 .grid-action-backdrop { position: fixed; z-index: 49; inset: 0; width: 100%; height: 100%; cursor: default; border: 0; background: transparent; }
 .grid-action-menu button { padding: 9px 10px; border-radius: 6px; background: transparent; color: #294865; text-align: left; font-size: 13px; }
 .grid-action-menu button:hover:not(:disabled) { background: #edf5fc; }
@@ -540,24 +541,24 @@ button:disabled {
   margin: 0 0 18px;
 }
 .settings-tabs button {
-  border: 1px solid #d0dce8;
-  border-radius: 8px;
+  border: 1px solid #b8d0d1;
+  border-radius: 4px;
   padding: 9px 13px;
-  background: #fff;
+  background: #fbfdf9;
   color: #4a5d74;
   font-weight: 600;
 }
-.settings-tabs button.active { background: #e9f2fc; border-color: #7fa9d4; color: #17477f; }
+.settings-tabs button.active { background: #e6f6f1; border-color: #58beb2; color: #17477f; box-shadow: 2px 2px 0 #a4d0ca; }
 .settings-panel {
-  background: #fff;
-  border: 1px solid #dfe7f0;
-  border-radius: 13px;
-  box-shadow: 0 7px 20px #1e4d7610;
+  background: var(--pixel-paper);
+  border: 1px solid #c8dada;
+  border-radius: 6px;
+  box-shadow: 4px 4px 0 var(--pixel-shadow);
   padding: 22px;
 }
 .settings-form { max-width: 900px; }
 .settings-list { display: grid; gap: 14px; }
-.settings-row { border: 1px solid #e0e8f0; border-radius: 10px; padding: 16px; }
+.settings-row { border: 1px solid #d4e2e0; border-radius: 4px; padding: 16px; background: #fcfefa; }
 .settings-toggles { display: flex; flex-wrap: wrap; gap: 20px; }
 .toggle-field { display: inline-flex; align-items: center; gap: 7px; color: #445a73; font-size: 13px; font-weight: 600; }
 .badge {
@@ -570,7 +571,8 @@ button:disabled {
   color: #5b6878;
   padding: 5px 9px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 3px;
+  box-shadow: 1px 1px 0 #12395d22;
   font-size: 12px;
   line-height: 1.2;
   font-weight: 700;
@@ -609,11 +611,20 @@ button:disabled {
 .empty {
   text-align: center;
   padding: 55px 10px;
-  color: #718096;
+  color: #617d83;
+  background-image: radial-gradient(circle at 50% 34%, #54d1c322 0 3px, transparent 4px);
 }
 .empty > span {
-  font-size: 36px;
-  color: #4e88c1;
+  display: inline-grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 2px solid #70cfc5;
+  border-radius: 5px;
+  background: #e4f5f1;
+  box-shadow: 3px 3px 0 #9acbc5;
+  font-size: 31px;
+  color: #2878b6;
 }
 .empty h3 {
   margin: 8px 0;
@@ -737,7 +748,8 @@ button:disabled {
   z-index: 2;
   top: 0;
   display: flex;
-  gap: 6px;
+  gap: 7px;
+  counter-reset: quest-step;
   overflow-x: auto;
   padding: 2px 0 8px;
   background: #f3f7fb;
@@ -754,6 +766,7 @@ button:disabled {
   font-size: 11px;
   font-weight: 700;
 }
+.editor-section-nav button::before { counter-increment: quest-step; content: counter(quest-step); display: inline-grid; width: 15px; height: 15px; margin-right: 5px; place-items: center; border: 1px solid #75cfc6; border-radius: 2px; background: #e6f7f2; color: #276475; font-size: 9px; }
 .editor-section-nav button:hover {
   border-color: #1d5b9f;
   background: #eaf3fd;
@@ -1561,7 +1574,9 @@ button:disabled {
   transform: translateX(-50%);
   background: #102f57;
   color: #fff;
-  border-radius: 999px;
+  border: 1px solid #55c5bc;
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 #081f36;
   padding: 11px 18px;
   display: flex;
   gap: 9px;
@@ -1575,7 +1590,7 @@ button:disabled {
   height: 15px;
   border: 2px solid currentColor;
   border-right-color: transparent;
-  border-radius: 50%;
+  border-radius: 2px;
   display: inline-block;
   animation: spin 0.7s linear infinite;
 }
@@ -1590,12 +1605,13 @@ button:disabled {
   top: 22px;
   z-index: 40;
   max-width: 430px;
-  border-radius: 10px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
   padding: 13px 14px;
   display: flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 9px 25px #152f4c24;
+  box-shadow: 4px 4px 0 #12395d22;
   text-align: left;
 }
 .toast span {
