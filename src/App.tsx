@@ -1973,6 +1973,9 @@ function DetailForm({
 }) {
   const form = formFromQuotation(quote);
   const recurring = items.find((item) => item.category === "RECURRING");
+  const quotationTotals = calculateQuotationTotals(form, items);
+  const recurringTotal = calculateCategoryTotals("RECURRING", form, items, quotationTotals);
+  const oneTimeTotal = calculateCategoryTotals("ONE_TIME", form, items, quotationTotals);
   const [contactName, setContactName] = useState(form.contact_name);
   const [contactPosition, setContactPosition] = useState(form.contact_position);
   const [recipientEmails, setRecipientEmails] = useState(form.recipient_emails);
@@ -1986,8 +1989,21 @@ function DetailForm({
     || recipientEmails.join("|") !== form.recipient_emails.join("|");
   return (
     <>
-      <Section title="สถานะเอกสาร">
-        <div className="detail-status-row"><QuotationStatusBadge status={quote.status} /><strong>{money(quote.net_amount_satang ?? 0)}</strong><span>ยอดสุทธิทั้งเอกสาร</span></div>
+      <Section title="ข้อมูลใบเสนอราคา">
+        <div className="detail-document-header">
+          <div>
+            <p className="eyebrow">รายละเอียดใบเสนอราคา</p>
+            <h1>{quote.document_no}{revisionLabel(quote.revision_no) && <small> {revisionLabel(quote.revision_no)}</small>}</h1>
+            <p className="muted">{quote.customer_name}</p>
+          </div>
+          <QuotationStatusBadge status={quote.status} />
+        </div>
+        <div className="detail-status-row">
+          <dl className="detail-amounts">
+            <div><dt>ยอดเงิน</dt><dd>{money(recurringTotal.net)}</dd></div>
+            <div><dt>ค่าแรกเข้า</dt><dd>{money(oneTimeTotal.net)}</dd></div>
+          </dl>
+        </div>
         {quote.pdf_drive_url && <a className="detail-pdf-link" target="_blank" rel="noreferrer" href={quote.pdf_drive_url}>เปิดไฟล์ PDF จาก Google Drive ↗</a>}
         {quote.status === "CANCELLED" && <p className="detail-cancellation-note">ยกเลิก: {quote.cancellation_reason || "ไม่ระบุเหตุผล"}{quote.cancellation_note ? ` — ${quote.cancellation_note}` : ""}</p>}
       </Section>
@@ -2071,15 +2087,7 @@ function Detail({
   }, [quote.status]);
   return (
     <>
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">รายละเอียดใบเสนอราคา</p>
-          <h1>
-            {quote.document_no}
-            {revisionLabel(quote.revision_no) && <small> {revisionLabel(quote.revision_no)}</small>}
-          </h1>
-          <p className="muted">{quote.customer_name}</p>
-        </div>
+      <header className="page-header detail-actions-header">
         <div className="actions">
           <button type="button" aria-label="กลับไปรายการใบเสนอราคา" title="กลับไปรายการใบเสนอราคา" disabled={busy} onClick={onBack}>
             <PixelIcon name="actions/action-back" />
