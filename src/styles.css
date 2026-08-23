@@ -331,6 +331,7 @@ button:disabled {
 .grid-action-trigger { width: 32px; height: 30px; border: 1px solid #cbd8e6; border-radius: 7px; background: #fff; color: #31577f; font-size: 20px; line-height: 1; }
 .grid-action-trigger:hover { border-color: #759dc4; background: #edf5fc; }
 .grid-action-menu { position: fixed; z-index: 50; display: grid; min-width: 210px; padding: 5px; border: 1px solid #cbd8e6; border-radius: 9px; background: #fff; box-shadow: 0 12px 28px #173c6b2a; }
+.grid-action-backdrop { position: fixed; z-index: 49; inset: 0; width: 100%; height: 100%; cursor: default; border: 0; background: transparent; }
 .grid-action-menu button { padding: 9px 10px; border-radius: 6px; background: transparent; color: #294865; text-align: left; font-size: 13px; }
 .grid-action-menu button:hover:not(:disabled) { background: #edf5fc; }
 .grid-action-menu button:disabled { color: #9aa6b5; }

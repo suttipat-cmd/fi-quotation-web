@@ -64,12 +64,15 @@ const THAI_GRID_TEXT = {
 
 function RowActions({
   quote,
+  open,
   onAction,
+  onOpenChange,
 }: {
   quote: Quotation;
+  open: boolean;
   onAction: (quote: Quotation, action: QuotationListAction) => void;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const actions = quotationActions(quote.status);
   const recipientEmails = Array.isArray(quote.recipient_emails)
@@ -79,14 +82,14 @@ function RowActions({
       : [];
   const emailReady = Boolean(quote.pdf_drive_url && recipientEmails.length);
   const choose = (action: QuotationListAction) => {
-    setOpen(false);
+    onOpenChange(false);
     onAction(quote, action);
   };
   const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     const bounds = event.currentTarget.getBoundingClientRect();
     setPosition({ top: bounds.bottom + 6, left: Math.max(12, bounds.right - 220) });
-    setOpen((current) => !current);
+    onOpenChange(!open);
   };
 
   return (
@@ -106,7 +109,9 @@ function RowActions({
         ⋯
       </button>
       {open && createPortal(
-        <div className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
+        <>
+          <button type="button" className="grid-action-backdrop" aria-label="ปิดเมนูการดำเนินการ" onClick={() => onOpenChange(false)} />
+          <div className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
           <button type="button" role="menuitem" onClick={() => choose("view")}>ดูรายละเอียด</button>
           {actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}>แก้ไขฉบับร่าง</button>}
           {actions.canSendEmail && (
@@ -122,7 +127,8 @@ function RowActions({
           )}
           {actions.canAccept && <button type="button" role="menuitem" onClick={() => choose("accept")}>บันทึกลูกค้าตอบรับ</button>}
           {actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}>สร้างฉบับแก้ไข</button>}
-        </div>,
+          </div>
+        </>,
         document.body,
       )}
     </div>
@@ -138,6 +144,7 @@ export default function QuotationGrid({
   onSelect: (quote: Quotation) => void;
   onAction: (quote: Quotation, action: QuotationListAction) => void;
 }) {
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const columns = useMemo<ColDef<Quotation>[]>(
     () => [
       {
@@ -177,10 +184,10 @@ export default function QuotationGrid({
         suppressHeaderMenuButton: true,
         cellClass: "grid-action-cell",
         cellRenderer: ({ data }: { data?: Quotation }) =>
-          data ? <RowActions quote={data} onAction={onAction} /> : null,
+          data ? <RowActions quote={data} open={activeActionId === data.id} onAction={onAction} onOpenChange={(open) => setActiveActionId(open ? data.id : null)} /> : null,
       },
     ],
-    [onAction],
+    [activeActionId, onAction],
   );
 
   return (
