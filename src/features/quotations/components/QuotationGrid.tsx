@@ -56,13 +56,11 @@ export default function QuotationGrid({
         field: "document_no",
         flex: 1.1,
         minWidth: 150,
-        cellRenderer: ({ data }: { data?: Quotation }) =>
-          data ? (
-            <div className="grid-document-number">
-              <b>{data.document_no}</b>
-              {revisionLabel(data.revision_no) && <small>{revisionLabel(data.revision_no)}</small>}
-            </div>
-          ) : null,
+        cellClass: "grid-document-number",
+        valueGetter: ({ data }) =>
+          data
+            ? [data.document_no, revisionLabel(data.revision_no)].filter(Boolean).join(" · ")
+            : "",
       },
       { headerName: "ลูกค้า", field: "customer_name", flex: 1.8, minWidth: 220 },
       { headerName: "ใช้ได้ถึง", field: "valid_until", flex: 0.9, minWidth: 125, valueFormatter: ({ value }) => displayDate(value) },

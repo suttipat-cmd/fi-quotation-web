@@ -337,9 +337,7 @@ button:disabled {
 }
 .quotation-grid .ag-row { cursor: pointer; }
 .quotation-grid .ag-cell { display: flex; align-items: center; }
-.grid-document-number { display: grid; gap: 2px; }
-.grid-document-number b { color: #194476; }
-.grid-document-number small { color: #8190a4; font-size: 11px; }
+.grid-document-number { color: #194476; font-weight: 700; }
 .grid-money { justify-content: flex-end; font-weight: 700; }
 .settings-tabs {
   display: flex;
