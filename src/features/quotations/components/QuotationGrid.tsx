@@ -4,6 +4,7 @@ import {
   CellStyleModule,
   ClientSideRowModelModule,
   DateFilterModule,
+  LocaleModule,
   NumberFilterModule,
   PaginationModule,
   TextFilterModule,
@@ -26,6 +27,7 @@ const modules = [
   TextFilterModule,
   NumberFilterModule,
   DateFilterModule,
+  LocaleModule,
   ValidationModule,
 ];
 
