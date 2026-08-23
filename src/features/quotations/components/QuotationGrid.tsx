@@ -190,7 +190,11 @@ export default function QuotationGrid({
           rowData={quotes}
           columnDefs={columns}
           getRowId={({ data }) => data.id}
-          onRowClicked={({ data }) => data && onSelect(data)}
+          onRowClicked={({ data, event }) => {
+            const target = event?.target;
+            if (target instanceof Element && target.closest(".grid-row-actions")) return;
+            if (data) onSelect(data);
+          }}
           pagination
           paginationPageSize={10}
           paginationPageSizeSelector={[10, 25, 50]}
