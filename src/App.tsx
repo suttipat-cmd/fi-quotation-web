@@ -2090,6 +2090,7 @@ function Detail({
   const canCreateRevision = ["READY", "ACCEPTED", "EXPIRED"].includes(quote.status);
   const canCancel = ["DRAFT", "READY", "ACCEPTED", "EXPIRED"].includes(quote.status);
   const canSendEmail = ["READY", "ACCEPTED"].includes(quote.status);
+  const canPrint = ["READY", "ACCEPTED"].includes(quote.status);
   const emailReady =
     Boolean(quote.pdf_drive_url) &&
     Boolean(quote.recipient_emails?.length || quote.contact_email);
@@ -2154,6 +2155,11 @@ function Detail({
               onClick={onEmail}
             >
               ส่งอีเมล
+            </button>
+          )}
+          {canPrint && (
+            <button type="button" onClick={() => printQuotation(quote.document_no)}>
+              พิมพ์
             </button>
           )}
         </div>
