@@ -211,6 +211,7 @@ function App() {
   const [items, setItems] = useState<Item[]>([]);
   const [detailItems, setDetailItems] = useState<Item[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+  const sidebarCollapseTimer = useRef<number | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [achievement, setAchievement] = useState<Achievement>(null);
@@ -244,6 +245,16 @@ function App() {
       // Sound is optional and must never block an interaction.
     }
   };
+  const resetSidebarCollapseTimer = () => {
+    if (sidebarCollapseTimer.current !== null) window.clearTimeout(sidebarCollapseTimer.current);
+    if (!collapsed) sidebarCollapseTimer.current = window.setTimeout(() => setCollapsed(true), 5000);
+  };
+  useEffect(() => {
+    resetSidebarCollapseTimer();
+    return () => {
+      if (sidebarCollapseTimer.current !== null) window.clearTimeout(sidebarCollapseTimer.current);
+    };
+  }, [collapsed]);
   const notify = (text: string, type: NonNullable<Toast>["type"] = "info") => {
     setToast({ text, type });
   };
@@ -468,7 +479,7 @@ function App() {
     const defaultSales = profile?.role === "USER"
       ? (!mySalesScope ? profile : salesProfiles.find((sales) => mySalesScope.all_sales || mySalesScope.sales_profile_ids.includes(sales.id)) || profile)
       : profile;
-    setForm({ ...initialQuotationForm(defaultSales?.display_name || ""), sales_profile_id: defaultSales?.id });
+    setForm({ ...initialQuotationForm(defaultSales?.display_name || ""), sales_profile_id: defaultSales?.id, sales_title: defaultSales?.job_title || "" });
     setItems(defaultQuotationItems(services));
     setSelected(null);
     setEditingId(null);
@@ -752,7 +763,16 @@ function App() {
   const userName = profile?.display_name || session.user.email || "ผู้ใช้งาน";
   const isRestoringDocumentRoute = view !== "dashboard" && view !== "settings" && !restoredRoute.current;
   const nav = (
-    <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+    <aside
+      className={`sidebar ${collapsed ? "collapsed" : ""}`}
+      onMouseEnter={() => {
+        if (collapsed) setCollapsed(false);
+        else resetSidebarCollapseTimer();
+      }}
+      onMouseMove={resetSidebarCollapseTimer}
+      onPointerDownCapture={resetSidebarCollapseTimer}
+      onFocusCapture={resetSidebarCollapseTimer}
+    >
       <p className="sidebar-label">เมนูหลัก</p>
       <nav>
         <button
@@ -1481,6 +1501,7 @@ function Editor({
                     patch({
                       sales_profile_id: selectedSales?.id,
                       sales_name: selectedSales?.display_name || "",
+                      sales_title: selectedSales?.job_title || "",
                     });
                   }}
                 >
@@ -1903,7 +1924,7 @@ function QuotePaper({ form, items, group, documentNo, paperRef }: { form: Form; 
       </div>
       <div className="signatures compact-signatures">
         <div><h3>ยืนยันรับข้อเสนอ</h3><span><label>ลงชื่อ</label><i /></span><span><label>วันที่</label><i /></span></div>
-        <div><h3>ผู้เสนอราคา</h3><span><label>ลงชื่อ</label><i>{form.sales_name && <b>{form.sales_name}</b>}</i></span><span><label>วันที่</label><i><b>{displayDate(form.issued_at)}</b></i></span></div>
+        <div><h3>ผู้เสนอราคา</h3><span><label>ลงชื่อ</label><i>{form.sales_name && <b>{form.sales_name}</b>}</i></span><span><label>ตำแหน่ง</label><i>{form.sales_title && <b>{form.sales_title}</b>}</i></span></div>
       </div>
     </article>
   );

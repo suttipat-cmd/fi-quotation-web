@@ -46,6 +46,7 @@ export type QuotationForm = {
   contact_email: string;
   recipient_emails: string[];
   sales_name: string;
+  sales_title: string;
   issued_at: string;
   valid_until: string;
   notes: string;

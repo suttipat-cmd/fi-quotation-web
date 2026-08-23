@@ -14,6 +14,7 @@ export const toQuotationPayload = (
   contact_email: form.contact_email || null,
   recipient_emails: form.recipient_emails,
   sales_name: form.sales_name || profile?.display_name || null,
+  sales_title: form.sales_title || null,
   sales_profile_id: form.sales_profile_id || profile?.id || null,
   issued_at: form.issued_at,
   valid_until: form.valid_until,
