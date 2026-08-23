@@ -621,13 +621,7 @@ function App() {
   }
   function cancelQuotation(reason: string, note: string) {
     if (!selected) return;
-    setConfirmation({
-      title: "ยืนยันการยกเลิกใบเสนอราคา",
-      message: "เอกสารจะเป็นแบบดูได้อย่างเดียวและไม่สามารถย้อนสถานะกลับได้",
-      confirmLabel: "ยืนยันยกเลิก",
-      tone: "danger",
-      onConfirm: () => void performCancelQuotation(selected, reason, note),
-    });
+    void performCancelQuotation(selected, reason, note);
   }
   async function performRevision(target: Quote) {
     await run("กำลังสร้างฉบับแก้ไข", async () => {
@@ -680,11 +674,14 @@ function App() {
             .eq("code", "QUOTATION_SEND")
             .single();
           if (templateError || !template) throw new Error(templateError?.message || "ไม่พบเทมเพลตอีเมล");
-          const mainServices = (target.list_items || [])
-            .filter((item) => item.category === "RECURRING")
-            .map((item) => documentServiceName(item.service_name))
+          const mainServices = (target.recurring_addons || [])
+            .map(documentAddonName)
             .filter(Boolean)
-            .join(", ") || "ตามรายละเอียดในใบเสนอราคา";
+            .join(", ") || (target.list_items || [])
+              .filter((item) => item.category === "RECURRING")
+              .map((item) => documentServiceName(item.service_name))
+              .filter(Boolean)
+              .join(", ") || "ตามรายละเอียดในใบเสนอราคา";
           const values = {
             recipient_name: target.contact_name ? `คุณ${target.contact_name}${target.contact_position ? ` / ${target.contact_position}` : ""}` : "ผู้เกี่ยวข้อง",
             customer_name: target.customer_name || "",
@@ -2052,9 +2049,6 @@ function Detail({
   useEffect(() => {
     if (quote.status === "CANCELLED") setShowCancellation(false);
   }, [quote.status]);
-  useEffect(() => {
-    if (showCancellation) document.getElementById("cancellation")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [showCancellation]);
   return (
     <>
       <header className="page-header">
@@ -2104,7 +2098,7 @@ function Detail({
               <PixelIcon name="actions/action-accept" /> ตอบรับ
             </button>
           )}
-          {actions.canCancel && !showCancellation && (
+          {actions.canCancel && (
             <button className="danger-text-action" disabled={busy} onClick={() => setShowCancellation(true)}>
               ยกเลิกใบเสนอราคา
             </button>
@@ -2114,55 +2108,6 @@ function Detail({
       <div className="editor detail-editor">
         <section className="form-panel">
           <DetailForm quote={quote} items={items} busy={busy} onSaveRecipients={onSaveRecipients} />
-          {showCancellation && (
-            <Section title="ยืนยันการยกเลิกใบเสนอราคา" id="cancellation">
-            <div className="cancellation-form">
-              <aside className="cancellation-warning">
-                <img src={pixelAsset("characters/robot/robot-warning-alert@2x.png")} alt="" aria-hidden="true" />
-                <p>การยกเลิกจะทำให้เอกสารเป็นแบบดูได้อย่างเดียว และไม่สามารถย้อนสถานะกลับได้</p>
-              </aside>
-              <label className="field">
-                <span>เหตุผลการยกเลิก <em>*</em></span>
-                <select
-                  value={cancellationReason}
-                  onChange={(event) => setCancellationReason(event.target.value)}
-                >
-                  <option value="">เลือกเหตุผล</option>
-                  {CANCELLATION_REASONS.map((reason) => (
-                    <option value={reason} key={reason}>{reason}</option>
-                  ))}
-                </select>
-              </label>
-              {cancellationReason === "อื่น ๆ" && (
-                <label className="field">
-                  <span>หมายเหตุการยกเลิก <em>*</em></span>
-                  <textarea
-                    value={cancellationNote}
-                    onChange={(event) => setCancellationNote(event.target.value)}
-                    placeholder="ระบุเหตุผลเพิ่มเติม"
-                  />
-                </label>
-              )}
-              <div className="inline-actions">
-                <button type="button" disabled={busy} onClick={() => setShowCancellation(false)}>
-                  กลับ
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  disabled={
-                    busy ||
-                    !cancellationReason ||
-                    (cancellationReason === "อื่น ๆ" && !cancellationNote.trim())
-                  }
-                  onClick={() => onCancel(cancellationReason, cancellationNote)}
-                >
-                  ยืนยันยกเลิก
-                </button>
-              </div>
-            </div>
-            </Section>
-          )}
           {quote.status === "CANCELLED" && (
             <p className="muted">เอกสารที่ยกเลิกแล้วดูรายละเอียดได้อย่างเดียว</p>
           )}
@@ -2172,6 +2117,43 @@ function Detail({
         </section>
         <Preview form={form} items={items} quotation={quote} paperRef={paperRef} />
       </div>
+      {showCancellation && (
+        <div className="confirmation-overlay cancellation-overlay" role="dialog" aria-modal="true" aria-labelledby="cancellation-title">
+          <button type="button" className="confirmation-backdrop" aria-label="ปิดหน้าต่างยกเลิก" disabled={busy} onClick={() => setShowCancellation(false)} />
+          <section className="confirmation-modal cancellation-modal">
+            <img src={pixelAsset("characters/robot/robot-warning-alert@2x.png")} alt="" aria-hidden="true" />
+            <h2 id="cancellation-title">ยกเลิกใบเสนอราคา</h2>
+            <p>เอกสารจะเป็นแบบดูได้อย่างเดียว และไม่สามารถย้อนสถานะกลับได้</p>
+            <label className="field">
+              <span>เหตุผลการยกเลิก <em>*</em></span>
+              <select value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} autoFocus>
+                <option value="">เลือกเหตุผล</option>
+                {CANCELLATION_REASONS.map((reason) => <option value={reason} key={reason}>{reason}</option>)}
+              </select>
+            </label>
+            {cancellationReason === "อื่น ๆ" && (
+              <label className="field">
+                <span>หมายเหตุการยกเลิก <em>*</em></span>
+                <textarea value={cancellationNote} onChange={(event) => setCancellationNote(event.target.value)} placeholder="ระบุเหตุผลเพิ่มเติม" />
+              </label>
+            )}
+            <div className="inline-actions">
+              <button type="button" disabled={busy} onClick={() => setShowCancellation(false)}>กลับ</button>
+              <button
+                type="button"
+                className="danger"
+                disabled={busy || !cancellationReason || (cancellationReason === "อื่น ๆ" && !cancellationNote.trim())}
+                onClick={() => {
+                  onCancel(cancellationReason, cancellationNote);
+                  setShowCancellation(false);
+                }}
+              >
+                {busy && <Spinner />}ยืนยันยกเลิก
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

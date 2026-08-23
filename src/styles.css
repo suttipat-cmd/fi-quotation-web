@@ -777,6 +777,13 @@ button:disabled {
 .confirmation-modal h2 { margin: 0; font-size: 20px; }
 .confirmation-modal p { max-width: 340px; margin: 0; color: #51647a; line-height: 1.55; }
 .confirmation-modal .inline-actions { width: 100%; justify-content: center; margin-top: 6px; }
+.cancellation-modal { width: min(480px, 100%); justify-items: stretch; text-align: left; }
+.cancellation-modal > img,
+.cancellation-modal > h2,
+.cancellation-modal > p { justify-self: center; text-align: center; }
+.cancellation-modal .field { margin: 0; }
+.cancellation-modal textarea { min-height: 88px; resize: vertical; }
+.cancellation-modal .inline-actions { justify-content: flex-end; }
 .collapsible-section { padding: 0; }
 .collapsible-toggle {
   display: flex;
