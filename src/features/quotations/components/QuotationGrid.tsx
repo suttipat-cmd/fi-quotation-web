@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  CellStyleModule,
   ClientSideRowModelModule,
   DateFilterModule,
   NumberFilterModule,
@@ -16,6 +17,7 @@ import { QuotationStatusBadge } from "../../../components/ui/QuotationStatusBadg
 import type { Quotation } from "../types";
 
 const modules = [
+  CellStyleModule,
   ClientSideRowModelModule,
   PaginationModule,
   TextFilterModule,
@@ -82,6 +84,7 @@ export default function QuotationGrid({
           paginationPageSize={10}
           paginationPageSizeSelector={[10, 25, 50]}
           defaultColDef={{ sortable: true, filter: true, resizable: true }}
+          theme="legacy"
         />
       </AgGridProvider>
     </div>
