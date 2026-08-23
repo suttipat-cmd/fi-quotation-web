@@ -556,6 +556,16 @@ button:disabled {
   font-weight: 700;
   margin: 0 0 9px;
 }
+.preview-overflow {
+  margin: -3px 0 9px;
+  padding: 8px 10px;
+  border: 1px solid #e2a33f;
+  border-radius: 7px;
+  background: #fff7e8;
+  color: #8a4f00;
+  font-size: 12px;
+  line-height: 1.35;
+}
 .preview-scroll {
   min-height: 0;
   flex: 1;
@@ -1048,12 +1058,17 @@ button:disabled {
 }
 .compact-signatures {
   margin-top: 3px;
-  min-height: 82px;
-  padding-top: 8px;
+  min-height: 112px;
+  padding-top: 9px;
   gap: 18px;
+  align-items: start;
+}
+.compact-signatures > div {
+  width: min(100%, 270px);
+  justify-self: center;
 }
 .compact-signatures h3 {
-  margin: 0 0 13px;
+  margin: 0 0 8px;
   font-size: 10.8px;
   text-align: center;
 }
@@ -1062,8 +1077,11 @@ button:disabled {
   align-items: baseline;
   gap: 4px;
   border-bottom: 0;
-  padding: 3px 0;
+  padding: 4px 0;
   font-size: 10.2px;
+}
+.compact-signatures span + span {
+  margin-top: 10px;
 }
 .compact-signatures span i {
   position: relative;
@@ -1389,6 +1407,7 @@ button:disabled {
   .topbar,
   .form-panel,
   .preview-label,
+  .preview-overflow,
   .operation,
   .toast {
     display: none !important;

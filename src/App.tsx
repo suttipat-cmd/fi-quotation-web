@@ -1546,16 +1546,16 @@ function Editor({
                   }
                 />
               </Field>
-              <Field label="หัก ณ ที่จ่าย (%)">
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
+              <Field label="หัก ณ ที่จ่าย">
+                <select
                   value={form.wht_rate}
                   onChange={(event) =>
                     patch({ wht_rate: Number(event.target.value) })
                   }
-                />
+                >
+                  <option value="0">ไม่หัก ณ ที่จ่าย</option>
+                  <option value="3">หัก ณ ที่จ่าย 3%</option>
+                </select>
               </Field>
             </div>
           </Section>
@@ -1651,7 +1651,7 @@ function RecurringPlan({
             }
           />
         </Field>
-        <Field label="ราคา (บาท)">
+        <Field label="ราคารวม (บาท)">
           <MoneyInput
             value={item.unit_price_satang}
             onChange={(unit_price_satang) =>
@@ -1780,7 +1780,9 @@ function Preview({
   group: (category: Category) => any;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const paperRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [isPaperOverflow, setIsPaperOverflow] = useState(false);
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
@@ -1791,9 +1793,27 @@ function Preview({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    const checkOverflow = () => {
+      const paper = paperRef.current?.querySelector<HTMLElement>(".quotation-paper");
+      setIsPaperOverflow(Boolean(paper && paper.scrollHeight > paper.clientHeight + 1));
+    };
+    const frame = requestAnimationFrame(checkOverflow);
+    const observer = new ResizeObserver(checkOverflow);
+    if (paperRef.current) observer.observe(paperRef.current);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [form, items, totals, scale]);
   return (
     <aside className="preview-panel">
       <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
+      {isPaperOverflow && (
+        <p className="preview-overflow" role="alert">
+          เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF
+        </p>
+      )}
       <div className="preview-scroll" ref={scrollRef}>
         <div
           className="preview-paper-frame"
@@ -1804,6 +1824,7 @@ function Preview({
         >
           <div
             className="preview-paper-scale"
+            ref={paperRef}
             style={{ transform: `scale(${scale})` }}
           >
             <QuotePaper form={form} items={items} totals={totals} group={group} />
@@ -1962,7 +1983,7 @@ function PriceBlock({
       <div className="mini-head">
         <span>รายละเอียด</span>
         <span>{recurring ? "จำนวนรถ" : "จำนวน"}</span>
-        <span>ราคา</span>
+        <span>ราคารวม</span>
       </div>
       <div className="price-rows">
         {recurring ? (
