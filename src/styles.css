@@ -799,6 +799,8 @@ button:disabled {
   font-family: "Sarabun", "Noto Sans Thai", sans-serif;
   font-size: 10.7px;
   color: #26384f;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .document-topline {
   display: grid;
@@ -1416,5 +1418,11 @@ button:disabled {
     border-radius: 0 !important;
     box-shadow: none !important;
     aspect-ratio: auto !important;
+  }
+  .quotation-paper .mini-head {
+    background: #edf3f8 !important;
+  }
+  .quotation-paper .price-summary-card .net {
+    background: #f1f6fb !important;
   }
 }
