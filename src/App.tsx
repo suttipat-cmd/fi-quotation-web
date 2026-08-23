@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money, thaiBaht } from "./lib/format";
@@ -193,17 +193,36 @@ function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
   const detailPaperRef = useRef<HTMLElement | null>(null);
   const notify = (text: string, type: NonNullable<Toast>["type"] = "info") =>
     setToast({ text, type });
-  const navigate = (next: View, id?: string, replace = false) => {
+  const navigate = (next: View, id?: string, replace = false, skipDirtyCheck = false) => {
+    if (
+      !skipDirtyCheck &&
+      editorDirty &&
+      (view === "create" || view === "edit") &&
+      next !== view &&
+      !window.confirm("มีข้อมูลที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?")
+    ) return false;
+    if ((view === "create" || view === "edit") && next !== view) setEditorDirty(false);
     const path = routePath(next, id);
     if (window.location.pathname !== path) {
       window.history[replace ? "replaceState" : "pushState"]({}, "", path);
     }
     setView(next);
+    return true;
   };
+  useEffect(() => {
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      if (!editorDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [editorDirty]);
   useEffect(() => {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
@@ -341,6 +360,7 @@ function App() {
     setItems(defaultQuotationItems(services));
     setSelected(null);
     setEditingId(null);
+    setEditorDirty(false);
   };
   const updateItem = (id: string, patch: Partial<Item>) =>
     setItems((current) =>
@@ -384,6 +404,7 @@ function App() {
       setItems(normalizeQuotationItems(saved, services));
       setSelected(quote);
       setEditingId(quote.id);
+      setEditorDirty(false);
       navigate("edit", quote.id);
     });
   }
@@ -405,7 +426,8 @@ function App() {
       setSelected(quote);
       setDetailItems(items);
       await load();
-      navigate("detail", quote.id);
+      setEditorDirty(false);
+      navigate("detail", quote.id, false, true);
       notify(`${quote.document_no} บันทึกเป็นฉบับร่างแล้ว`, "success");
     });
   }
@@ -422,7 +444,8 @@ function App() {
       setDetailItems(items);
       setEditingId(null);
       await load();
-      navigate("detail", quote.id);
+      setEditorDirty(false);
+      navigate("detail", quote.id, false, true);
       notify("บันทึกการแก้ไขเรียบร้อยแล้ว", "success");
     });
   }
@@ -651,6 +674,7 @@ function App() {
             items={items}
             services={services}
             busy={busy}
+            onDirtyChange={setEditorDirty}
             onSave={() => void save()}
             onCancel={() => navigate("dashboard")}
             onUpdate={updateItem}
@@ -666,10 +690,10 @@ function App() {
             items={items}
             services={services}
             busy={busy}
+            onDirtyChange={setEditorDirty}
             onSave={() => void saveEdit()}
             onCancel={() => {
-              setEditingId(null);
-              navigate("detail", selected?.id);
+              if (navigate("detail", selected?.id)) setEditingId(null);
             }}
             onUpdate={updateItem}
             onAddCustomForm={addCustomForm}
@@ -738,17 +762,22 @@ function EmailTags({
   onChange: (emails: string[]) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [error, setError] = useState("");
   const add = () => {
     const value = draft.trim().toLowerCase();
     if (!value) return;
-    if (!/^\S+@\S+\.\S+$/.test(value)) return;
+    if (!/^\S+@\S+\.\S+$/.test(value)) {
+      setError("กรุณาระบุอีเมลให้ถูกต้อง เช่น name@company.com");
+      return;
+    }
+    setError("");
     if (!emails.includes(value)) onChange([...emails, value]);
     setDraft("");
   };
   return (
     <label className="field">
       <span>อีเมลผู้รับเอกสาร</span>
-      <div className="email-tags" onClick={(event) => event.currentTarget.querySelector("input")?.focus()}>
+      <div className={`email-tags${error ? " has-error" : ""}`} onClick={(event) => event.currentTarget.querySelector("input")?.focus()}>
         {emails.map((email) => (
           <span key={email}>
             {email}
@@ -764,8 +793,12 @@ function EmailTags({
         <input
           type="email"
           value={draft}
+          aria-invalid={Boolean(error)}
           placeholder={emails.length ? "เพิ่มอีเมลแล้วกด Enter" : "พิมพ์อีเมลแล้วกด Enter"}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            if (error) setError("");
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === ",") {
               event.preventDefault();
@@ -775,15 +808,39 @@ function EmailTags({
           onBlur={add}
         />
       </div>
-      <small className="field-help">กด Enter เพื่อเพิ่มอีเมลได้มากกว่าหนึ่งรายการ</small>
+      {error ? <small className="field-error" role="alert">{error}</small> : <small className="field-help">กด Enter เพื่อเพิ่มอีเมลได้มากกว่าหนึ่งรายการ • ใช้สำหรับส่งอีเมลเท่านั้น</small>}
     </label>
   );
 }
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, id }: { title: string; children: ReactNode; id?: string }) {
   return (
-    <section className="form-section">
+    <section className="form-section" id={id}>
       <h2>{title}</h2>
       {children}
+    </section>
+  );
+}
+function CollapsibleSection({
+  title,
+  summary,
+  children,
+  id,
+  defaultOpen = false,
+}: {
+  title: string;
+  summary: string;
+  children: ReactNode;
+  id?: string;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`form-section collapsible-section${open ? " open" : ""}`} id={id}>
+      <button type="button" className="collapsible-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <span><b>{title}</b><small>{summary}</small></span>
+        <span aria-hidden="true">{open ? "−" : "+"}</span>
+      </button>
+      {open && <div className="collapsible-content">{children}</div>}
     </section>
   );
 }
@@ -1024,6 +1081,7 @@ function Editor({
   items,
   services,
   busy,
+  onDirtyChange,
   onSave,
   onCancel,
   onUpdate,
@@ -1036,14 +1094,35 @@ function Editor({
   items: Item[];
   services: Service[];
   busy: boolean;
+  onDirtyChange: (isDirty: boolean) => void;
   onSave: () => void;
   onCancel: () => void;
   onUpdate: (id: string, patch: Partial<Item>) => void;
   onAddCustomForm: () => void;
   onRemoveItem: (id: string) => void;
 }) {
+  const customerNameRef = useRef<HTMLInputElement>(null);
+  const initialDraft = useRef(JSON.stringify({ form, items }));
+  const [attemptedSave, setAttemptedSave] = useState(false);
+  const deferredForm = useDeferredValue(form);
+  const deferredItems = useDeferredValue(items);
   const patch = (value: Partial<Form>) => setForm({ ...form, ...value });
   const limitNotesToNineLines = (value: string) => value.replace(/\r/g, "").split("\n").slice(0, 9).join("\n");
+  const customerNameError = attemptedSave && !form.customer_name.trim()
+    ? "กรุณาระบุชื่อลูกค้าก่อนบันทึก"
+    : undefined;
+  const isPreviewUpdating = deferredForm !== form || deferredItems !== items;
+  useEffect(() => {
+    onDirtyChange(initialDraft.current !== JSON.stringify({ form, items }));
+  }, [form, items, onDirtyChange]);
+  const submit = () => {
+    setAttemptedSave(true);
+    if (!form.customer_name.trim()) {
+      customerNameRef.current?.focus();
+      return;
+    }
+    onSave();
+  };
   return (
     <>
       <header className="page-header editor-page-header">
@@ -1062,7 +1141,7 @@ function Editor({
           <button disabled={busy} onClick={onCancel}>
             ยกเลิก
           </button>
-          <button className="primary" disabled={busy} onClick={onSave}>
+          <button className="primary" disabled={busy} onClick={submit}>
             {busy && <Spinner />}
             {mode === "create" ? "บันทึกฉบับร่าง" : "บันทึกการแก้ไข"}
           </button>
@@ -1070,7 +1149,13 @@ function Editor({
       </header>
       <div className="editor">
         <section className="form-panel">
-          <Section title="ข้อมูลเอกสาร">
+          <nav className="editor-section-nav" aria-label="ไปยังส่วนของฟอร์ม">
+            {[
+              ["document", "เอกสาร"], ["customer", "ลูกค้า"], ["recipient", "ผู้รับ"],
+              ["recurring", "บริการ"], ["one-time", "ค่าแรกเข้า"], ["notes", "หมายเหตุ"],
+            ].map(([target, label]) => <button key={target} type="button" onClick={() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{label}</button>)}
+          </nav>
+          <Section title="ข้อมูลเอกสาร" id="document">
             <div className="two">
               <Field label="วันที่ออกเอกสาร">
                 <input
@@ -1096,9 +1181,11 @@ function Editor({
               />
             </Field>
           </Section>
-          <Section title="ข้อมูลลูกค้า">
-            <Field label="ชื่อลูกค้า">
+          <Section title="ข้อมูลลูกค้า" id="customer">
+            <Field label="ชื่อลูกค้า" required error={customerNameError}>
               <input
+                ref={customerNameRef}
+                aria-invalid={Boolean(customerNameError)}
                 value={form.customer_name}
                 placeholder="บริษัท … จำกัด"
                 onChange={(event) =>
@@ -1115,7 +1202,7 @@ function Editor({
               />
             </Field>
           </Section>
-          <Section title="ข้อมูลผู้รับเอกสาร">
+          <Section title="ข้อมูลผู้รับเอกสาร" id="recipient">
             <div className="two">
               <Field label="ผู้รับ">
                 <input
@@ -1157,7 +1244,7 @@ function Editor({
             onAddCustomForm={onAddCustomForm}
             onRemoveItem={onRemoveItem}
           />
-          <Section title="ส่วนลดและภาษี">
+          <CollapsibleSection id="discount-tax" title="ส่วนลดและภาษี" summary="ค่าเริ่มต้น: VAT 7% และหัก ณ ที่จ่าย 3%">
             <div className="two">
               <Field label="รูปแบบส่วนลด">
                 <select
@@ -1213,8 +1300,17 @@ function Editor({
                 </select>
               </Field>
             </div>
-          </Section>
-          <Section title="หมายเหตุในเอกสาร">
+          </CollapsibleSection>
+          <CollapsibleSection id="payment-terms" title="เงื่อนไขการชำระเงิน" summary="ใช้ข้อความตั้งต้นของบริษัท และแก้ไขเฉพาะเอกสารนี้ได้">
+            <Field label="เงื่อนไขการชำระเงิน" hint="ข้อความนี้จะแสดงใน PDF ของใบเสนอราคาฉบับนี้">
+              <textarea
+                value={form.payment_terms}
+                rows={5}
+                onChange={(event) => patch({ payment_terms: event.target.value })}
+              />
+            </Field>
+          </CollapsibleSection>
+          <Section title="หมายเหตุในเอกสาร" id="notes">
             <Field label="หมายเหตุ">
               <textarea
                 value={form.notes}
@@ -1222,9 +1318,10 @@ function Editor({
                 onChange={(event) => patch({ notes: limitNotesToNineLines(event.target.value) })}
               />
             </Field>
+            <p className="field-help notes-help">กรอกได้สูงสุด 9 บรรทัด</p>
           </Section>
         </section>
-        <Preview form={form} items={items} />
+        <Preview form={deferredForm} items={deferredItems} isUpdating={isPreviewUpdating} />
       </div>
     </>
   );
@@ -1253,7 +1350,7 @@ function RecurringPlan({
         : [...form[key], value],
     } as Partial<Form>);
   return (
-    <Section title={SOFTWARE_SERVICE_LABEL}>
+    <Section title={SOFTWARE_SERVICE_LABEL} id="recurring">
       <p className="muted section-note">
         เลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox โดยระบบจะแสดงเป็นราคา
         ค่าบริการซอฟต์แวร์หนึ่งรายการในใบเสนอราคา
@@ -1272,6 +1369,7 @@ function RecurringPlan({
             </label>
           ))}
         </div>
+        <small className="field-help">เลือกได้มากกว่าหนึ่งรอบ ระบบจะแสดงรายการที่เลือกเป็นหัวข้อตารางในใบเสนอราคา</small>
       </fieldset>
       <fieldset className="check-field">
         <legend>บริการหลักที่รวมในแพ็กเกจ</legend>
@@ -1291,6 +1389,7 @@ function RecurringPlan({
             <span className="muted">ยังไม่มีบริการประจำในรายการบริการ</span>
           )}
         </div>
+        <small className="field-help">เลือกแล้ว {form.recurring_addons.length} รายการ</small>
       </fieldset>
       <div className="two">
         <Field label="จำนวนรถ">
@@ -1337,7 +1436,7 @@ function OneTimeItems({
     (item) => item.service_name === CUSTOM_FORM_LABEL,
   );
   return (
-    <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)">
+    <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)" id="one-time">
       <div className="section-heading">
         <p className="muted">
           Setup มีทะเบียนรถและข้อมูลทั่วไปรวมอยู่ในรายการเดียว สามารถแก้ไขจำนวน
@@ -1352,22 +1451,27 @@ function OneTimeItems({
           {hasCustomForm ? "เพิ่ม Custom Form แล้ว" : "+ เพิ่ม Custom Form"}
         </button>
       </div>
+      <div className="one-time-editor-head" aria-hidden="true">
+        <span />
+        <span>รายการ</span>
+        <span>จำนวน</span>
+        <span>หน่วย</span>
+        <span>ราคา/หน่วย</span>
+        <span>ราคารวม</span>
+      </div>
+      <div className="one-time-editor-table">
       {items.map((item, index) => (
         <article className="item-editor" key={item.id}>
           <b className="item-number">{index + 1}</b>
-          <div>
-            <Field label="บริการ">
+          <div className="item-service">
+            <Field label="บริการ" labelHidden>
               <input value={item.service_name} readOnly />
             </Field>
             {item.service_name === SETUP_LABEL && (
               <p className="item-detail">รวม: ทะเบียนรถ และข้อมูลทั่วไป</p>
             )}
-            <div
-              className={
-                item.service_name === ONSITE_TRAINING_LABEL ? "two" : "three"
-              }
-            >
-              <Field label="จำนวน">
+          </div>
+              <Field label="จำนวน" labelHidden>
                 <input
                   type="number"
                   min="0"
@@ -1380,7 +1484,7 @@ function OneTimeItems({
                   }
                 />
               </Field>
-              <Field label="หน่วย">
+              <Field label="หน่วย" labelHidden>
                 <input
                   value={item.unit}
                   onChange={(event) =>
@@ -1389,7 +1493,7 @@ function OneTimeItems({
                 />
               </Field>
               {item.service_name !== ONSITE_TRAINING_LABEL && (
-                <Field label="ราคา/หน่วย">
+                <Field label="ราคา/หน่วย" labelHidden>
                   <MoneyInput
                     value={item.unit_price_satang}
                     onChange={(unit_price_satang) =>
@@ -1404,9 +1508,8 @@ function OneTimeItems({
                   />
                 </Field>
               )}
-            </div>
-          </div>
-          <div className="item-total">
+              {item.service_name === ONSITE_TRAINING_LABEL && <span className="item-empty-price" aria-label="ไม่มีราคาต่อหน่วย">—</span>}
+          <div className="item-total" aria-label={`ราคารวม ${money(calculateItemTotal(item).net)}`}>
             <strong>{money(calculateItemTotal(item).net)}</strong>
             {item.service_name === CUSTOM_FORM_LABEL && (
               <button
@@ -1420,6 +1523,7 @@ function OneTimeItems({
           </div>
         </article>
       ))}
+      </div>
     </Section>
   );
 }
@@ -1429,22 +1533,26 @@ function Preview({
   items,
   quotation,
   paperRef: externalPaperRef,
+  isUpdating = false,
 }: {
   form: Form;
   items: Item[];
   quotation?: Quote | null;
   paperRef?: { current: HTMLElement | null };
+  isUpdating?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
+  const [zoom, setZoom] = useState<"fit" | 75 | 100>("fit");
   const [isPaperOverflow, setIsPaperOverflow] = useState(false);
+  const scale = zoom === "fit" ? fitScale : zoom / 100;
   const totals = useMemo(() => calculateQuotationTotals(form, items), [form, items]);
   const group = (category: Item["category"]) => calculateCategoryTotals(category, form, items, totals);
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
-    const updateScale = () => setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
+    const updateScale = () => setFitScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(node);
@@ -1462,7 +1570,12 @@ function Preview({
   }, [form, items, totals, scale]);
   return (
     <aside className="preview-panel">
-      <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
+      <div className="preview-toolbar">
+        <p className="preview-label">ตัวอย่างใบเสนอราคา {isUpdating && <small aria-live="polite">กำลังอัปเดต</small>}</p>
+        <div className="preview-zoom" aria-label="ขนาดตัวอย่างเอกสาร">
+          {(["fit", 75, 100] as const).map((value) => <button key={value} type="button" className={zoom === value ? "active" : ""} onClick={() => setZoom(value)}>{value === "fit" ? "พอดี" : `${value}%`}</button>)}
+        </div>
+      </div>
       {isPaperOverflow && <p className="preview-overflow" role="alert">เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF</p>}
       <div className="preview-scroll" ref={scrollRef}>
         <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
