@@ -117,7 +117,7 @@ export const formFromQuotation = (quote: Quotation): QuotationForm => ({
   included_users: Number(quote.included_users || 0),
   billing_cycles:
     Array.isArray(quote.billing_cycles) && quote.billing_cycles.length
-      ? quote.billing_cycles
+      ? quote.billing_cycles.slice(0, 1)
       : quote.billing_cycle
         ? [quote.billing_cycle]
         : [],

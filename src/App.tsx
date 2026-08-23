@@ -70,6 +70,10 @@ const normalizeQuoteStatus = (status: string): Quote["status"] =>
   ["DRAFT", "READY", "ACCEPTED", "EXPIRED", "CANCELLED"].includes(status)
     ? status as Quote["status"]
     : "DRAFT";
+const wholeNumber = (value: string) => {
+  const digits = value.replace(/\D/g, "");
+  return digits ? Number.parseInt(digits, 10) : 0;
+};
 const routeFromLocation = (): Route => {
   const path = window.location.pathname
     .replace(appBasePath, "")
@@ -204,6 +208,7 @@ function App() {
   const [achievement, setAchievement] = useState<Achievement>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
+  const [soundMode, setSoundMode] = useState<"melody" | "playful">(() => window.localStorage.getItem("fi-quotation-sound-mode") === "playful" ? "playful" : "melody");
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
   const detailPaperRef = useRef<HTMLElement | null>(null);
@@ -215,10 +220,12 @@ function App() {
       const context = audioContextRef.current || new AudioContext();
       audioContextRef.current = context;
       if (context.state === "suspended") void context.resume();
-      const notes = [523.25, 587.33, 659.25, 783.99, 698.46, 659.25, 587.33, 493.88];
+      const notes = soundMode === "playful"
+        ? [392, 523.25, 349.23, 659.25, 440, 587.33, 329.63, 523.25]
+        : [523.25, 587.33, 659.25, 783.99, 698.46, 659.25, 587.33, 493.88];
       const oscillator = context.createOscillator();
       const gain = context.createGain();
-      oscillator.type = "square";
+      oscillator.type = soundMode === "playful" ? "triangle" : "square";
       oscillator.frequency.setValueAtTime(notes[melodyIndexRef.current++ % notes.length], context.currentTime);
       gain.gain.setValueAtTime(0.018, context.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.09);
@@ -238,6 +245,12 @@ function App() {
     if (next) window.setTimeout(playClickMelody, 0);
     return next;
   });
+  const toggleSoundMode = () => setSoundMode((current) => {
+    const next = current === "melody" ? "playful" : "melody";
+    window.localStorage.setItem("fi-quotation-sound-mode", next);
+    window.setTimeout(playClickMelody, 0);
+    return next;
+  });
   useEffect(() => {
     if (!soundEnabled) return;
     const onPointerDown = (event: PointerEvent) => {
@@ -245,7 +258,7 @@ function App() {
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [soundEnabled]);
+  }, [soundEnabled, soundMode]);
   useEffect(() => () => { void audioContextRef.current?.close(); }, []);
   const navigate = (next: View, id?: string, replace = false, skipDirtyCheck = false) => {
     if (
@@ -766,6 +779,7 @@ function App() {
         <span className="app-topbar-context">{pageContext}</span>
         <div className="app-topbar-user" aria-label="ข้อมูลผู้ใช้งาน">
           <button type="button" className={`sound-toggle${soundEnabled ? " active" : ""}`} aria-label={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} title={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} onClick={toggleSound}>{soundEnabled ? "♬" : "♩"}</button>
+          {soundEnabled && <button type="button" className="sound-mode-toggle" aria-label="สลับโหมดเสียง" title={soundMode === "melody" ? "โหมดเมโลดี้ — กดเพื่อเปลี่ยนเป็นจังหวะสนุก" : "โหมดจังหวะสนุก — กดเพื่อเปลี่ยนเป็นเมโลดี้"} onClick={toggleSoundMode}>{soundMode === "melody" ? "♪" : "✦"}</button>}
           <img
             className="app-user-avatar"
             src={pixelAsset(profile?.role === "ADMIN" ? "brand/avatar-robot@2x.png" : "brand/avatar-whale@2x.png")}
@@ -1308,11 +1322,7 @@ function Editor({
             {mode === "create" ? "ใบเสนอราคาใหม่" : "แก้ไขใบเสนอราคา"}
           </p>
           <h1>{mode === "create" ? "สร้างใบเสนอราคา" : "แก้ไขใบเสนอราคา"}</h1>
-          <p className="muted">
-            {mode === "create"
-              ? "บันทึกเป็นฉบับร่างก่อนยืนยันสร้าง PDF"
-              : "แก้ไขข้อมูลฉบับร่างก่อนยืนยันสร้าง PDF"}
-          </p>
+          {mode === "edit" && <p className="muted">แก้ไขข้อมูลฉบับร่างก่อนยืนยันสร้าง PDF</p>}
         </div>
         <div className="actions">
           <button disabled={busy} onClick={onCancel}>
@@ -1520,7 +1530,7 @@ function RecurringPlan({
   const recurring = services.filter(
     (service) => service.default_category === "RECURRING",
   );
-  const toggle = (key: "billing_cycles" | "recurring_addons", value: string) =>
+  const toggle = (key: "recurring_addons", value: string) =>
     patch({
       [key]: form[key].includes(value)
         ? form[key].filter((option) => option !== value)
@@ -1528,25 +1538,21 @@ function RecurringPlan({
     } as Partial<Form>);
   return (
     <Section title={SOFTWARE_SERVICE_LABEL} id="recurring">
-      <p className="muted section-note">
-        เลือกบริการหลักที่รวมในแพ็กเกจจาก checkbox โดยระบบจะแสดงเป็นราคา
-        ค่าบริการซอฟต์แวร์หนึ่งรายการในใบเสนอราคา
-      </p>
       <fieldset className="check-field">
         <legend>รอบชำระค่าบริการ</legend>
         <div className="check-grid">
           {PAYMENT_OPTIONS.map((option) => (
             <label className="check-row" key={option}>
               <input
-                type="checkbox"
-                checked={form.billing_cycles.includes(option)}
-                onChange={() => toggle("billing_cycles", option)}
+                type="radio"
+                name="billing-cycle"
+                checked={form.billing_cycles[0] === option}
+                onChange={() => patch({ billing_cycles: [option] })}
               />
               {option}
             </label>
           ))}
         </div>
-        <small className="field-help">เลือกได้มากกว่าหนึ่งรอบ ระบบจะแสดงรายการที่เลือกเป็นหัวข้อตารางในใบเสนอราคา</small>
       </fieldset>
       <fieldset className="check-field">
         <legend>บริการหลักที่รวมในแพ็กเกจ</legend>
@@ -1575,12 +1581,14 @@ function RecurringPlan({
             min="0"
             value={form.package_reference_quantity || ""}
             placeholder="ระบุจำนวนรถ"
-            onChange={(event) =>
+            onChange={(event) => {
+              const quantity = wholeNumber(event.target.value);
+              event.currentTarget.value = quantity ? String(quantity) : "";
               patch({
-                package_reference_quantity: Number(event.target.value),
+                package_reference_quantity: quantity,
                 package_reference_unit: "คัน",
-              })
-            }
+              });
+            }}
           />
         </Field>
         <Field label="ราคารวม (บาท)">
@@ -1615,10 +1623,6 @@ function OneTimeItems({
   return (
     <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)" id="one-time">
       <div className="section-heading">
-        <p className="muted">
-          Setup มีทะเบียนรถและข้อมูลทั่วไปรวมอยู่ในรายการเดียว สามารถแก้ไขจำนวน
-          และราคาได้
-        </p>
         <button
           className="small-button"
           type="button"
@@ -1653,12 +1657,14 @@ function OneTimeItems({
                   type="number"
                   min="0"
                   value={item.quantity}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const quantity = wholeNumber(event.target.value);
+                    event.currentTarget.value = String(quantity);
                     onUpdate(item.id, {
-                      quantity: Number(event.target.value),
+                      quantity,
                       calculation_mode: "QUANTITY_X_UNIT_PRICE",
-                    })
-                  }
+                    });
+                  }}
                 />
               </Field>
               <Field label="หน่วย" labelHidden>
@@ -1841,7 +1847,7 @@ function DetailForm({
         <div className="recipient-save"><button className="primary" disabled={busy || !recipientDirty} onClick={() => onSaveRecipients({ quote, contactName, contactPosition, recipientEmails })}>{busy && <Spinner />}บันทึกข้อมูลผู้รับ</button></div>
       </Section>
       <Section title={SOFTWARE_SERVICE_LABEL}>
-        <fieldset className="check-field"><legend>รอบชำระค่าบริการ</legend><div className="check-grid">{PAYMENT_OPTIONS.map((option) => <label className="check-row" key={option}><input type="checkbox" checked={form.billing_cycles.includes(option)} disabled />{option}</label>)}</div></fieldset>
+        <fieldset className="check-field"><legend>รอบชำระค่าบริการ</legend><div className="check-grid">{PAYMENT_OPTIONS.map((option) => <label className="check-row" key={option}><input type="radio" name="detail-billing-cycle" checked={form.billing_cycles[0] === option} disabled />{option}</label>)}</div></fieldset>
         <fieldset className="check-field"><legend>บริการหลักที่รวมในแพ็กเกจ</legend><div className="check-grid">{form.recurring_addons.length ? form.recurring_addons.map((service) => <label className="check-row" key={service}><input type="checkbox" checked disabled />{service}</label>) : <span className="muted">ไม่ได้เลือกบริการเพิ่มเติม</span>}</div></fieldset>
         <div className="two"><Field label="จำนวนรถ"><input readOnly value={`${form.package_reference_quantity || "—"} คัน`} /></Field><Field label="ราคารวม"><input readOnly value={money(recurring?.unit_price_satang || 0)} /></Field></div>
       </Section>

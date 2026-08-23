@@ -241,6 +241,8 @@ button:disabled {
 .sound-toggle { width: 31px; height: 31px; border: 1px solid #48789d; border-radius: 4px; background: #163f68; color: #a9cfe8; box-shadow: 2px 2px 0 #092945; font-weight: 800; }
 .sound-toggle.active { border-color: #6ce1c8; background: #1f6e82; color: #ecffed; }
 .sound-toggle:hover { transform: translate(-1px, -1px); }
+.sound-mode-toggle { width: 31px; height: 31px; border: 1px solid #6a89aa; border-radius: 4px; background: #1b4974; color: #f4e49a; box-shadow: 2px 2px 0 #092945; font-weight: 900; }
+.sound-mode-toggle:hover { transform: translate(-1px, -1px); border-color: #f2d16a; }
 .app-user-avatar {
   display: grid;
   width: 34px;
@@ -278,10 +280,8 @@ button:disabled {
 .page-header-copy > img { width: 76px; height: 76px; flex: 0 0 auto; object-fit: contain; image-rendering: pixelated; }
 .settings-header-copy > img { width: 68px; height: 68px; }
 .editor-page-header {
-  position: sticky;
-  /* The editor itself scrolls below the global application bar. */
-  top: 0;
-  z-index: 3;
+  position: relative;
+  z-index: 0;
   padding: 2px 0 5px;
   margin: -2px 0 6px;
   background: #f3f7fb;

@@ -32,7 +32,7 @@ export const toQuotationPayload = (
   package_reference_unit: form.package_reference_unit || null,
   included_users: form.included_users || null,
   billing_cycle: form.billing_cycles[0] || null,
-  billing_cycles: form.billing_cycles,
+  billing_cycles: form.billing_cycles.slice(0, 1),
   recurring_addons: form.recurring_addons,
   additional_fees: form.additional_fees || null,
   promotion_terms: form.promotion_terms || null,
