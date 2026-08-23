@@ -60,8 +60,9 @@ export const sendQuotationEmail = async (input: {
   subject: string;
   message: string;
 }) => {
+  const { quotationId, ...email } = input;
   const { data, error } = await supabase.functions.invoke("quotation-operations", {
-    body: { action: "send_email", ...input },
+    body: { action: "send_email", quotation_id: quotationId, ...email },
   });
   if (error) throw new Error(await edgeErrorMessage(error));
   return data as { message: string };

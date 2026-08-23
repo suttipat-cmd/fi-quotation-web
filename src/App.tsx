@@ -1000,10 +1000,10 @@ function EmailTags({
     </label>
   );
 }
-function Section({ title, children, id }: { title: string; children: ReactNode; id?: string }) {
+function Section({ title, children, id, action }: { title: string; children: ReactNode; id?: string; action?: ReactNode }) {
   return (
     <section className="form-section" id={id}>
-      <h2>{title}</h2>
+      <div className="form-section-heading"><h2>{title}</h2>{action}</div>
       {children}
     </section>
   );
@@ -1326,7 +1326,7 @@ function Editor({
         </div>
         <div className="actions">
           <button disabled={busy} onClick={onCancel}>
-            {mode === "create" ? "ออกจากฟอร์ม" : "ยกเลิกการแก้ไข"}
+            {mode === "create" ? "ออกจากฟอร์ม" : "กลับหน้ารายละเอียด"}
           </button>
           <button className="primary" disabled={busy} onClick={submit}>
             {busy && <Spinner />}
@@ -1336,12 +1336,6 @@ function Editor({
       </header>
       <div className="editor">
         <section className="form-panel">
-          <nav className="editor-section-nav" aria-label="ไปยังส่วนของฟอร์ม">
-            {[
-              ["document", "เอกสาร"], ["customer", "ลูกค้า"], ["recipient", "ผู้รับ"],
-              ["recurring", "บริการ"], ["one-time", "ค่าแรกเข้า"], ["notes", "หมายเหตุ"],
-            ].map(([target, label]) => <button key={target} type="button" onClick={() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{label}</button>)}
-          </nav>
           <Section title="ข้อมูลเอกสาร" id="document">
             <div className="two">
               <Field label="วันที่ออกเอกสาร">
@@ -1621,8 +1615,7 @@ function OneTimeItems({
     (item) => item.service_name === CUSTOM_FORM_LABEL,
   );
   return (
-    <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)" id="one-time">
-      <div className="section-heading">
+    <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)" id="one-time" action={
         <button
           className="small-button"
           type="button"
@@ -1631,7 +1624,7 @@ function OneTimeItems({
         >
           {hasCustomForm ? "เพิ่ม Custom Form แล้ว" : "+ เพิ่ม Custom Form"}
         </button>
-      </div>
+      }>
       <div className="one-time-editor-head" aria-hidden="true">
         <span />
         <span>รายการ</span>
@@ -1908,6 +1901,9 @@ function Detail({
   useEffect(() => {
     if (quote.status === "CANCELLED") setShowCancellation(false);
   }, [quote.status]);
+  useEffect(() => {
+    if (showCancellation) document.getElementById("cancellation")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [showCancellation]);
   return (
     <>
       <header className="page-header">
@@ -1959,7 +1955,7 @@ function Detail({
           )}
           {actions.canCancel && !showCancellation && (
             <button className="danger-text-action" disabled={busy} onClick={() => setShowCancellation(true)}>
-              ยกเลิก
+              ยกเลิกใบเสนอราคา
             </button>
           )}
         </div>
@@ -1968,7 +1964,7 @@ function Detail({
         <section className="form-panel">
           <DetailForm quote={quote} items={items} busy={busy} onSaveRecipients={onSaveRecipients} />
           {showCancellation && (
-            <Section title="ยืนยันการยกเลิกใบเสนอราคา">
+            <Section title="ยืนยันการยกเลิกใบเสนอราคา" id="cancellation">
             <div className="cancellation-form">
               <aside className="cancellation-warning">
                 <img src={pixelAsset("characters/robot/robot-warning-alert@2x.png")} alt="" aria-hidden="true" />
