@@ -6,12 +6,11 @@ import {
   NumberFilterModule,
   PaginationModule,
   TextFilterModule,
+  themeQuartz,
   ValidationModule,
   type ColDef,
 } from "ag-grid-community";
 import { AgGridProvider, AgGridReact } from "ag-grid-react";
-import "ag-grid-community/styles/ag-grid.min.css";
-import "ag-grid-community/styles/ag-theme-quartz-no-font.min.css";
 import { displayDate, money } from "../../../lib/format";
 import { QuotationStatusBadge } from "../../../components/ui/QuotationStatusBadge";
 import type { Quotation } from "../types";
@@ -25,6 +24,20 @@ const modules = [
   DateFilterModule,
   ValidationModule,
 ];
+
+const quotationGridTheme = themeQuartz.withParams({
+  fontFamily: ["Noto Sans Thai", "system-ui", "sans-serif"],
+  fontSize: 14,
+  headerFontWeight: 700,
+  headerHeight: 54,
+  rowHeight: 68,
+  borderRadius: 9,
+  wrapperBorderRadius: 9,
+  accentColor: "#16559b",
+  headerBackgroundColor: "#edf3f8",
+  headerTextColor: "#51647c",
+  rowBorder: { style: "solid", width: 1, color: "#e4eaf1" },
+});
 
 const revisionLabel = (revisionNo: number) =>
   revisionNo > 0 ? `ฉบับแก้ไข ${String(revisionNo).padStart(2, "0")}` : null;
@@ -73,7 +86,7 @@ export default function QuotationGrid({
   );
 
   return (
-    <div className="quotation-grid ag-theme-quartz">
+    <div className="quotation-grid">
       <AgGridProvider modules={modules}>
         <AgGridReact<Quotation>
           rowData={quotes}
@@ -84,7 +97,9 @@ export default function QuotationGrid({
           paginationPageSize={10}
           paginationPageSizeSelector={[10, 25, 50]}
           defaultColDef={{ sortable: true, filter: true, resizable: true }}
-          theme="legacy"
+          theme={quotationGridTheme}
+          headerHeight={54}
+          rowHeight={68}
         />
       </AgGridProvider>
     </div>
