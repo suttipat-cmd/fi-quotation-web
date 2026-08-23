@@ -790,7 +790,7 @@ function Dashboard({
       <section className="card table-card">
         <div className="section-heading">
           <div>
-            <h2>เอกสารล่าสุด</h2>
+            <h2>รายการใบเสนอราคา</h2>
           </div>
         </div>
         <Suspense fallback={<QuotationListSkeleton />}>

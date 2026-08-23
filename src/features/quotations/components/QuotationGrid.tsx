@@ -90,12 +90,17 @@ function RowActions({
   };
 
   return (
-    <div className="grid-row-actions" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="grid-row-actions"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
         className="grid-action-trigger"
         aria-label={`การดำเนินการ ${quote.document_no}`}
         aria-expanded={open}
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={toggleMenu}
       >
         ⋯
