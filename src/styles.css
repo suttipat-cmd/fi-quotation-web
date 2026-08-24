@@ -313,7 +313,8 @@ button:disabled {
   margin: -2px 0 14px;
 }
 .form-page-header {
-  padding: 8px 18px 12px;
+  /* Keep the editor title and actions inside the same visual gutter as form-card content. */
+  padding: 10px 46px 14px;
   margin: -2px 0 14px;
 }
 .eyebrow {
@@ -1772,6 +1773,7 @@ button:disabled {
     padding: 28px;
     width: 100%;
   }
+  .form-page-header { padding-inline: 26px; }
   .editor {
     grid-template-columns: 1fr;
     flex: initial;
@@ -1826,6 +1828,7 @@ button:disabled {
   .app-topbar-user { grid-column: 2; }
   .app-topbar .brand span { font-size: 12px; }
   .page-header { display: grid; }
+  .form-page-header { padding-inline: 16px; }
   .detail-document-header { display: grid; }
   .detail-amounts { grid-template-columns: 1fr; }
   .actions {
