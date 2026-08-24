@@ -312,6 +312,10 @@ button:disabled {
   padding: 8px 18px 12px;
   margin: -2px 0 14px;
 }
+.form-page-header {
+  padding: 8px 18px 12px;
+  margin: -2px 0 14px;
+}
 .eyebrow {
   color: #2363a9;
   margin: 0;

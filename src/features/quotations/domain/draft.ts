@@ -178,3 +178,29 @@ export const validateQuotationDraft = (items: QuotationItem[], form: QuotationFo
   }
   return null;
 };
+
+export const validateQuotationForPdf = (items: QuotationItem[], form: QuotationForm) => {
+  const draftError = validateQuotationDraft(items, form);
+  if (draftError) return draftError;
+  if (!form.issued_at) return "กรุณาระบุวันที่ออกเอกสารก่อนสร้าง PDF";
+  if (!form.valid_until) return "กรุณาระบุวันใช้ได้ถึงก่อนสร้าง PDF";
+  if (form.valid_until < form.issued_at) return "วันใช้ได้ถึงต้องไม่ก่อนวันที่ออกเอกสาร";
+  if (!form.sales_profile_id) return "กรุณาเลือกผู้เสนอราคาก่อนสร้าง PDF";
+  if (!form.customer_address.trim()) return "กรุณาระบุที่อยู่ลูกค้าก่อนสร้าง PDF";
+  if (form.billing_cycles.length !== 1) return "กรุณาเลือกรอบชำระค่าบริการ 1 รายการ";
+  if (!form.recurring_addons.length) return "กรุณาเลือกบริการหลักอย่างน้อย 1 รายการ";
+  if (!Number.isFinite(form.package_reference_quantity) || form.package_reference_quantity <= 0) {
+    return "กรุณาระบุจำนวนรถมากกว่า 0 ก่อนสร้าง PDF";
+  }
+  const recurring = items.find((item) => item.category === "RECURRING");
+  if (!recurring || !Number.isFinite(recurring.unit_price_satang) || recurring.unit_price_satang < 0) {
+    return "กรุณาระบุราคารวมของค่าบริการซอฟต์แวร์";
+  }
+  return null;
+};
+
+export const validateQuotationForEmail = (contactName: string, recipientEmails: string[]) => {
+  if (!contactName.trim()) return "กรุณาระบุผู้รับเอกสารก่อนส่งอีเมล";
+  if (!recipientEmails.length) return "กรุณาระบุอีเมลผู้รับเอกสารก่อนส่งอีเมล";
+  return null;
+};

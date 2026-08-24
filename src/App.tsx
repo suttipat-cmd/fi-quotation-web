@@ -25,6 +25,8 @@ import {
   makeServiceItem,
   normalizeQuotationItems,
   validateQuotationDraft,
+  validateQuotationForEmail,
+  validateQuotationForPdf,
 } from "./features/quotations/domain/draft";
 import { calculateCategoryTotals, calculateItemTotal, calculateQuotationTotals } from "./features/quotations/domain/calculator";
 import { documentAddonName, documentServiceName } from "./features/quotations/domain/document";
@@ -676,6 +678,13 @@ function App() {
       : target.contact_email
         ? [target.contact_email]
         : [];
+    const validationError = action === "generate_pdf"
+      ? validateQuotationForPdf(detailItems, formFromQuotation(target))
+      : validateQuotationForEmail(target.contact_name || "", recipients);
+    if (validationError) {
+      notify(validationError, "error");
+      return;
+    }
     await run(
       action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
       async () => {
@@ -692,7 +701,6 @@ function App() {
             pdf_drive_url: result.pdf_drive_url,
           });
         } else {
-          if (!recipients.length) throw new Error("กรุณาระบุอีเมลผู้รับเอกสารก่อนส่งอีเมล");
           if (!target.sales_email) throw new Error("ยังไม่มีอีเมลของผู้เสนอราคา กรุณาให้ผู้ดูแลระบบตั้งค่าข้อมูลฝ่ายขายก่อนส่งอีเมล");
           const { data: template, error: templateError } = await supabase
             .from("email_templates")
@@ -1041,9 +1049,11 @@ function App() {
 function EmailTags({
   emails,
   onChange,
+  required = false,
 }: {
   emails: string[];
   onChange: (emails: string[]) => void;
+  required?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -1060,7 +1070,7 @@ function EmailTags({
   };
   return (
     <label className="field">
-      <span>อีเมลผู้รับเอกสาร</span>
+      <span>อีเมลผู้รับเอกสาร{required && <em aria-hidden="true"> *</em>}</span>
       <div className={`email-tags${error ? " has-error" : ""}`} onClick={(event) => event.currentTarget.querySelector("input")?.focus()}>
         {emails.map((email) => (
           <span key={email}>
@@ -1456,7 +1466,7 @@ function Settings({
 
   return (
     <>
-      <header className="page-header editor-page-header">
+      <header className="page-header editor-page-header form-page-header">
         <div className="page-header-copy settings-header-copy">
           <div>
             <p className="eyebrow">ผู้ดูแลระบบ</p>
@@ -1614,14 +1624,14 @@ function Editor({
         <section className="form-panel">
           <Section title="ข้อมูลเอกสาร" id="document">
             <div className="two">
-              <Field label="วันที่ออกเอกสาร">
+              <Field label="วันที่ออกเอกสาร" required>
                 <input
                   type="date"
                   value={form.issued_at}
                   onChange={(event) => patch({ issued_at: event.target.value })}
                 />
               </Field>
-              <Field label="ใช้ได้ถึง">
+              <Field label="ใช้ได้ถึง" required>
                 <input
                   type="date"
                   value={form.valid_until}
@@ -1631,7 +1641,7 @@ function Editor({
                 />
               </Field>
             </div>
-            <Field label="ผู้เสนอราคา">
+            <Field label="ผู้เสนอราคา" required>
               {profile?.role === "ADMIN" || (profile?.role === "USER" && Boolean(salesScope && (salesScope.all_sales || salesScope.sales_profile_ids.length))) ? (
                 <select
                   value={form.sales_profile_id || ""}
@@ -1664,7 +1674,7 @@ function Editor({
                 }
               />
             </Field>
-            <Field label="ที่อยู่">
+            <Field label="ที่อยู่" required>
               <textarea
                 value={form.customer_address}
                 onChange={(event) =>
@@ -1675,7 +1685,7 @@ function Editor({
           </Section>
           <Section title="ข้อมูลผู้รับเอกสาร" id="recipient">
             <div className="two">
-              <Field label="ผู้รับ">
+              <Field label="ผู้รับ" required>
                 <input
                   value={form.contact_name}
                   onChange={(event) =>
@@ -1694,6 +1704,7 @@ function Editor({
             </div>
             <EmailTags
               emails={form.recipient_emails}
+              required
               onChange={(recipient_emails) =>
                 patch({
                   recipient_emails,
@@ -1823,7 +1834,7 @@ function RecurringPlan({
   return (
     <Section title={SOFTWARE_SERVICE_LABEL} id="recurring">
       <fieldset className="check-field">
-        <legend>รอบชำระค่าบริการ</legend>
+        <legend>รอบชำระค่าบริการ <em aria-hidden="true">*</em></legend>
         <div className="check-grid">
           {PAYMENT_OPTIONS.map((option) => (
             <label className="check-row" key={option}>
@@ -1839,7 +1850,7 @@ function RecurringPlan({
         </div>
       </fieldset>
       <fieldset className="check-field">
-        <legend>บริการหลักที่รวมในแพ็กเกจ</legend>
+        <legend>บริการหลักที่รวมในแพ็กเกจ <em aria-hidden="true">*</em></legend>
         <div className="check-grid">
           {recurring.length ? (
             recurring.map((service) => (
@@ -1859,7 +1870,7 @@ function RecurringPlan({
         <small className="field-help">เลือกแล้ว {form.recurring_addons.length} รายการ</small>
       </fieldset>
       <div className="two">
-        <Field label="จำนวนรถ">
+        <Field label="จำนวนรถ" required>
           <input
             type="number"
             min="0"
@@ -1875,7 +1886,7 @@ function RecurringPlan({
             }}
           />
         </Field>
-        <Field label="ราคารวม (บาท)">
+        <Field label="ราคารวม (บาท)" required>
           <MoneyInput
             value={item.unit_price_satang}
             onChange={(unit_price_satang) =>
