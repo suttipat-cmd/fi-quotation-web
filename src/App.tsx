@@ -111,10 +111,14 @@ const renderEmailTemplate = (template: string, values: Record<string, string>) =
   template.replace(/\{([a-z_]+)\}/g, (_match, key: string) => values[key] ?? "");
 const uniqueEmails = (emails: Array<string | null | undefined>) =>
   [...new Set(emails.map((email) => email?.trim().toLowerCase()).filter((email): email is string => Boolean(email && /^\S+@\S+\.\S+$/.test(email))))];
+const isJwtIssuedInFutureError = (message?: string) => /jwt issued at future/i.test(message || "");
+const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 const friendlyError = (message?: string) =>
   !message
     ? "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
+    : isJwtIssuedInFutureError(message)
+      ? "เวลาในอุปกรณ์ไม่ตรงกับระบบ กรุณาตั้งวันที่และเวลาเป็นอัตโนมัติ แล้วลองใหม่"
     : /invalid login/i.test(message)
       ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
       : /email not confirmed/i.test(message)
@@ -227,6 +231,8 @@ function App() {
   const [soundMode, setSoundMode] = useState<"melody" | "playful">(() => window.localStorage.getItem("fi-quotation-sound-mode") === "playful" ? "playful" : "melody");
   const [editorDirty, setEditorDirty] = useState(false);
   const locked = useRef(false);
+  const loadRequestRef = useRef(0);
+  const clockSkewRecoveryRef = useRef<Promise<boolean> | null>(null);
   const detailPaperRef = useRef<HTMLElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const melodyIndexRef = useRef(0);
@@ -402,7 +408,28 @@ function App() {
     if (route.view === "edit") void startEdit(quote);
     else void openDetail(quote);
   }, [session, profile, quotes, initialDataReady]);
-  async function load() {
+  async function recoverSessionFromClockSkew() {
+    if (clockSkewRecoveryRef.current) return clockSkewRecoveryRef.current;
+    const recovery = (async () => {
+      // A short delay gives the Auth and REST services a chance to converge when
+      // their clocks briefly disagree. Retrying endlessly would mask a bad device clock.
+      try {
+        await wait(800);
+        const { data, error } = await supabase.auth.refreshSession();
+        return !error && Boolean(data.session);
+      } catch {
+        return false;
+      }
+    })();
+    clockSkewRecoveryRef.current = recovery;
+    void recovery.finally(() => {
+      if (clockSkewRecoveryRef.current === recovery) clockSkewRecoveryRef.current = null;
+    });
+    return recovery;
+  }
+
+  async function load(retryAfterClockSkew = true) {
+    const requestId = ++loadRequestRef.current;
     setInitialDataReady(false);
     setLoading("กำลังโหลดข้อมูล");
     const [profileResult, servicesResult, quotesResult, salesResult, myScopeResult] = await Promise.all([
@@ -419,6 +446,14 @@ function App() {
       supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active").eq("role", "SALE").eq("active", true).order("display_name"),
       supabase.from("user_sales_scopes").select("user_id, all_sales, sales_profile_ids").eq("user_id", session?.user.id || "").maybeSingle(),
     ]);
+    const requestErrors = [profileResult.error, servicesResult.error, quotesResult.error, salesResult.error, myScopeResult.error];
+    if (retryAfterClockSkew && requestErrors.some((error) => isJwtIssuedInFutureError(error?.message))) {
+      const recovered = await recoverSessionFromClockSkew();
+      if (recovered && requestId === loadRequestRef.current) return load(false);
+    }
+    // A session refresh can emit a second load. Only the most recent request may
+    // update the screen so a stale rejected token never overwrites fresh data.
+    if (requestId !== loadRequestRef.current) return;
     setLoading(null);
     // Master data must never hide quotations that were successfully loaded.
     // Each resource has an independent failure state so the dashboard remains usable.
