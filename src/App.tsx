@@ -1637,7 +1637,7 @@ function Editor({
   };
   return (
     <>
-      <header className="page-header editor-page-header">
+      <header className="page-header editor-page-header form-page-header">
         <div>
           <p className="eyebrow">
             {mode === "create" ? "ใบเสนอราคาใหม่" : "แก้ไขใบเสนอราคา"}
