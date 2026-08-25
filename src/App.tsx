@@ -2217,7 +2217,7 @@ function Preview({
       <div className="preview-scroll" ref={scrollRef}>
         <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
           <div className="preview-paper-scale" ref={paperRef} style={{ transform: `scale(${scale})` }}>
-            <QuotePaper form={form} items={items} group={group} documentNo={quotation?.document_no} paperRef={externalPaperRef} />
+            <QuotePaper form={form} items={items} group={group} documentNo={quotation ? quotationPdfBaseName(quotation) : undefined} paperRef={externalPaperRef} />
           </div>
         </div>
       </div>
@@ -2304,7 +2304,7 @@ function DetailForm({
         </div>
         <div className="detail-status-row">
           <dl className="detail-amounts">
-            <div className="detail-billing-cycle"><dt>รอบชำระค่าบริการ</dt><dd>{form.billing_cycles[0] || quote.billing_cycle || "ไม่ระบุ"}</dd></div>
+            <div><dt>{form.billing_cycles[0] || quote.billing_cycle || "ค่าบริการ"}</dt><dd>{money(recurringTotal.net)}</dd></div>
             <div><dt>ค่าแรกเข้า</dt><dd>{money(oneTimeTotal.net)}</dd></div>
           </dl>
         </div>

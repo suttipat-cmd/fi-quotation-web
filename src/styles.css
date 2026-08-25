@@ -1574,7 +1574,6 @@ button:disabled {
 .detail-amounts div { padding: 11px 13px; border: 1px solid #cfdfdf; border-radius: 5px; background: #f7fbfa; }
 .detail-amounts dt { color: #667b94; font-size: 12px; font-weight: 700; }
 .detail-amounts dd { margin: 3px 0 0; color: #194980; font-size: 22px; font-weight: 700; }
-.detail-amounts .detail-billing-cycle dd { font-size: 18px; line-height: 1.3; }
 .detail-pdf-link { display: inline-flex; margin-top: 13px; color: #165eaa; font-size: 13px; font-weight: 700; }
 .detail-cancellation-note { margin: 13px 0 0; color: #a73535; font-size: 13px; }
 .section-note { margin: -6px 0 13px; font-size: 13px; }
