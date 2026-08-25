@@ -825,6 +825,41 @@ button:disabled {
 .cancellation-modal .field { margin: 0; }
 .cancellation-modal textarea { min-height: 88px; resize: vertical; }
 .cancellation-modal .inline-actions { justify-content: flex-end; }
+.email-composer-overlay { position: fixed; z-index: 95; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b30a8; }
+.email-composer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; }
+.email-composer-modal {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(900px, 100%);
+  max-height: min(900px, calc(100vh - 44px));
+  overflow: hidden;
+  border: 3px solid #1463a0;
+  border-radius: 8px;
+  background: #f9f6e8;
+  box-shadow: 9px 9px 0 #08274a, inset 0 0 0 3px #bff3e9;
+  color: #193c61;
+}
+.email-composer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 24px 16px; border-bottom: 1px solid #cbdcd9; background: #f3f8f3; }
+.email-composer-header h2 { margin: 2px 0 3px; font-size: 23px; }
+.email-composer-header span { color: #6a7a8e; font-size: 12px; }
+.email-composer-close { width: 34px; height: 34px; padding: 0; border: 1px solid #b8cfcc; border-radius: 4px; background: #fff; color: #526a82; font-size: 22px; line-height: 1; }
+.email-composer-content { display: grid; gap: 14px; overflow-y: auto; padding: 18px 24px 22px; background: #fffef8; }
+.email-composer-content > .field { margin: 0; }
+.email-composer-content > .field > span small { color: #8290a0; font-size: 10px; font-weight: 500; }
+.email-composer-content .email-tags { background: #fff; }
+.email-tags-readonly { min-height: 40px; cursor: default; }
+.email-tags-readonly > span { background: #eef4f2; color: #355b70; }
+.email-tags-readonly > i { align-self: center; padding: 2px 4px; color: #8793a2; font-size: 12px; font-style: normal; }
+.email-composer-message { min-height: 270px; resize: vertical; white-space: pre-wrap; line-height: 1.65; }
+.email-attachment { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid #bed2d1; border-radius: 5px; background: #f4f8f5; }
+.email-attachment > .pixel-icon { width: 28px; height: 28px; image-rendering: pixelated; }
+.email-attachment > span { display: grid; min-width: 0; gap: 2px; }
+.email-attachment small { color: #798898; font-size: 10px; }
+.email-attachment strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.email-attachment em { margin-left: auto; padding: 4px 7px; border: 1px solid #9ed4b2; border-radius: 3px; background: #e8f7ed; color: #247244; font-size: 11px; font-style: normal; font-weight: 700; white-space: nowrap; }
+.email-composer-actions { display: flex; justify-content: space-between; gap: 12px; padding: 15px 24px 18px; border-top: 1px solid #cbdcd9; background: #f3f8f3; }
+.email-composer-actions button { min-width: 104px; }
 .collapsible-section { padding: 0; }
 .collapsible-toggle {
   display: flex;
@@ -1634,6 +1669,7 @@ button:disabled {
 }
 .operation-overlay,
 .achievement-overlay { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b3088; }
+.operation-overlay { z-index: 110; }
 .operation-modal { width: min(370px, 100%); display: grid; justify-items: center; gap: 8px; padding: 22px; border: 2px solid #1b5b94; border-radius: 6px; background: #f8fcfb; box-shadow: 7px 7px 0 #071a2e80; color: #193c61; text-align: center; }
 .operation-modal > img { width: 176px; height: 141px; object-fit: contain; image-rendering: pixelated; }
 .operation-modal .spinner { width: 24px; height: 24px; background-size: 192px 24px; }
@@ -1850,6 +1886,13 @@ button:disabled {
   .date-range-fields { grid-template-columns: 1fr; }
   .date-range-actions { grid-template-columns: auto 1fr auto; }
   .date-range-actions .primary { grid-column: 1 / -1; }
+  .email-composer-overlay { padding: 10px; }
+  .email-composer-modal { max-height: calc(100vh - 20px); }
+  .email-composer-header { padding: 16px; }
+  .email-composer-content { padding: 15px 16px 18px; }
+  .email-composer-message { min-height: 230px; }
+  .email-composer-actions { padding: 13px 16px 16px; }
+  .email-composer-actions button { min-width: 0; }
   .two,
   .three,
   .scope-grid,

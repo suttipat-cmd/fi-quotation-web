@@ -32,7 +32,7 @@ import { calculateCategoryTotals, calculateItemTotal, calculateQuotationTotals }
 import { documentAddonName, documentServiceName } from "./features/quotations/domain/document";
 import { quotationActions } from "./features/quotations/domain/status";
 import { getQuotationItems, saveQuotationDraft, updateQuotationRecipientDetails } from "./features/quotations/services/quotation-service";
-import { quotationPdfBaseName, sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
+import { quotationPdfBaseName, quotationPdfFileName, sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
 import { createPreviewPdf } from "./features/quotations/services/preview-pdf";
 import type { Profile, Quotation as Quote, QuotationForm as Form, QuotationItem as Item, Service } from "./features/quotations/types";
 import type { QuotationListAction } from "./features/quotations/components/QuotationGrid";
@@ -65,6 +65,14 @@ type CompanySettings = {
 type PaymentTerm = { id: string; name: string; body: string; active: boolean; sort_order: number };
 type BankAccount = { id: string; bank_name: string; account_name: string; account_number: string; branch: string | null; active: boolean; is_default: boolean };
 type EmailTemplate = { code: string; subject_template: string; body_template: string; fixed_cc: string[] };
+type EmailComposerDraft = {
+  quotation: Quote;
+  to: string[];
+  cc: string[];
+  subject: string;
+  message: string;
+  attachmentName: string;
+};
 type UserSalesScope = { user_id: string; all_sales: boolean; sales_profile_ids: string[] };
 type LoginAppearance = { id: boolean; background_key: BackgroundKey; background_url: string | null };
 
@@ -227,6 +235,7 @@ function App() {
   const [toast, setToast] = useState<Toast>(null);
   const [achievement, setAchievement] = useState<Achievement>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
+  const [emailDraft, setEmailDraft] = useState<EmailComposerDraft | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
   const [soundMode, setSoundMode] = useState<"melody" | "playful">(() => window.localStorage.getItem("fi-quotation-sound-mode") === "playful" ? "playful" : "melody");
   const [editorDirty, setEditorDirty] = useState(false);
@@ -702,8 +711,38 @@ function App() {
       onConfirm: () => void performRevision(target),
     });
   }
-  async function performDocumentAction(action: "generate_pdf" | "send_email", target: Quote) {
+  async function performPdfAction(target: Quote) {
     if (!target) return;
+    if (!canManageQuote(target)) {
+      notify("คุณไม่มีสิทธิ์ดำเนินการกับเอกสารนี้", "error");
+      return;
+    }
+    const validationError = validateQuotationForPdf(detailItems, formFromQuotation(target));
+    if (validationError) {
+      notify(validationError, "error");
+      return;
+    }
+    await run("กำลังสร้าง PDF", async () => {
+      if (!detailPaperRef.current) {
+        throw new Error("ยังไม่พร้อมสร้าง PDF กรุณารอสักครู่แล้วลองใหม่");
+      }
+      const pdf = await createPreviewPdf(detailPaperRef.current);
+      const result = await uploadGeneratedPdf(target, pdf);
+      if (!result.pdf_drive_url) throw new Error(result.message || "สร้าง PDF ไม่สำเร็จ");
+      setSelected({
+        ...target,
+        status: (result.status || "READY") as Quote["status"],
+        pdf_drive_url: result.pdf_drive_url,
+      });
+      await load();
+      setAchievement({
+        title: "ภารกิจ PDF สำเร็จ",
+        message: `${target.document_no} ถูกบันทึกลง Google Drive แล้ว`,
+      });
+      notify("สร้าง PDF เรียบร้อยแล้ว", "success");
+    });
+  }
+  async function prepareEmail(target: Quote) {
     if (!canManageQuote(target)) {
       notify("คุณไม่มีสิทธิ์ดำเนินการกับเอกสารนี้", "error");
       return;
@@ -713,85 +752,93 @@ function App() {
       : target.contact_email
         ? [target.contact_email]
         : [];
-    const validationError = action === "generate_pdf"
-      ? validateQuotationForPdf(detailItems, formFromQuotation(target))
-      : validateQuotationForEmail(target.contact_name || "", recipients);
+    const validationError = validateQuotationForEmail(target.contact_name || "", recipients);
     if (validationError) {
       notify(validationError, "error");
       return;
     }
-    await run(
-      action === "generate_pdf" ? "กำลังสร้าง PDF" : "กำลังส่งอีเมล",
-      async () => {
-        if (action === "generate_pdf") {
-          if (!detailPaperRef.current) {
-            throw new Error("ยังไม่พร้อมสร้าง PDF กรุณารอสักครู่แล้วลองใหม่");
-          }
-          const pdf = await createPreviewPdf(detailPaperRef.current);
-          const result = await uploadGeneratedPdf(target, pdf);
-          if (!result.pdf_drive_url) throw new Error(result.message || "สร้าง PDF ไม่สำเร็จ");
-          setSelected({
-            ...target,
-            status: (result.status || "READY") as Quote["status"],
-            pdf_drive_url: result.pdf_drive_url,
-          });
-        } else {
-          if (!target.sales_email) throw new Error("ยังไม่มีอีเมลของผู้เสนอราคา กรุณาให้ผู้ดูแลระบบตั้งค่าข้อมูลฝ่ายขายก่อนส่งอีเมล");
-          const { data: template, error: templateError } = await supabase
-            .from("email_templates")
-            .select("code, subject_template, body_template, fixed_cc")
-            .eq("code", "QUOTATION_SEND")
-            .single();
-          if (templateError || !template) throw new Error(templateError?.message || "ไม่พบเทมเพลตอีเมล");
-          const mainServices = (target.recurring_addons || [])
-            .map(documentAddonName)
-            .filter(Boolean)
-            .join(", ") || (target.list_items || [])
-              .filter((item) => item.category === "RECURRING")
-              .map((item) => documentServiceName(item.service_name))
-              .filter(Boolean)
-              .join(", ") || "ตามรายละเอียดในใบเสนอราคา";
-          const values = {
-            recipient_name: target.contact_name ? `คุณ${target.contact_name}${target.contact_position ? ` / ${target.contact_position}` : ""}` : "ผู้เกี่ยวข้อง",
-            customer_name: target.customer_name || "",
-            document_no: target.document_no || "",
-            main_services: mainServices,
-            sales_name: target.sales_name || "",
-            sales_title: target.sales_title || "ฝ่ายขาย",
-            sales_phone: target.sales_phone || "-",
-          };
-          await sendQuotationEmail({
-            quotationId: target.id,
-            to: recipients,
-            cc: uniqueEmails([...(template.fixed_cc || []), target.sales_email]),
-            subject: renderEmailTemplate(template.subject_template, values),
-            message: renderEmailTemplate(template.body_template, values),
-          });
-        }
-        await load();
-        if (action === "generate_pdf") {
-          setAchievement({
-            title: "ภารกิจ PDF สำเร็จ",
-            message: `${target.document_no} ถูกบันทึกลง Google Drive แล้ว`,
-          });
-        }
-        notify(
-          action === "generate_pdf"
-            ? "สร้าง PDF เรียบร้อยแล้ว"
-            : "ส่งอีเมลเรียบร้อยแล้ว",
-          "success",
-        );
-      },
-    );
+    if (!target.pdf_drive_url) {
+      notify("ต้องสร้างไฟล์ PDF บน Google Drive ก่อนส่งอีเมล", "error");
+      return;
+    }
+    await run("กำลังเตรียมอีเมล", async () => {
+      if (!target.sales_email) throw new Error("ยังไม่มีอีเมลของผู้เสนอราคา กรุณาให้ผู้ดูแลระบบตั้งค่าข้อมูลฝ่ายขายก่อนส่งอีเมล");
+      const { data: template, error: templateError } = await supabase
+        .from("email_templates")
+        .select("code, subject_template, body_template, fixed_cc")
+        .eq("code", "QUOTATION_SEND")
+        .single();
+      if (templateError || !template) throw new Error(templateError?.message || "ไม่พบเทมเพลตอีเมล");
+      const mainServices = (target.recurring_addons || [])
+        .map(documentAddonName)
+        .filter(Boolean)
+        .join(", ") || (target.list_items || [])
+          .filter((item) => item.category === "RECURRING")
+          .map((item) => documentServiceName(item.service_name))
+          .filter(Boolean)
+          .join(", ") || "ตามรายละเอียดในใบเสนอราคา";
+      const values = {
+        recipient_name: target.contact_name ? `คุณ${target.contact_name}${target.contact_position ? ` / ${target.contact_position}` : ""}` : "ผู้เกี่ยวข้อง",
+        customer_name: target.customer_name || "",
+        document_no: target.document_no || "",
+        main_services: mainServices,
+        sales_name: target.sales_name || "",
+        sales_title: target.sales_title || "ฝ่ายขาย",
+        sales_phone: target.sales_phone || "-",
+      };
+      setEmailDraft({
+        quotation: target,
+        to: uniqueEmails(recipients),
+        cc: uniqueEmails([...(template.fixed_cc || []), target.sales_email]),
+        subject: renderEmailTemplate(template.subject_template, values),
+        message: renderEmailTemplate(template.body_template, values),
+        attachmentName: quotationPdfFileName(target),
+      });
+    });
+  }
+  async function sendPreparedEmail(draft: EmailComposerDraft) {
+    const invalidRecipient = draft.to.find((email) => !/^\S+@\S+\.\S+$/.test(email));
+    if (invalidRecipient) {
+      notify(`อีเมลผู้รับไม่ถูกต้อง: ${invalidRecipient}`, "error");
+      return;
+    }
+    const recipients = uniqueEmails(draft.to);
+    if (!recipients.length) {
+      notify("กรุณาระบุอีเมลผู้รับอย่างน้อยหนึ่งรายการ", "error");
+      return;
+    }
+    if (!draft.subject.trim()) {
+      notify("กรุณาระบุหัวข้ออีเมล", "error");
+      return;
+    }
+    if (!draft.message.trim()) {
+      notify("กรุณาระบุเนื้อหาอีเมล", "error");
+      return;
+    }
+    await run("กำลังส่งอีเมล", async () => {
+      await sendQuotationEmail({
+        quotationId: draft.quotation.id,
+        to: recipients,
+        cc: draft.cc,
+        subject: draft.subject.trim(),
+        message: draft.message.trim(),
+      });
+      setEmailDraft(null);
+      await load();
+      notify("ส่งอีเมลเรียบร้อยแล้ว", "success");
+    });
   }
   function documentAction(action: "generate_pdf" | "send_email", target = selected) {
     if (!target) return;
-    const recipients = Array.isArray(target.recipient_emails) ? target.recipient_emails : target.contact_email ? [target.contact_email] : [];
+    if (action === "send_email") {
+      void prepareEmail(target);
+      return;
+    }
     setConfirmation({
-      title: action === "generate_pdf" ? "สร้าง PDF" : "ส่งอีเมล",
-      message: action === "generate_pdf" ? "ระบบจะสร้าง PDF และบันทึกลง Google Drive" : `ส่งอีเมลพร้อม PDF ไปที่ ${recipients.join(", ") || "ผู้รับที่ระบุ"}`,
-      confirmLabel: action === "generate_pdf" ? "สร้าง PDF" : "ส่งอีเมล",
-      onConfirm: () => void performDocumentAction(action, target),
+      title: "สร้าง PDF",
+      message: "ระบบจะสร้าง PDF และบันทึกลง Google Drive",
+      confirmLabel: "สร้าง PDF",
+      onConfirm: () => void performPdfAction(target),
     });
   }
   async function printSelectedQuotation() {
@@ -1051,6 +1098,15 @@ function App() {
           </section>
         </div>
       )}
+      {emailDraft && (
+        <EmailComposerModal
+          draft={emailDraft}
+          busy={loading === "กำลังส่งอีเมล"}
+          onChange={(patch) => setEmailDraft((current) => current ? { ...current, ...patch } : current)}
+          onClose={() => setEmailDraft(null)}
+          onSend={() => void sendPreparedEmail(emailDraft)}
+        />
+      )}
       {confirmation && (
         <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
           <button type="button" className="confirmation-backdrop" aria-label="ปิดหน้าต่างยืนยัน" disabled={busy} onClick={() => setConfirmation(null)} />
@@ -1085,10 +1141,14 @@ function EmailTags({
   emails,
   onChange,
   required = false,
+  label = "อีเมลผู้รับเอกสาร",
+  help = "กด Enter เพื่อเพิ่มอีเมลได้มากกว่าหนึ่งรายการ • ใช้สำหรับส่งอีเมลเท่านั้น",
 }: {
   emails: string[];
   onChange: (emails: string[]) => void;
   required?: boolean;
+  label?: string;
+  help?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -1105,7 +1165,7 @@ function EmailTags({
   };
   return (
     <label className="field">
-      <span>อีเมลผู้รับเอกสาร{required && <em aria-hidden="true"> *</em>}</span>
+      <span>{label}{required && <em aria-hidden="true"> *</em>}</span>
       <div className={`email-tags${error ? " has-error" : ""}`} onClick={(event) => event.currentTarget.querySelector("input")?.focus()}>
         {emails.map((email) => (
           <span key={email}>
@@ -1137,8 +1197,82 @@ function EmailTags({
           onBlur={add}
         />
       </div>
-      {error ? <small className="field-error" role="alert">{error}</small> : <small className="field-help">กด Enter เพื่อเพิ่มอีเมลได้มากกว่าหนึ่งรายการ • ใช้สำหรับส่งอีเมลเท่านั้น</small>}
+      {error ? <small className="field-error" role="alert">{error}</small> : <small className="field-help">{help}</small>}
     </label>
+  );
+}
+
+function EmailComposerModal({
+  draft,
+  busy,
+  onChange,
+  onClose,
+  onSend,
+}: {
+  draft: EmailComposerDraft;
+  busy: boolean;
+  onChange: (patch: Partial<Pick<EmailComposerDraft, "to" | "subject" | "message">>) => void;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [busy, onClose]);
+  return (
+    <div className="email-composer-overlay" role="dialog" aria-modal="true" aria-labelledby="email-composer-title">
+      <button type="button" className="email-composer-backdrop" aria-label="ปิดตัวอย่างอีเมล" disabled={busy} onClick={onClose} />
+      <section className="email-composer-modal">
+        <header className="email-composer-header">
+          <div>
+            <p className="eyebrow">ตรวจสอบก่อนส่ง</p>
+            <h2 id="email-composer-title">ตัวอย่างอีเมล</h2>
+            <span>{draft.quotation.document_no} • {draft.quotation.customer_name}</span>
+          </div>
+          <button type="button" className="email-composer-close" aria-label="ปิด" disabled={busy} onClick={onClose}>×</button>
+        </header>
+        <div className="email-composer-content">
+          <EmailTags
+            emails={draft.to}
+            onChange={(to) => onChange({ to })}
+            required
+            label="ถึง"
+            help="แก้ไขได้เฉพาะการส่งครั้งนี้ • กด Enter เพื่อเพิ่มผู้รับ"
+          />
+          <div className="field">
+            <span>สำเนาถึง <small>(กำหนดโดยระบบ)</small></span>
+            <div className="email-tags email-tags-readonly" aria-label="อีเมลสำเนาถึง">
+              {draft.cc.length ? draft.cc.map((email) => <span key={email}>{email}</span>) : <i>ไม่มีผู้รับสำเนา</i>}
+            </div>
+          </div>
+          <Field label="หัวข้ออีเมล" required>
+            <input value={draft.subject} disabled={busy} onChange={(event) => onChange({ subject: event.target.value })} />
+          </Field>
+          <Field label="เนื้อหาอีเมล" required>
+            <textarea className="email-composer-message" value={draft.message} disabled={busy} onChange={(event) => onChange({ message: event.target.value })} />
+          </Field>
+          <div className="email-attachment">
+            <PixelIcon name="actions/action-pdf" />
+            <span><small>ไฟล์แนบ PDF</small><strong>{draft.attachmentName}</strong></span>
+            <em>พร้อมแนบ</em>
+          </div>
+        </div>
+        <footer className="email-composer-actions">
+          <button type="button" disabled={busy} onClick={onClose}>ยกเลิก</button>
+          <button type="button" className="primary" disabled={busy || !draft.to.length || !draft.subject.trim() || !draft.message.trim()} onClick={onSend}>
+            {busy && <Spinner />}<PixelIcon name="actions/action-email" /> ส่งอีเมล
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }
 function Section({ title, children, id, action }: { title: string; children: ReactNode; id?: string; action?: ReactNode }) {
