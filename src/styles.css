@@ -568,6 +568,9 @@ button:disabled {
 .grid-customer-cell span { overflow: hidden; color: #75859a; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .grid-service-list { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grid-money { justify-content: flex-end; font-weight: 700; }
+.grid-recurring-amount { display: grid; width: 100%; min-width: 0; gap: 2px; justify-items: end; line-height: 1.15; }
+.grid-recurring-amount strong { color: #243b56; font-weight: 700; }
+.grid-recurring-amount span { max-width: 100%; overflow: hidden; color: #75859a; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .grid-action-cell { justify-content: center; overflow: visible !important; }
 .grid-row-actions { display: flex; justify-content: center; width: 100%; }
 .grid-action-trigger { display: inline-grid; width: 32px; height: 30px; place-items: center; border: 1px solid #b8d0d1; border-radius: 4px; background: #fbfdf9; color: #31577f; line-height: 1; box-shadow: 1px 1px 0 #b7cccc; }
@@ -1571,6 +1574,7 @@ button:disabled {
 .detail-amounts div { padding: 11px 13px; border: 1px solid #cfdfdf; border-radius: 5px; background: #f7fbfa; }
 .detail-amounts dt { color: #667b94; font-size: 12px; font-weight: 700; }
 .detail-amounts dd { margin: 3px 0 0; color: #194980; font-size: 22px; font-weight: 700; }
+.detail-amounts .detail-billing-cycle dd { font-size: 18px; line-height: 1.3; }
 .detail-pdf-link { display: inline-flex; margin-top: 13px; color: #165eaa; font-size: 13px; font-weight: 700; }
 .detail-cancellation-note { margin: 13px 0 0; color: #a73535; font-size: 13px; }
 .section-note { margin: -6px 0 13px; font-size: 13px; }

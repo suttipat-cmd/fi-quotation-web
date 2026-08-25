@@ -780,7 +780,7 @@ function App() {
       const values = {
         recipient_name: target.contact_name ? `คุณ${target.contact_name}${target.contact_position ? ` / ${target.contact_position}` : ""}` : "ผู้เกี่ยวข้อง",
         customer_name: target.customer_name || "",
-        document_no: target.document_no || "",
+        document_no: quotationPdfBaseName(target) || "",
         main_services: mainServices,
         sales_name: target.sales_name || "",
         sales_title: target.sales_title || "ฝ่ายขาย",
@@ -2304,7 +2304,7 @@ function DetailForm({
         </div>
         <div className="detail-status-row">
           <dl className="detail-amounts">
-            <div><dt>ยอดเงิน</dt><dd>{money(recurringTotal.net)}</dd></div>
+            <div className="detail-billing-cycle"><dt>รอบชำระค่าบริการ</dt><dd>{form.billing_cycles[0] || quote.billing_cycle || "ไม่ระบุ"}</dd></div>
             <div><dt>ค่าแรกเข้า</dt><dd>{money(oneTimeTotal.net)}</dd></div>
           </dl>
         </div>

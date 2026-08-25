@@ -50,6 +50,9 @@ const quotationGridTheme = themeQuartz.withParams({
 const revisionLabel = (revisionNo: number) =>
   revisionNo > 0 ? `(${revisionNo})` : null;
 
+const billingCycleLabel = (quotation?: Quotation) =>
+  quotation?.billing_cycles?.[0] || quotation?.billing_cycle || "ไม่ระบุรอบชำระ";
+
 const THAI_GRID_TEXT = {
   page: "หน้า",
   to: "ถึง",
@@ -229,13 +232,17 @@ export default function QuotationGrid({
         },
       },
       {
-        headerName: "ยอดเงิน",
+        headerName: "ค่าบริการ",
         colId: "recurringAmount",
-        flex: 0.9,
-        minWidth: 120,
-        cellClass: "grid-money",
+        flex: 1,
+        minWidth: 142,
         valueGetter: ({ data }) => data ? categoryNetAmount(data, "RECURRING") : 0,
-        valueFormatter: ({ value }) => money(Number(value || 0)),
+        cellRenderer: ({ data, value }: { data?: Quotation; value?: number }) => (
+          <div className="grid-recurring-amount" title={billingCycleLabel(data)}>
+            <strong>{money(Number(value || 0))}</strong>
+            <span>{billingCycleLabel(data)}</span>
+          </div>
+        ),
       },
       {
         headerName: "ค่าแรกเข้า",
