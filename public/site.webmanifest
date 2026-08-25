@@ -1,0 +1,17 @@
+{
+  "name": "FI Quotation",
+  "short_name": "FI Quotation",
+  "description": "ระบบจัดการใบเสนอราคา Forward Insight",
+  "display": "standalone",
+  "start_url": "/fi-quotation-web/",
+  "background_color": "#0d3f6b",
+  "theme_color": "#0d3f6b",
+  "icons": [
+    {
+      "src": "/fi-quotation-web/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

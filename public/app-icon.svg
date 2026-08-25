@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Forward Insight">
+  <rect width="64" height="64" rx="14" fill="#0d3f6b"/>
+  <rect x="3" y="3" width="58" height="58" rx="12" fill="none" stroke="#68e0d1" stroke-width="3"/>
+  <g transform="translate(8 8) scale(2)" shape-rendering="crispEdges">
+    <rect x="4" y="10" width="3" height="7" fill="#e9fbff"/>
+    <rect x="7" y="8" width="8" height="10" fill="#e9fbff"/>
+    <rect x="15" y="10" width="4" height="6" fill="#e9fbff"/>
+    <rect x="16" y="6" width="2" height="4" fill="#00d7ff"/>
+    <rect x="18" y="4" width="2" height="4" fill="#00d7ff"/>
+    <rect x="19" y="11" width="3" height="3" fill="#fdba24"/>
+    <rect x="7" y="16" width="5" height="3" fill="#68e0d1"/>
+  </g>
+</svg>

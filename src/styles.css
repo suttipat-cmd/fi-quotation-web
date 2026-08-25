@@ -152,6 +152,8 @@ button:disabled {
 .sidebar.collapsed .sidebar-label {
   display: none;
 }
+.sidebar.collapsed .account-profile { justify-content: center; }
+.sidebar.collapsed .account-avatar { width: 38px; height: 38px; }
 .sidebar.collapsed nav button,
 .sidebar.collapsed .account .text-button {
   justify-content: center;
@@ -166,6 +168,25 @@ button:disabled {
   font-size: 13px;
   overflow: hidden;
 }
+.account-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.account-profile > div { display: grid; min-width: 0; gap: 2px; }
+.account-avatar {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+  border: 2px solid #70ded0;
+  border-radius: 9px;
+  background: #173e67;
+  box-shadow: 2px 2px 0 #092945;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.account-avatar.has-photo { object-fit: cover; image-rendering: auto; }
 .account small {
   color: #9bbde2;
 }
@@ -258,8 +279,8 @@ button:disabled {
 .sound-mode-toggle:hover { transform: translate(-1px, -1px); border-color: #f2d16a; }
 .app-user-avatar {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   flex: 0 0 auto;
   border: 2px solid #8be4d5;
   border-radius: 7px;
@@ -268,6 +289,7 @@ button:disabled {
   object-fit: contain;
   image-rendering: pixelated;
 }
+.app-user-avatar.has-photo { object-fit: cover; image-rendering: auto; }
 .app-user-copy { display: grid; min-width: 0; line-height: 1.2; }
 .app-user-copy strong { max-width: 180px; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .app-user-copy small { color: #b8d2ee; font-size: 11px; }
@@ -632,6 +654,15 @@ button:disabled {
 .background-choice small { color: #75869a; font-size: 11px; }
 .background-file-input { width: 100%; max-width: 100%; color: #52657c; font-size: 10px; }
 .background-file-input::file-selector-button { margin-right: 6px; border: 1px solid #b5ced0; border-radius: 3px; background: #fff; color: #2e5780; padding: 4px 6px; font: inherit; font-weight: 700; cursor: pointer; }
+.profile-avatar-picker { display: flex; align-items: center; gap: 16px; min-height: 116px; padding: 14px; border: 1px dashed #afd1ce; border-radius: 7px; background: #f7fbf9; }
+.profile-avatar-preview { width: 88px; height: 88px; flex: 0 0 auto; border: 2px solid #64d5c9; border-radius: 12px; background: #173e67; box-shadow: 3px 3px 0 #b6d4d2; object-fit: contain; image-rendering: pixelated; }
+.profile-avatar-preview.has-photo { object-fit: cover; image-rendering: auto; }
+.profile-avatar-copy { display: grid; gap: 6px; }
+.profile-avatar-copy strong { color: #294865; }
+.profile-avatar-copy p { margin: 0; color: #75869a; font-size: 12px; }
+.profile-avatar-picker .inline-actions { justify-content: flex-start; flex-wrap: wrap; }
+.profile-avatar-picker .text-button { padding: 8px 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .badge {
   display: inline-flex;
   align-items: center;

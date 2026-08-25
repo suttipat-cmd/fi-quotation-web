@@ -138,6 +138,7 @@ export type Profile = {
   phone?: string | null;
   work_email?: string | null;
   active?: boolean;
+  avatar_url?: string | null;
   app_background_key?: "terraria" | "battlefield" | "shinchan" | "custom";
   app_background_url?: string | null;
 };

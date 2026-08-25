@@ -46,7 +46,7 @@ type Achievement = { title: string; message: string } | null;
 type Confirmation = { title: string; message: string; confirmLabel: string; tone?: "danger" | "primary"; onConfirm: () => void } | null;
 type View = "dashboard" | "create" | "edit" | "detail" | "settings";
 type Route = { view: View; id?: string };
-type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts" | "sales" | "user_scopes" | "appearance" | "email_template";
+type SettingTab = "company" | "services" | "payment_terms" | "bank_accounts" | "sales" | "user_scopes" | "profile_avatars" | "appearance" | "email_template";
 type BackgroundKey = "terraria" | "battlefield" | "shinchan" | "custom";
 type CompanySettings = {
   id: boolean;
@@ -87,6 +87,8 @@ const backgroundUrl = (key?: BackgroundKey | null, customUrl?: string | null) =>
   const option = BACKGROUND_OPTIONS.find((item) => item.key === key) || BACKGROUND_OPTIONS[0];
   return `${appBasePath}/assets/${option.asset}`;
 };
+const profileAvatarUrl = (profile?: Pick<Profile, "avatar_url"> | null) =>
+  profile?.avatar_url || pixelAsset("characters/whale/whale-idle@2x.png");
 const A4_WIDTH_PX = (210 / 25.4) * 96;
 const A4_HEIGHT_PX = (297 / 25.4) * 96;
 const normalizeQuoteStatus = (status: string): Quote["status"] =>
@@ -910,14 +912,24 @@ function App() {
         )}
       </nav>
       <div className="account">
-        <strong>{profile?.display_name || session.user.email}</strong>
-        <small>
-          {profile?.role === "ADMIN"
-            ? "ผู้ดูแลระบบ"
-            : profile?.role === "SALE"
-              ? "ฝ่ายขาย"
-              : "ผู้ใช้งาน"}
-        </small>
+        <div className="account-profile">
+          <img
+            className={`account-avatar${profile?.avatar_url ? " has-photo" : ""}`}
+            src={profileAvatarUrl(profile)}
+            alt=""
+            aria-hidden="true"
+          />
+          <div>
+            <strong>{profile?.display_name || session.user.email}</strong>
+            <small>
+              {profile?.role === "ADMIN"
+                ? "ผู้ดูแลระบบ"
+                : profile?.role === "SALE"
+                  ? "ฝ่ายขาย"
+                  : "ผู้ใช้งาน"}
+            </small>
+          </div>
+        </div>
         <button
           className="text-button"
           disabled={busy}
@@ -965,10 +977,9 @@ function App() {
           <button type="button" className={`sound-toggle${soundEnabled ? " active" : ""}`} aria-label={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} title={soundEnabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"} onClick={toggleSound}>{soundEnabled ? "♬" : "♩"}</button>
           {soundEnabled && <button type="button" className="sound-mode-toggle" aria-label="สลับโหมดเสียง" title={soundMode === "melody" ? "โหมดเมโลดี้ — กดเพื่อเปลี่ยนเป็นจังหวะสนุก" : "โหมดจังหวะสนุก — กดเพื่อเปลี่ยนเป็นเมโลดี้"} onClick={toggleSoundMode}>{soundMode === "melody" ? "♪" : "✦"}</button>}
           <img
-            className="app-user-avatar"
-            src={pixelAsset(profile?.role === "ADMIN" ? "brand/avatar-robot@2x.png" : "brand/avatar-whale@2x.png")}
-            alt=""
-            aria-hidden="true"
+            className={`app-user-avatar${profile?.avatar_url ? " has-photo" : ""}`}
+            src={profileAvatarUrl(profile)}
+            alt={`รูปโปรไฟล์ ${userName}`}
           />
           <span className="app-user-copy">
             <strong>{userName}</strong>
@@ -1410,6 +1421,47 @@ function BackgroundPicker({
   </div>;
 }
 
+function ProfileAvatarPicker({
+  value,
+  onChange,
+  onUpload,
+  uploading,
+}: {
+  value?: string | null;
+  onChange: (value: string | null) => void;
+  onUpload: (file: File) => void;
+  uploading: boolean;
+}) {
+  const inputId = useId();
+  return <div className="profile-avatar-picker">
+    <img
+      className={`profile-avatar-preview${value ? " has-photo" : ""}`}
+      src={value || pixelAsset("characters/whale/whale-idle@2x.png")}
+      alt={value ? "รูปโปรไฟล์ที่เลือก" : "Avatar เริ่มต้น"}
+    />
+    <div className="profile-avatar-copy">
+      <strong>รูปโปรไฟล์</strong>
+      <p>รองรับ PNG, JPG หรือ WEBP ขนาดไม่เกิน 5 MB</p>
+      <div className="inline-actions">
+        <label className="small-button" htmlFor={inputId}>{uploading && <Spinner />}อัปโหลดรูป</label>
+        <input
+          id={inputId}
+          className="visually-hidden"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          disabled={uploading}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onUpload(file);
+            event.currentTarget.value = "";
+          }}
+        />
+        {value && <button type="button" className="text-button" disabled={uploading} onClick={() => onChange(null)}>ใช้ Avatar เริ่มต้น</button>}
+      </div>
+    </div>
+  </div>;
+}
+
 function Settings({
   busy,
   notify,
@@ -1431,6 +1483,7 @@ function Settings({
   const [emailTemplate, setEmailTemplate] = useState<EmailTemplate | null>(null);
   const [loginAppearance, setLoginAppearance] = useState<LoginAppearance | null>(null);
   const [uploadingBackground, setUploadingBackground] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState<string | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -1441,7 +1494,7 @@ function Settings({
       supabase.from("services").select("*").order("sort_order"),
       supabase.from("payment_terms").select("*").order("sort_order"),
       supabase.from("bank_accounts").select("*").order("is_default", { ascending: false }),
-      supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active, app_background_key, app_background_url").order("display_name"),
+      supabase.from("profiles").select("id, display_name, role, email, job_title, phone, work_email, active, avatar_url, app_background_key, app_background_url").order("display_name"),
       supabase.from("user_sales_scopes").select("user_id, all_sales, sales_profile_ids"),
       supabase.from("email_templates").select("code, subject_template, body_template, fixed_cc").eq("code", "QUOTATION_SEND").maybeSingle(),
       supabase.from("login_appearance").select("id, background_key, background_url").eq("id", true).maybeSingle(),
@@ -1548,6 +1601,12 @@ function Settings({
         const results = await Promise.all(writes);
         error = results.find((result) => result.error)?.error || null;
       }
+      if (tab === "profile_avatars") {
+        const results = await Promise.all(appearanceProfiles.map((user) => supabase.from("profiles").update({
+          avatar_url: user.avatar_url || null,
+        }).eq("id", user.id)));
+        error = results.find((result) => result.error)?.error || null;
+      }
       if (tab === "appearance" && loginAppearance) {
         const appearanceResult = await supabase.from("login_appearance").update({
           background_key: loginAppearance.background_key,
@@ -1617,6 +1676,30 @@ function Settings({
       setUploadingBackground(null);
     }
   };
+  const uploadAvatar = async (file: File, profileId: string) => {
+    if (!file.type.startsWith("image/") || !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      notify("รองรับเฉพาะไฟล์ PNG, JPG และ WEBP", "error");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      notify("รูปโปรไฟล์ต้องมีขนาดไม่เกิน 5 MB", "error");
+      return;
+    }
+    setUploadingAvatar(profileId);
+    try {
+      const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+      const path = `${profileId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from("profile-avatars").upload(path, file, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from("profile-avatars").getPublicUrl(path);
+      updateAppearanceProfile(profileId, { avatar_url: data.publicUrl });
+      notify("อัปโหลดรูปโปรไฟล์แล้ว กดบันทึกการตั้งค่าเพื่อใช้งาน", "success");
+    } catch (error) {
+      notify(`อัปโหลดรูปโปรไฟล์ไม่สำเร็จ: ${friendlyError(errorMessage(error))}`, "error");
+    } finally {
+      setUploadingAvatar(null);
+    }
+  };
   const updateScope = (userId: string, patch: Partial<UserSalesScope>) => setSalesScopes((current) => {
     const existing = current.find((scope) => scope.user_id === userId) || { user_id: userId, all_sales: false, sales_profile_ids: [] };
     return [...current.filter((scope) => scope.user_id !== userId), { ...existing, ...patch }];
@@ -1661,6 +1744,7 @@ function Settings({
           ["bank_accounts", "บัญชีธนาคาร"],
           ["sales", "ข้อมูลฝ่ายขาย"],
           ["user_scopes", "สิทธิ์ผู้ใช้งาน"],
+          ["profile_avatars", "รูปโปรไฟล์"],
           ["appearance", "ภาพพื้นหลัง"],
           ["email_template", "เทมเพลตอีเมล"],
         ] as Array<[SettingTab, string]>).map(([value, label]) => (
@@ -1683,6 +1767,15 @@ function Settings({
           {tab === "bank_accounts" && <div className="settings-list">{bankAccounts.map((account) => <article className="settings-row" key={account.id}><div className="two"><Field label="ธนาคาร"><input value={account.bank_name} onChange={(event) => updateBank(account.id, { bank_name: event.target.value })} /></Field><Field label="ชื่อบัญชี"><input value={account.account_name} onChange={(event) => updateBank(account.id, { account_name: event.target.value })} /></Field></div><div className="two"><Field label="เลขที่บัญชี"><input value={account.account_number} onChange={(event) => updateBank(account.id, { account_number: event.target.value })} /></Field><Field label="สาขา"><input value={account.branch || ""} onChange={(event) => updateBank(account.id, { branch: event.target.value })} /></Field></div><div className="settings-toggles"><label className="toggle-field"><input type="checkbox" checked={account.active} onChange={(event) => updateBank(account.id, { active: event.target.checked })} /> เปิดใช้งาน</label><label className="toggle-field"><input type="radio" name="default-bank" checked={account.is_default} onChange={() => setBankAccounts((current) => current.map((item) => ({ ...item, is_default: item.id === account.id })))} /> บัญชีเริ่มต้น</label></div></article>)}</div>}
           {tab === "sales" && <div className="settings-list">{salesProfiles.map((sales) => <article className="settings-row" key={sales.id}><h3>{sales.display_name || sales.email || "ฝ่ายขาย"}</h3><div className="four"><Field label="ชื่อแสดง"><input value={sales.display_name || ""} onChange={(event) => updateSalesProfile(sales.id, { display_name: event.target.value })} /></Field><Field label="ตำแหน่ง"><input value={sales.job_title || ""} onChange={(event) => updateSalesProfile(sales.id, { job_title: event.target.value })} /></Field><Field label="โทรศัพท์"><input value={sales.phone || ""} onChange={(event) => updateSalesProfile(sales.id, { phone: event.target.value })} /></Field><Field label="อีเมลทำงาน"><input type="email" value={sales.work_email || ""} onChange={(event) => updateSalesProfile(sales.id, { work_email: event.target.value })} /></Field></div><label className="toggle-field"><input type="checkbox" checked={sales.active !== false} onChange={(event) => updateSalesProfile(sales.id, { active: event.target.checked })} /> เปิดใช้งาน</label></article>)}</div>}
           {tab === "user_scopes" && <div className="settings-list">{userProfiles.map((user) => { const scope = salesScopes.find((item) => item.user_id === user.id) || { user_id: user.id, all_sales: false, sales_profile_ids: [] }; return <article className="settings-row" key={user.id}><h3>{user.display_name || user.email || "ผู้ใช้งาน"}</h3><label className="toggle-field"><input type="checkbox" checked={scope.all_sales} onChange={(event) => updateScope(user.id, { all_sales: event.target.checked, sales_profile_ids: event.target.checked ? [] : scope.sales_profile_ids })} /> เห็นข้อมูลของฝ่ายขายทุกคน</label>{!scope.all_sales && <fieldset className="check-field"><legend>ฝ่ายขายที่อนุญาต</legend><div className="check-grid">{salesProfiles.filter((sales) => sales.active !== false).map((sales) => <label className="check-row" key={sales.id}><input type="checkbox" checked={scope.sales_profile_ids.includes(sales.id)} onChange={(event) => updateScope(user.id, { sales_profile_ids: event.target.checked ? [...scope.sales_profile_ids, sales.id] : scope.sales_profile_ids.filter((id) => id !== sales.id) })} />{sales.display_name || sales.email}</label>)}</div></fieldset>}</article>; })}</div>}
+          {tab === "profile_avatars" && <div className="settings-list">{appearanceProfiles.map((user) => <article className="settings-row appearance-user-row" key={user.id}>
+            <h3>{user.display_name || user.email || "ผู้ใช้งาน"} <small>{user.role === "ADMIN" ? "ผู้ดูแลระบบ" : user.role === "SALE" ? "ฝ่ายขาย" : "ผู้ใช้งาน"}</small></h3>
+            <ProfileAvatarPicker
+              value={user.avatar_url}
+              onChange={(avatar_url) => updateAppearanceProfile(user.id, { avatar_url })}
+              onUpload={(file) => void uploadAvatar(file, user.id)}
+              uploading={uploadingAvatar === user.id}
+            />
+          </article>)}</div>}
           {tab === "appearance" && <div className="settings-form appearance-settings">
             <section className="appearance-group">
               <h2>พื้นหลังหน้าเข้าสู่ระบบ</h2>
