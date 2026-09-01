@@ -1864,7 +1864,7 @@ function Editor({
   };
   return (
     <>
-      <header className="page-header editor-page-header form-page-header">
+      <header className="page-header editor-page-header form-page-header quotation-form-page-header">
         <div>
           <p className="eyebrow">
             {mode === "create" ? "ใบเสนอราคาใหม่" : "แก้ไขใบเสนอราคา"}
@@ -2282,12 +2282,15 @@ function Preview({
   const paperRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [isPaperOverflow, setIsPaperOverflow] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const totals = useMemo(() => calculateQuotationTotals(form, items), [form, items]);
   const group = (category: Item["category"]) => calculateCategoryTotals(category, form, items, totals);
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
-    const updateScale = () => setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
+    const updateScale = () => {
+      if (node.clientWidth > 0) setScale(Math.min(1, node.clientWidth / A4_WIDTH_PX));
+    };
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(node);
@@ -2304,13 +2307,24 @@ function Preview({
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [form, items, totals, scale]);
   return (
-    <aside className="preview-panel">
-      <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
-      {isPaperOverflow && <p className="preview-overflow" role="alert">เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF</p>}
-      <div className="preview-scroll" ref={scrollRef}>
-        <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
-          <div className="preview-paper-scale" ref={paperRef} style={{ transform: `scale(${scale})` }}>
-            <QuotePaper form={form} items={items} group={group} documentNo={quotation ? quotationPdfBaseName(quotation) : undefined} paperRef={externalPaperRef} />
+    <aside className={`preview-panel${mobilePreviewOpen ? " preview-panel-open" : ""}`}>
+      <button
+        type="button"
+        className="mobile-preview-toggle"
+        aria-expanded={mobilePreviewOpen}
+        onClick={() => setMobilePreviewOpen((open) => !open)}
+      >
+        <PixelIcon name="actions/action-pdf" />
+        {mobilePreviewOpen ? "ซ่อนตัวอย่าง PDF" : "ดูตัวอย่าง PDF"}
+      </button>
+      <div className="preview-content">
+        <p className="preview-label">ตัวอย่างใบเสนอราคา</p>
+        {isPaperOverflow && <p className="preview-overflow" role="alert">เนื้อหาเกิน 1 หน้า A4 — ลดหรือย่อข้อความหมายเหตุก่อนบันทึก PDF</p>}
+        <div className="preview-scroll" ref={scrollRef}>
+          <div className="preview-paper-frame" style={{ width: `${A4_WIDTH_PX * scale}px`, height: `${A4_HEIGHT_PX * scale}px` }}>
+            <div className="preview-paper-scale" ref={paperRef} style={{ transform: `scale(${scale})` }}>
+              <QuotePaper form={form} items={items} group={group} documentNo={quotation ? quotationPdfBaseName(quotation) : undefined} paperRef={externalPaperRef} />
+            </div>
           </div>
         </div>
       </div>

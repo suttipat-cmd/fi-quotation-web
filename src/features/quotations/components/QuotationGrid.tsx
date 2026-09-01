@@ -168,6 +168,74 @@ function RowActions({
   );
 }
 
+function MobileQuotationCards({
+  quotes,
+  onSelect,
+  onAction,
+  canManage,
+  activeActionId,
+  setActiveActionId,
+}: {
+  quotes: Quotation[];
+  onSelect: (quote: Quotation) => void;
+  onAction: (quote: Quotation, action: QuotationListAction) => void;
+  canManage: (quote: Quotation) => boolean;
+  activeActionId: string | null;
+  setActiveActionId: (id: string | null) => void;
+}) {
+  return (
+    <div className="quotation-mobile-cards" aria-label="รายการใบเสนอราคา">
+      {quotes.map((quote) => {
+        const recurringAmount = categoryNetAmount(quote, "RECURRING");
+        const oneTimeAmount = categoryNetAmount(quote, "ONE_TIME");
+        const documentNumber = [quote.document_no, revisionLabel(quote.revision_no)].filter(Boolean).join(" ");
+        return (
+          <article
+            className="quotation-mobile-card"
+            key={quote.id}
+            tabIndex={0}
+            aria-label={`เปิดรายละเอียด ${documentNumber}`}
+            onClick={() => onSelect(quote)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(quote);
+              }
+            }}
+          >
+            <div className="quotation-mobile-card-head">
+              <div>
+                <strong>{documentNumber}</strong>
+                <span>{displayDate(quote.issued_at)}</span>
+              </div>
+              <RowActions
+                quote={quote}
+                open={activeActionId === quote.id}
+                onAction={onAction}
+                onOpenChange={(open) => setActiveActionId(open ? quote.id : null)}
+                canManage={canManage(quote)}
+              />
+            </div>
+            <div className="quotation-mobile-customer">
+              <strong>{quote.customer_name || "ไม่ระบุลูกค้า"}</strong>
+              {quote.contact_name && <span>{quote.contact_name}</span>}
+            </div>
+            <div className="quotation-mobile-meta">
+              <span><b>รอบชำระ</b>{billingCycleLabel(quote)}</span>
+              <span><b>บริการ</b>{quote.recurring_addons?.join(", ") || "—"}</span>
+            </div>
+            <dl className="quotation-mobile-amounts">
+              <div><dt>ค่าบริการ</dt><dd>{money(recurringAmount)}</dd></div>
+              <div><dt>ค่าแรกเข้า</dt><dd>{money(oneTimeAmount)}</dd></div>
+            </dl>
+            <QuotationStatusBadge status={quote.status} />
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function QuotationGrid({
   quotes,
   onSelect,
@@ -278,6 +346,7 @@ export default function QuotationGrid({
   );
 
   return (
+    <>
     <div className={`quotation-grid ${quotes.length <= 10 ? "compact-pagination" : ""}`}>
       <AgGridProvider modules={modules}>
         <AgGridReact<Quotation>
@@ -300,5 +369,14 @@ export default function QuotationGrid({
         />
       </AgGridProvider>
     </div>
+    <MobileQuotationCards
+      quotes={quotes}
+      onSelect={onSelect}
+      onAction={onAction}
+      canManage={canManage}
+      activeActionId={activeActionId}
+      setActiveActionId={setActiveActionId}
+    />
+    </>
   );
 }
