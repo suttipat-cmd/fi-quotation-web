@@ -73,6 +73,16 @@ type EmailComposerDraft = {
   message: string;
   attachmentName: string;
 };
+type EmailLog = {
+  id: string;
+  recipient_to: string[];
+  recipient_cc: string[];
+  subject: string;
+  status: "PENDING" | "SENT" | "FAILED";
+  error_message: string | null;
+  sent_at: string;
+  sender?: { display_name: string | null; email: string | null } | null;
+};
 type UserSalesScope = { user_id: string; all_sales: boolean; sales_profile_ids: string[] };
 type LoginAppearance = { id: boolean; background_key: BackgroundKey; background_url: string | null };
 
@@ -238,6 +248,8 @@ function App() {
   const [achievement, setAchievement] = useState<Achievement>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [emailDraft, setEmailDraft] = useState<EmailComposerDraft | null>(null);
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
+  const [showEmailHistory, setShowEmailHistory] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
   const [soundMode, setSoundMode] = useState<"melody" | "playful">(() => window.localStorage.getItem("fi-quotation-sound-mode") === "playful" ? "playful" : "melody");
   const [editorDirty, setEditorDirty] = useState(false);
@@ -601,9 +613,27 @@ function App() {
       navigate("edit", quote.id);
     });
   }
+  async function loadEmailHistory(quotationId: string) {
+    const { data, error } = await supabase
+      .from("email_logs")
+      .select("id, recipient_to, recipient_cc, subject, status, error_message, sent_at, sender:profiles!email_logs_sent_by_fkey(display_name, email)")
+      .eq("quotation_id", quotationId)
+      .order("sent_at", { ascending: false });
+    if (error) throw error;
+    return (data || []).map((log) => ({
+      ...log,
+      sender: Array.isArray(log.sender) ? log.sender[0] || null : log.sender || null,
+    })) as EmailLog[];
+  }
   async function openDetail(quote: Quote) {
     await run("กำลังเปิดรายละเอียดใบเสนอราคา", async () => {
-      setDetailItems(await getQuotationItems(quote.id));
+      const [savedItems, history] = await Promise.all([
+        getQuotationItems(quote.id),
+        loadEmailHistory(quote.id),
+      ]);
+      setDetailItems(savedItems);
+      setEmailLogs(history);
+      setShowEmailHistory(false);
       setSelected(quote);
       navigate("detail", quote.id);
     });
@@ -838,6 +868,7 @@ function App() {
         message: draft.message.trim(),
       });
       setEmailDraft(null);
+      setEmailLogs(await loadEmailHistory(draft.quotation.id));
       await load();
       notify("ส่งอีเมลเรียบร้อยแล้ว", "success");
     });
@@ -1081,6 +1112,8 @@ function App() {
             onCopy={() => void copyAsNew()}
             onPdf={() => void documentAction("generate_pdf")}
             onEmail={() => void documentAction("send_email")}
+            emailLogs={emailLogs}
+            onShowEmailHistory={() => setShowEmailHistory(true)}
             onPrint={() => void printSelectedQuotation()}
             onAccept={() => void acceptQuotation()}
             onCancel={(reason, note) => void cancelQuotation(reason, note)}
@@ -1134,10 +1167,23 @@ function App() {
         <EmailComposerModal
           draft={emailDraft}
           busy={loading === "กำลังส่งอีเมล"}
+          priorSentCount={emailLogs.filter((log) => log.status === "SENT").length}
           onChange={(patch) => setEmailDraft((current) => current ? { ...current, ...patch } : current)}
           onClose={() => setEmailDraft(null)}
-          onSend={() => void sendPreparedEmail(emailDraft)}
+          onSend={() => {
+            const sentCount = emailLogs.filter((log) => log.status === "SENT").length;
+            setConfirmation({
+              title: sentCount ? "ยืนยันการส่งอีเมลอีกครั้ง" : "ยืนยันการส่งอีเมล",
+              message: `${sentCount ? `ใบเสนอราคานี้เคยส่งสำเร็จ ${sentCount} ครั้ง\n` : ""}จะส่งถึง ${emailDraft.to.join(", ")}\nระบบจะป้องกันการส่งซ้ำภายใน 60 วินาที`,
+              confirmLabel: sentCount ? "ส่งอีกครั้ง" : "ส่งอีเมล",
+              tone: "primary",
+              onConfirm: () => void sendPreparedEmail(emailDraft),
+            });
+          }}
         />
+      )}
+      {showEmailHistory && selected && (
+        <EmailHistoryModal quote={selected} logs={emailLogs} onClose={() => setShowEmailHistory(false)} />
       )}
       {confirmation && (
         <div className="confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
@@ -1237,12 +1283,14 @@ function EmailTags({
 function EmailComposerModal({
   draft,
   busy,
+  priorSentCount,
   onChange,
   onClose,
   onSend,
 }: {
   draft: EmailComposerDraft;
   busy: boolean;
+  priorSentCount: number;
   onChange: (patch: Partial<Pick<EmailComposerDraft, "to" | "subject" | "message">>) => void;
   onClose: () => void;
   onSend: () => void;
@@ -1300,13 +1348,45 @@ function EmailComposerModal({
         <footer className="email-composer-actions">
           <button type="button" disabled={busy} onClick={onClose}>ยกเลิก</button>
           <button type="button" className="primary" disabled={busy || !draft.to.length || !draft.subject.trim() || !draft.message.trim()} onClick={onSend}>
-            {busy && <Spinner />}<PixelIcon name="actions/action-email" /> ส่งอีเมล
+            {busy && <Spinner />}<PixelIcon name="actions/action-email" /> {priorSentCount ? "ส่งอีกครั้ง" : "ส่งอีเมล"}
           </button>
         </footer>
       </section>
     </div>
   );
 }
+
+function EmailHistoryModal({ quote, logs, onClose }: { quote: Quote; logs: EmailLog[]; onClose: () => void }) {
+  const formatSentAt = (value: string) => new Intl.DateTimeFormat("th-TH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+  return (
+    <div className="email-history-overlay" role="dialog" aria-modal="true" aria-labelledby="email-history-title">
+      <button type="button" className="email-history-backdrop" aria-label="ปิดประวัติการส่งอีเมล" onClick={onClose} />
+      <section className="email-history-modal">
+        <header className="email-history-header">
+          <div><p className="eyebrow">ประวัติการส่งอีเมล</p><h2 id="email-history-title">{quote.document_no}</h2><span>แสดงการส่งทั้งหมดล่าสุดก่อน</span></div>
+          <button type="button" className="email-composer-close" aria-label="ปิด" onClick={onClose}>×</button>
+        </header>
+        <div className="email-history-content">
+          {!logs.length ? <p className="muted">ยังไม่มีประวัติการส่งอีเมล</p> : logs.map((log) => (
+            <article className={`email-history-entry ${log.status.toLowerCase()}`} key={log.id}>
+              <div className="email-history-entry-head"><strong>{log.status === "SENT" ? "ส่งสำเร็จ" : log.status === "FAILED" ? "ส่งไม่สำเร็จ" : "กำลังส่ง"}</strong><time dateTime={log.sent_at}>{formatSentAt(log.sent_at)}</time></div>
+              <p><b>ผู้ส่ง:</b> {log.sender?.display_name || log.sender?.email || "ไม่ระบุ"}</p>
+              <p><b>ถึง:</b> {log.recipient_to.join(", ") || "-"}</p>
+              <p><b>สำเนาถึง:</b> {log.recipient_cc.join(", ") || "-"}</p>
+              <p><b>หัวข้อ:</b> {log.subject}</p>
+              {log.error_message && <p className="email-history-error"><b>ข้อผิดพลาด:</b> {log.error_message}</p>}
+            </article>
+          ))}
+        </div>
+        <footer className="email-composer-actions"><span>ส่งสำเร็จ {logs.filter((log) => log.status === "SENT").length} ครั้ง</span><button type="button" className="primary" onClick={onClose}>ปิด</button></footer>
+      </section>
+    </div>
+  );
+}
+
 function Section({ title, children, id, action }: { title: string; children: ReactNode; id?: string; action?: ReactNode }) {
   return (
     <section className="form-section" id={id}>
@@ -2502,6 +2582,8 @@ function Detail({
   onCopy,
   onPdf,
   onEmail,
+  emailLogs,
+  onShowEmailHistory,
   onPrint,
   onAccept,
   onCancel,
@@ -2517,6 +2599,8 @@ function Detail({
   onCopy: () => void;
   onPdf: () => void;
   onEmail: () => void;
+  emailLogs: EmailLog[];
+  onShowEmailHistory: () => void;
   onPrint: () => void;
   onAccept: () => void;
   onCancel: (reason: string, note: string) => void;
@@ -2531,6 +2615,7 @@ function Detail({
   const emailReady =
     Boolean(quote.pdf_drive_url) &&
     Boolean(quote.recipient_emails?.length || quote.contact_email);
+  const sentEmailCount = emailLogs.filter((log) => log.status === "SENT").length;
   useEffect(() => {
     if (quote.status === "CANCELLED") setShowCancellation(false);
   }, [quote.status]);
@@ -2562,7 +2647,12 @@ function Detail({
               title={!emailReady ? "ต้องมีไฟล์ PDF บน Google Drive และอีเมลผู้รับก่อน" : undefined}
               onClick={onEmail}
             >
-              <PixelIcon name="actions/action-email" /> ส่งอีเมล
+              <PixelIcon name="actions/action-email" /> {sentEmailCount ? "ส่งอีกครั้ง" : "ส่งอีเมล"}
+            </button>
+          )}
+          {emailLogs.length > 0 && (
+            <button type="button" disabled={busy} onClick={onShowEmailHistory}>
+              <PixelIcon name="actions/action-email" /> ประวัติอีเมล ({sentEmailCount})
             </button>
           )}
           {actions.canPrint && (

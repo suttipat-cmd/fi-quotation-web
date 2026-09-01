@@ -90,12 +90,39 @@ Deno.serve(async (req) => {
     if (payload.action === 'send_email') {
       if (!['READY', 'ACCEPTED'].includes(quote.status)) return json({ message: 'ส่งอีเมลได้เฉพาะใบเสนอราคาที่ยืนยันแล้วหรือตอบรับแล้ว' }, 409)
       if (!existing?.pdf_drive_file_id) return json({ message: 'กรุณาสร้างและยืนยัน PDF ก่อนส่งอีเมล' }, 422)
-      await callAppsScript(scriptUrl, { action: 'send_email', secret, email: { to: payload.to || [], cc: payload.cc || [], bcc: payload.bcc || [], subject: payload.subject, message: payload.message }, pdfFileId: existing.pdf_drive_file_id })
-      const { error: emailLogError } = await adminDb.from('email_logs').insert({ quotation_id: quote.id, revision_id: existing.id, recipient_to: payload.to || [], recipient_cc: payload.cc || [], recipient_bcc: payload.bcc || [], subject: payload.subject, message: payload.message, status: 'SENT', sent_by: user.id })
+      const { data: reservation, error: reservationError } = await adminDb.rpc('reserve_quotation_email_send', {
+        p_quotation_id: quote.id,
+        p_revision_id: existing.id,
+        p_recipient_to: payload.to || [],
+        p_recipient_cc: payload.cc || [],
+        p_recipient_bcc: payload.bcc || [],
+        p_subject: payload.subject,
+        p_message: payload.message,
+        p_sent_by: user.id,
+      }).single()
+      if (reservationError?.code === 'P0001') return json({ message: reservationError.message }, 409)
+      if (reservationError) throw reservationError
+      if (!reservation?.email_log_id) throw new Error('ไม่สามารถจองคิวส่งอีเมลได้')
+
+      try {
+        await callAppsScript(scriptUrl, { action: 'send_email', secret, email: { to: payload.to || [], cc: payload.cc || [], bcc: payload.bcc || [], subject: payload.subject, message: payload.message }, pdfFileId: existing.pdf_drive_file_id })
+      } catch (error) {
+        const { error: emailLogError } = await adminDb
+          .from('email_logs')
+          .update({ status: 'FAILED', error_message: errorMessage(error) })
+          .eq('id', reservation.email_log_id)
+        if (emailLogError) console.error('failed to record email failure', emailLogError)
+        throw error
+      }
+
+      const { error: emailLogError } = await adminDb
+        .from('email_logs')
+        .update({ status: 'SENT', error_message: null })
+        .eq('id', reservation.email_log_id)
       if (emailLogError) throw emailLogError
       const { error: auditError } = await adminDb.from('audit_logs').insert({ quotation_id: quote.id, actor_id: user.id, action: 'EMAIL_SENT', metadata: { revision: quote.revision_no } })
       if (auditError) throw auditError
-      return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว' })
+      return json({ message: 'ส่งอีเมลเรียบร้อยแล้ว', prior_sent_count: reservation.prior_sent_count })
     }
     return json({ message: 'ไม่รองรับคำสั่งนี้' }, 400)
   } catch (error) {
