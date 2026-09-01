@@ -241,6 +241,8 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem("fi-quotation-sound") === "on");
   const [soundMode, setSoundMode] = useState<"melody" | "playful">(() => window.localStorage.getItem("fi-quotation-sound-mode") === "playful" ? "playful" : "melody");
   const [editorDirty, setEditorDirty] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const locked = useRef(false);
   const loadRequestRef = useRef(0);
   const clockSkewRecoveryRef = useRef<Promise<boolean> | null>(null);
@@ -271,14 +273,24 @@ function App() {
   };
   const resetSidebarCollapseTimer = () => {
     if (sidebarCollapseTimer.current !== null) window.clearTimeout(sidebarCollapseTimer.current);
-    if (!collapsed) sidebarCollapseTimer.current = window.setTimeout(() => setCollapsed(true), 5000);
+    if (!isMobileViewport && !collapsed) sidebarCollapseTimer.current = window.setTimeout(() => setCollapsed(true), 5000);
   };
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const syncViewport = () => {
+      setIsMobileViewport(query.matches);
+      if (!query.matches) setMobileNavOpen(false);
+    };
+    syncViewport();
+    query.addEventListener("change", syncViewport);
+    return () => query.removeEventListener("change", syncViewport);
+  }, []);
   useEffect(() => {
     resetSidebarCollapseTimer();
     return () => {
       if (sidebarCollapseTimer.current !== null) window.clearTimeout(sidebarCollapseTimer.current);
     };
-  }, [collapsed]);
+  }, [collapsed, isMobileViewport]);
   const notify = (text: string, type: NonNullable<Toast>["type"] = "info") => {
     setToast({ text, type });
   };
@@ -881,22 +893,26 @@ function App() {
           : "ตั้งค่าระบบ";
   const userName = profile?.display_name || session.user.email || "ผู้ใช้งาน";
   const isRestoringDocumentRoute = view !== "dashboard" && view !== "settings" && !restoredRoute.current;
+  const navigateFromSidebar = (next: View) => {
+    if (navigate(next)) setMobileNavOpen(false);
+  };
   const nav = (
     <aside
-      className={`sidebar ${collapsed ? "collapsed" : ""}`}
+      className={`sidebar ${collapsed ? "collapsed" : ""}${mobileNavOpen ? " mobile-open" : ""}`}
       onMouseEnter={() => {
+        if (isMobileViewport) return;
         if (collapsed) setCollapsed(false);
         else resetSidebarCollapseTimer();
       }}
-      onMouseMove={resetSidebarCollapseTimer}
-      onPointerDownCapture={resetSidebarCollapseTimer}
-      onFocusCapture={resetSidebarCollapseTimer}
+      onMouseMove={() => { if (!isMobileViewport) resetSidebarCollapseTimer(); }}
+      onPointerDownCapture={() => { if (!isMobileViewport) resetSidebarCollapseTimer(); }}
+      onFocusCapture={() => { if (!isMobileViewport) resetSidebarCollapseTimer(); }}
     >
       <p className="sidebar-label">เมนูหลัก</p>
       <nav>
         <button
           className={view === "dashboard" ? "active" : ""}
-          onClick={() => navigate("dashboard")}
+          onClick={() => navigateFromSidebar("dashboard")}
         >
           <PixelIcon name="navigation/nav-dashboard" />
           <b>ภาพรวม</b>
@@ -904,7 +920,7 @@ function App() {
         {profile?.role === "ADMIN" && (
           <button
             className={view === "settings" ? "active" : ""}
-            onClick={() => navigate("settings")}
+            onClick={() => navigateFromSidebar("settings")}
           >
             <PixelIcon name="navigation/nav-settings" />
             <b>ตั้งค่า</b>
@@ -964,10 +980,14 @@ function App() {
         <div className="app-topbar-start">
           <button
             className="app-menu-toggle"
-            aria-label="ย่อหรือขยายเมนู"
-            onClick={() => setCollapsed((value) => !value)}
+            aria-label={isMobileViewport ? (mobileNavOpen ? "ปิดเมนู" : "เปิดเมนู") : "ย่อหรือขยายเมนู"}
+            aria-expanded={isMobileViewport ? mobileNavOpen : !collapsed}
+            onClick={() => {
+              if (isMobileViewport) setMobileNavOpen((open) => !open);
+              else setCollapsed((value) => !value);
+            }}
           >
-            {collapsed ? "☰" : "‹"}
+            {isMobileViewport ? (mobileNavOpen ? "×" : "☰") : (collapsed ? "☰" : "‹")}
           </button>
           <Brand />
           <span className="app-topbar-subtitle">ระบบจัดการใบเสนอราคา</span>
@@ -987,6 +1007,7 @@ function App() {
           </span>
         </div>
       </header>
+      {isMobileViewport && mobileNavOpen && <button type="button" className="mobile-nav-backdrop" aria-label="ปิดเมนู" onClick={() => setMobileNavOpen(false)} />}
       {nav}
       <main
         className={`work ${view === "create" || view === "edit" || view === "detail" ? "editor-work" : ""}`}

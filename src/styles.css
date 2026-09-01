@@ -1893,8 +1893,18 @@ button:disabled {
     top: var(--app-topbar-safe-height);
   }
   .sidebar.collapsed {
-    transform: translateX(0);
+    transform: translateX(-100%);
     width: min(286px, calc(100vw - 48px));
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .mobile-nav-backdrop {
+    position: fixed;
+    z-index: 29;
+    top: var(--app-topbar-safe-height);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background: #071f3699;
   }
   .work {
     height: calc(100dvh - var(--app-topbar-safe-height));
