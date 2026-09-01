@@ -199,6 +199,16 @@ button:disabled {
   padding: 30px 34px 48px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* This is the scrolling surface.  Keep the wallpaper on it as well as the
+     shell so a short settings tab never exposes the document's fallback
+     colour after the user scrolls within this fixed-height pane. */
+  background-color: #315d73;
+  background-image:
+    linear-gradient(#eff6f48a, #eff6f48a),
+    var(--system-wallpaper);
+  background-position: center, center;
+  background-size: cover, cover;
+  background-attachment: local, local;
 }
 .editor-work {
   height: calc(100vh - var(--app-topbar-height));
