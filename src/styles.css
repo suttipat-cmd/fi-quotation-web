@@ -2142,6 +2142,15 @@ button:disabled {
     width: 210mm !important;
     min-width: 210mm !important;
   }
+  /* On a narrow viewport the preview is normally collapsed behind this
+     control. Printing must always render the A4 document, regardless of the
+     current responsive-preview state. */
+  .mobile-preview-toggle {
+    display: none !important;
+  }
+  .preview-panel .preview-content {
+    display: block !important;
+  }
   .preview-label {
     display: none !important;
   }
