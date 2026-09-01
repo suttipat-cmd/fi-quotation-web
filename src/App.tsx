@@ -701,28 +701,28 @@ function App() {
     if (!selected) return;
     void performCancelQuotation(selected, reason, note);
   }
-  async function performRevision(target: Quote) {
+  async function performCopyAsNew(target: Quote) {
     if (!canManageQuote(target)) {
-      notify("คุณไม่มีสิทธิ์สร้างสำเนาเอกสารนี้", "error");
+      notify("คุณไม่มีสิทธิ์คัดลอกเอกสารนี้", "error");
       return;
     }
-    await run("กำลังสร้างฉบับแก้ไข", async () => {
-      const result = await supabase.rpc("create_quotation_revision", {
+    await run("กำลังคัดลอกเป็นใบใหม่", async () => {
+      const result = await supabase.rpc("copy_quotation_as_new", {
         p_quotation_id: target.id,
       });
-      if (result.error || !result.data) throw result.error || new Error("ไม่พบฉบับสำเนาที่สร้าง");
+      if (result.error || !result.data) throw result.error || new Error("ไม่พบใบเสนอราคาใหม่ที่สร้าง");
       setSelected({ ...result.data, status: normalizeQuoteStatus(String(result.data.status)) });
       await load();
-      notify("สร้างฉบับแก้ไขเรียบร้อยแล้ว", "success");
+      notify(`คัดลอกเป็นใบเสนอราคาใหม่ ${result.data.document_no} เรียบร้อยแล้ว`, "success");
     });
   }
-  function revision(target = selected) {
+  function copyAsNew(target = selected) {
     if (!target) return;
     setConfirmation({
-      title: "สร้างสำเนาใบเสนอราคา",
-      message: `ระบบจะสร้างฉบับแก้ไข ${String(target.revision_no + 1).padStart(2, "0")} จาก ${target.document_no}`,
-      confirmLabel: "สร้างสำเนา",
-      onConfirm: () => void performRevision(target),
+      title: "คัดลอกเป็นใบเสนอราคาใหม่",
+      message: "ระบบจะคัดลอกรายละเอียดเป็นใบเสนอราคาเลขใหม่ โดยไม่มีความเกี่ยวข้องกับเอกสารเดิม และตั้งวันที่เอกสารใหม่ตามค่าระบบ",
+      confirmLabel: "คัดลอกเป็นใบใหม่",
+      onConfirm: () => void performCopyAsNew(target),
     });
   }
   async function performPdfAction(target: Quote) {
@@ -871,7 +871,7 @@ function App() {
     if (action === "edit") return startEdit(quote);
     if (action === "email") return documentAction("send_email", quote);
     if (action === "accept") return acceptQuotation(quote);
-    return revision(quote);
+    return copyAsNew(quote);
   }
   if (booting)
     return (
@@ -1078,7 +1078,7 @@ function App() {
             paperRef={detailPaperRef}
             onBack={() => navigate("dashboard")}
             onEdit={() => void startEdit(selected)}
-            onRevision={() => void revision()}
+            onCopy={() => void copyAsNew()}
             onPdf={() => void documentAction("generate_pdf")}
             onEmail={() => void documentAction("send_email")}
             onPrint={() => void printSelectedQuotation()}
@@ -2482,7 +2482,7 @@ function Detail({
   paperRef,
   onBack,
   onEdit,
-  onRevision,
+  onCopy,
   onPdf,
   onEmail,
   onPrint,
@@ -2497,7 +2497,7 @@ function Detail({
   paperRef: { current: HTMLElement | null };
   onBack: () => void;
   onEdit: () => void;
-  onRevision: () => void;
+  onCopy: () => void;
   onPdf: () => void;
   onEmail: () => void;
   onPrint: () => void;
@@ -2529,9 +2529,9 @@ function Detail({
               <PixelIcon name="actions/action-edit" /> แก้ไข
             </button>
           )}
-          {canManage && actions.canCreateRevision && (
-            <button disabled={busy} onClick={onRevision}>
-              <PixelIcon name="actions/action-duplicate" /> สร้างสำเนา
+          {canManage && actions.canCopyAsNew && (
+            <button disabled={busy} onClick={onCopy}>
+              <PixelIcon name="actions/action-duplicate" /> คัดลอกเป็นใบใหม่
             </button>
           )}
           {canManage && quote.status === "DRAFT" && (

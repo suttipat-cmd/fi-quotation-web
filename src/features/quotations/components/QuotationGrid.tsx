@@ -20,7 +20,7 @@ import { quotationActions } from "../domain/status";
 import { categoryNetAmount, onsiteTraining } from "../domain/list-summary";
 import type { Quotation } from "../types";
 
-export type QuotationListAction = "view" | "edit" | "email" | "accept" | "revision";
+export type QuotationListAction = "view" | "edit" | "email" | "accept" | "copy";
 
 const modules = [
   CellStyleModule,
@@ -101,7 +101,7 @@ function RowActions({
       + Number(canManage && actions.canEdit)
       + Number(canManage && actions.canSendEmail)
       + Number(canManage && actions.canAccept)
-      + Number(canManage && actions.canCreateRevision);
+      + Number(canManage && actions.canCopyAsNew);
     const height = 10 + actionCount * 39;
     const left = Math.max(12, Math.min(bounds.right - width, window.innerWidth - width - 12));
     const top = bounds.bottom + height + 8 > window.innerHeight
@@ -159,7 +159,7 @@ function RowActions({
             </button>
           )}
           {canManage && actions.canAccept && <button className="menu-accept" type="button" role="menuitem" onClick={() => choose("accept")}><PixelIcon name="actions/action-accept" />ตอบรับ</button>}
-          {canManage && actions.canCreateRevision && <button type="button" role="menuitem" onClick={() => choose("revision")}><PixelIcon name="actions/action-duplicate" />สร้างสำเนา</button>}
+          {canManage && actions.canCopyAsNew && <button type="button" role="menuitem" onClick={() => choose("copy")}><PixelIcon name="actions/action-duplicate" />คัดลอกเป็นใบใหม่</button>}
           </div>
         </>,
         document.body,
