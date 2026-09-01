@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultQuotationItems, initialQuotationForm, validateQuotationForEmail, validateQuotationForPdf } from "./draft";
+import { defaultQuotationItems, initialQuotationForm, makeServiceItem, validateQuotationForEmail, validateQuotationForPdf } from "./draft";
 import type { Service } from "../types";
 
 const services: Service[] = [
@@ -28,5 +28,22 @@ describe("quotation completion validation", () => {
     expect(validateQuotationForEmail("", [])).toBe("กรุณาระบุผู้รับเอกสารก่อนส่งอีเมล");
     expect(validateQuotationForEmail("คุณเอ", [])).toBe("กรุณาระบุอีเมลผู้รับเอกสารก่อนส่งอีเมล");
     expect(validateQuotationForEmail("คุณเอ", ["a@example.com"])).toBeNull();
+  });
+
+  it("uses a catalogue suggested price as the initial one-time item price", () => {
+    const service: Service = {
+      ...services[1],
+      suggested_price_satang: 125000,
+    };
+    expect(makeServiceItem(service).unit_price_satang).toBe(125000);
+  });
+
+  it("combines setup catalogue defaults into the single Setup row", () => {
+    const setupServices: Service[] = [
+      { ...services[1], id: "vehicle-setup", name: "Setup ทะเบียนรถ", suggested_price_satang: 150000 },
+      { ...services[1], id: "data-setup", name: "Setup ข้อมูลทั่วไป", suggested_price_satang: 50000 },
+    ];
+    const setup = defaultQuotationItems(setupServices).find((item) => item.service_name === "Setup");
+    expect(setup?.unit_price_satang).toBe(200000);
   });
 });

@@ -564,7 +564,7 @@ function App() {
         billing_type: service.default_billing_type,
         calculation_mode: service.default_calculation_mode,
         unit: service.default_unit || "",
-        unit_price_satang: 0,
+        unit_price_satang: service.suggested_price_satang ?? 0,
       });
   };
   const addCustomForm = () => {
@@ -2108,12 +2108,29 @@ function RecurringPlan({
   const recurring = services.filter(
     (service) => service.default_category === "RECURRING",
   );
-  const toggle = (key: "recurring_addons", value: string) =>
-    patch({
-      [key]: form[key].includes(value)
-        ? form[key].filter((option) => option !== value)
-        : [...form[key], value],
-    } as Partial<Form>);
+  const suggestedPriceFor = (addons: string[]) => recurring.reduce(
+    (sum, service) => sum + (addons.includes(service.name) ? service.suggested_price_satang ?? 0 : 0),
+    0,
+  );
+  const toggle = (key: "recurring_addons", value: string) => {
+    const currentValues = form[key];
+    const nextValues = currentValues.includes(value)
+      ? currentValues.filter((option) => option !== value)
+      : [...currentValues, value];
+    const previousSuggestedPrice = suggestedPriceFor(currentValues);
+    const nextSuggestedPrice = suggestedPriceFor(nextValues);
+    patch({ [key]: nextValues } as Partial<Form>);
+
+    // Suggested prices are defaults, never a replacement for a price the user
+    // has already edited. While the current price still matches the previous
+    // defaults, keep it in sync with the services selected for the package.
+    if (item.unit_price_satang === previousSuggestedPrice) {
+      onUpdate(item.id, {
+        unit_price_satang: nextSuggestedPrice,
+        calculation_mode: "FIXED_PRICE",
+      });
+    }
+  };
   return (
     <Section title={SOFTWARE_SERVICE_LABEL} id="recurring">
       <fieldset className="check-field">

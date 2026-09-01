@@ -67,10 +67,12 @@ export const makeServiceItem = (service: Service, quantity = 1): QuotationItem =
   calculation_mode: service.default_calculation_mode,
   quantity,
   unit: service.default_unit || "ครั้ง",
+  unit_price_satang: service.suggested_price_satang ?? 0,
 });
 
 export const makeSetupItem = (services: Service[]): QuotationItem => {
-  const source = services.find((service) => SETUP_CHILD_SERVICES.includes(service.name));
+  const setupServices = services.filter((service) => SETUP_CHILD_SERVICES.includes(service.name));
+  const source = setupServices[0];
   return {
     ...makeQuotationItem("ONE_TIME"),
     service_name: SETUP_LABEL,
@@ -78,6 +80,13 @@ export const makeSetupItem = (services: Service[]): QuotationItem => {
     calculation_mode: "FIXED_PRICE",
     quantity: 1,
     unit: source?.default_unit || "ครั้ง",
+    // Setup is one editable row in a quotation, while its service catalogue
+    // entries are split into vehicle and data setup. Combine any defaults so
+    // neither catalogue price is silently discarded.
+    unit_price_satang: setupServices.reduce(
+      (sum, service) => sum + (service.suggested_price_satang ?? 0),
+      0,
+    ),
   };
 };
 
