@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   CellStyleModule,
@@ -119,6 +119,14 @@ function RowActions({
       window.removeEventListener("scroll", placeMenu, true);
     };
   }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open, onOpenChange]);
   const toggleMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     onOpenChange(!open);
@@ -248,6 +256,20 @@ export default function QuotationGrid({
   canManage: (quote: Quotation) => boolean;
 }) {
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const [isMobileLayout, setIsMobileLayout] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const updateLayout = () => setIsMobileLayout(media.matches);
+    updateLayout();
+    media.addEventListener("change", updateLayout);
+    return () => media.removeEventListener("change", updateLayout);
+  }, []);
+  useEffect(() => {
+    // The desktop grid and mobile cards both own a portal menu. Render only
+    // one presentation at a time, and close any menu when that presentation
+    // changes so a hidden trigger can never create a second portal.
+    setActiveActionId(null);
+  }, [isMobileLayout]);
   const columns = useMemo<ColDef<Quotation>[]>(
     () => [
       {
@@ -346,7 +368,16 @@ export default function QuotationGrid({
   );
 
   return (
-    <>
+    isMobileLayout ? (
+      <MobileQuotationCards
+        quotes={quotes}
+        onSelect={onSelect}
+        onAction={onAction}
+        canManage={canManage}
+        activeActionId={activeActionId}
+        setActiveActionId={setActiveActionId}
+      />
+    ) : (
     <div className={`quotation-grid ${quotes.length <= 10 ? "compact-pagination" : ""}`}>
       <AgGridProvider modules={modules}>
         <AgGridReact<Quotation>
@@ -369,14 +400,6 @@ export default function QuotationGrid({
         />
       </AgGridProvider>
     </div>
-    <MobileQuotationCards
-      quotes={quotes}
-      onSelect={onSelect}
-      onAction={onAction}
-      canManage={canManage}
-      activeActionId={activeActionId}
-      setActiveActionId={setActiveActionId}
-    />
-    </>
+    )
   );
 }
