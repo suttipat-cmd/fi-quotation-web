@@ -9,6 +9,8 @@ import { Spinner } from "./components/ui/Spinner";
 import { QuotationStatusBadge } from "./components/ui/QuotationStatusBadge";
 import { PixelIcon, pixelAsset } from "./components/ui/PixelIcon";
 import {
+  ADDITIONAL_USER_FEE_LABEL,
+  ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG,
   CANCELLATION_REASONS,
   COMPANY_DOCUMENT_CONFIG,
   CUSTOM_FORM_LABEL,
@@ -19,10 +21,14 @@ import {
   SOFTWARE_SERVICE_LABEL,
 } from "./features/quotations/constants";
 import {
+  additionalUserQuantity,
   defaultQuotationItems,
   formFromQuotation,
   initialQuotationForm,
+  limitNotesToLines,
+  makeAdditionalUserFeeItem,
   makeServiceItem,
+  noteLineLimit,
   normalizeQuotationItems,
   validateQuotationDraft,
   validateQuotationForEmail,
@@ -592,8 +598,41 @@ function App() {
       makeServiceItem(customForm, 1),
     ]);
   };
-  const removeItem = (id: string) =>
+  const addAdditionalUserFee = () => {
+    const quantity = additionalUserQuantity(form.included_users);
+    if (!quantity) {
+      notify("ค่า User เพิ่มเติมจะเพิ่มได้เมื่อจำนวน User ใช้งานมากกว่า 3 User", "error");
+      return;
+    }
+    setForm({ ...form, additional_user_fee_waived: false });
+    setItems((current) => {
+      const existing = current.find((item) => item.service_name === ADDITIONAL_USER_FEE_LABEL);
+      return existing
+        ? current.map((item) => item.id === existing.id ? { ...item, quantity, unit: "User", unit_price_satang: ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG, calculation_mode: "QUANTITY_X_UNIT_PRICE" } : item)
+        : [...current, makeAdditionalUserFeeItem(form.included_users)];
+    });
+  };
+  const changeIncludedUsers = (included_users: number) => {
+    const quantity = additionalUserQuantity(included_users);
+    const waiveFee = quantity > 0 ? form.additional_user_fee_waived : false;
+    setForm({ ...form, included_users, additional_user_fee_waived: waiveFee });
+    setItems((current) => {
+      const withoutUserFee = current.filter((item) => item.service_name !== ADDITIONAL_USER_FEE_LABEL);
+      if (!quantity || waiveFee) return withoutUserFee;
+      const existing = current.find((item) => item.service_name === ADDITIONAL_USER_FEE_LABEL);
+      const normalized = existing
+        ? { ...existing, quantity, unit: "User", unit_price_satang: ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG, calculation_mode: "QUANTITY_X_UNIT_PRICE" as const }
+        : makeAdditionalUserFeeItem(included_users);
+      return [...withoutUserFee, normalized];
+    });
+  };
+  const removeItem = (id: string) => {
+    const removed = items.find((item) => item.id === id);
+    if (removed?.service_name === ADDITIONAL_USER_FEE_LABEL) {
+      setForm({ ...form, additional_user_fee_waived: true });
+    }
     setItems((current) => current.filter((item) => item.id !== id));
+  };
   async function startEdit(quote: Quote) {
     if (!canManageQuote(quote)) {
       notify("คุณมีสิทธิ์ดูเอกสารนี้ แต่แก้ไขได้เฉพาะเจ้าของเอกสารหรือผู้ดูแลระบบ", "error");
@@ -1077,6 +1116,8 @@ function App() {
             onCancel={() => navigate("dashboard")}
             onUpdate={updateItem}
             onAddCustomForm={addCustomForm}
+            onAddAdditionalUserFee={addAdditionalUserFee}
+            onIncludedUsersChange={changeIncludedUsers}
             onRemoveItem={removeItem}
           />
         )}
@@ -1098,6 +1139,8 @@ function App() {
             }}
             onUpdate={updateItem}
             onAddCustomForm={addCustomForm}
+            onAddAdditionalUserFee={addAdditionalUserFee}
+            onIncludedUsersChange={changeIncludedUsers}
             onRemoveItem={removeItem}
           />
         )}
@@ -1926,6 +1969,8 @@ function Editor({
   onCancel,
   onUpdate,
   onAddCustomForm,
+  onAddAdditionalUserFee,
+  onIncludedUsersChange,
   onRemoveItem,
 }: {
   mode: "create" | "edit";
@@ -1942,19 +1987,25 @@ function Editor({
   onCancel: () => void;
   onUpdate: (id: string, patch: Partial<Item>) => void;
   onAddCustomForm: () => void;
+  onAddAdditionalUserFee: () => void;
+  onIncludedUsersChange: (includedUsers: number) => void;
   onRemoveItem: (id: string) => void;
 }) {
   const customerNameRef = useRef<HTMLInputElement>(null);
   const initialDraft = useRef(JSON.stringify({ form, items }));
   const [attemptedSave, setAttemptedSave] = useState(false);
   const patch = (value: Partial<Form>) => setForm({ ...form, ...value });
-  const limitNotesToNineLines = (value: string) => value.replace(/\r/g, "").split("\n").slice(0, 9).join("\n");
+  const notesMaximumLines = noteLineLimit(items);
   const customerNameError = attemptedSave && !form.customer_name.trim()
     ? "กรุณาระบุชื่อลูกค้าก่อนบันทึก"
     : undefined;
   useEffect(() => {
     onDirtyChange(initialDraft.current !== JSON.stringify({ form, items }));
   }, [form, items, onDirtyChange]);
+  useEffect(() => {
+    const normalizedNotes = limitNotesToLines(form.notes, notesMaximumLines);
+    if (normalizedNotes !== form.notes) setForm({ ...form, notes: normalizedNotes });
+  }, [form, notesMaximumLines, setForm]);
   const submit = () => {
     setAttemptedSave(true);
     if (!form.customer_name.trim()) {
@@ -2082,11 +2133,14 @@ function Editor({
             item={items.find((item) => item.category === "RECURRING")!}
             services={services}
             onUpdate={onUpdate}
+            onIncludedUsersChange={onIncludedUsersChange}
           />
           <OneTimeItems
             items={items.filter((item) => item.category === "ONE_TIME")}
             onUpdate={onUpdate}
             onAddCustomForm={onAddCustomForm}
+            onAddAdditionalUserFee={onAddAdditionalUserFee}
+            includedUsers={form.included_users}
             onRemoveItem={onRemoveItem}
           />
           <CollapsibleSection id="discount-tax" title="ส่วนลดและภาษี" summary="ค่าเริ่มต้น: VAT 7% และหัก ณ ที่จ่าย 3%">
@@ -2159,11 +2213,11 @@ function Editor({
             <Field label="หมายเหตุ">
               <textarea
                 value={form.notes}
-                rows={9}
-                onChange={(event) => patch({ notes: limitNotesToNineLines(event.target.value) })}
+                rows={notesMaximumLines}
+                onChange={(event) => patch({ notes: limitNotesToLines(event.target.value, notesMaximumLines) })}
               />
             </Field>
-            <p className="field-help notes-help">กรอกได้สูงสุด 9 บรรทัด</p>
+            <p className="field-help notes-help">กรอกได้สูงสุด {notesMaximumLines} บรรทัด{notesMaximumLines === 5 ? " เมื่อเลือก Custom Form และค่า User เพิ่มเติม" : ""}</p>
           </Section>
         </section>
         <Preview form={form} items={items} />
@@ -2178,12 +2232,14 @@ function RecurringPlan({
   item,
   services,
   onUpdate,
+  onIncludedUsersChange,
 }: {
   form: Form;
   patch: (value: Partial<Form>) => void;
   item: Item;
   services: Service[];
   onUpdate: (id: string, patch: Partial<Item>) => void;
+  onIncludedUsersChange: (includedUsers: number) => void;
 }) {
   const recurring = services.filter(
     (service) => service.default_category === "RECURRING",
@@ -2275,7 +2331,7 @@ function RecurringPlan({
             onChange={(event) => {
               const quantity = wholeNumber(event.target.value);
               event.currentTarget.value = quantity ? String(quantity) : "";
-              patch({ included_users: quantity });
+              onIncludedUsersChange(quantity);
             }}
           />
         </Field>
@@ -2298,25 +2354,34 @@ function OneTimeItems({
   items,
   onUpdate,
   onAddCustomForm,
+  onAddAdditionalUserFee,
+  includedUsers,
   onRemoveItem,
 }: {
   items: Item[];
   onUpdate: (id: string, patch: Partial<Item>) => void;
   onAddCustomForm: () => void;
+  onAddAdditionalUserFee: () => void;
+  includedUsers: number;
   onRemoveItem: (id: string) => void;
 }) {
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const hasCustomForm = items.some(
     (item) => item.service_name === CUSTOM_FORM_LABEL,
   );
+  const hasAdditionalUserFee = items.some(
+    (item) => item.service_name === ADDITIONAL_USER_FEE_LABEL,
+  );
+  const additionalUsers = additionalUserQuantity(includedUsers);
+  const closeAddMenu = () => setShowAddMenu(false);
   return (
     <Section title="ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)" id="one-time" action={
         <button
           className="small-button"
           type="button"
-          disabled={hasCustomForm}
-          onClick={onAddCustomForm}
+          onClick={() => setShowAddMenu(true)}
         >
-          {hasCustomForm ? "เพิ่ม Custom Form แล้ว" : "+ เพิ่ม Custom Form"}
+          + เพิ่มรายการเพิ่มเติม
         </button>
       }>
       <div className="one-time-editor-head" aria-hidden="true">
@@ -2381,7 +2446,7 @@ function OneTimeItems({
               {item.service_name === ONSITE_TRAINING_LABEL && <span className="item-empty-price" aria-label="ไม่มีราคาต่อหน่วย">—</span>}
           <div className="item-total" aria-label={`ราคารวม ${money(calculateItemTotal(item).net)}`}>
             <strong>{money(calculateItemTotal(item).net)}</strong>
-            {item.service_name === CUSTOM_FORM_LABEL && (
+            {(item.service_name === CUSTOM_FORM_LABEL || item.service_name === ADDITIONAL_USER_FEE_LABEL) && (
               <button
                 className="text-button danger-text"
                 type="button"
@@ -2394,7 +2459,58 @@ function OneTimeItems({
         </article>
       ))}
       </div>
+      {showAddMenu && <AdditionalItemModal
+        hasCustomForm={hasCustomForm}
+        hasAdditionalUserFee={hasAdditionalUserFee}
+        additionalUsers={additionalUsers}
+        onClose={closeAddMenu}
+        onAddCustomForm={() => { onAddCustomForm(); closeAddMenu(); }}
+        onAddAdditionalUserFee={() => { onAddAdditionalUserFee(); closeAddMenu(); }}
+      />}
     </Section>
+  );
+}
+
+function AdditionalItemModal({
+  hasCustomForm,
+  hasAdditionalUserFee,
+  additionalUsers,
+  onClose,
+  onAddCustomForm,
+  onAddAdditionalUserFee,
+}: {
+  hasCustomForm: boolean;
+  hasAdditionalUserFee: boolean;
+  additionalUsers: number;
+  onClose: () => void;
+  onAddCustomForm: () => void;
+  onAddAdditionalUserFee: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+  return (
+    <div className="additional-item-overlay" role="dialog" aria-modal="true" aria-labelledby="additional-item-title">
+      <button type="button" className="additional-item-backdrop" aria-label="ปิดการเพิ่มรายการเพิ่มเติม" onClick={onClose} />
+      <section className="additional-item-modal">
+        <header><div><p className="eyebrow">รายการเพิ่มเติม</p><h2 id="additional-item-title">เลือกรายการที่ต้องการเพิ่ม</h2></div><button type="button" className="email-composer-close" aria-label="ปิด" onClick={onClose}>×</button></header>
+        <div className="additional-item-choices">
+          <button type="button" disabled={hasCustomForm} onClick={onAddCustomForm}>
+            <strong>Custom Form</strong>
+            <span>{hasCustomForm ? "เพิ่มรายการนี้แล้ว" : "เพิ่มฟอร์มแบบกำหนดเอง 1 รายการ"}</span>
+          </button>
+          <button type="button" disabled={!additionalUsers || hasAdditionalUserFee} onClick={onAddAdditionalUserFee}>
+            <strong>ค่า User เพิ่มเติม</strong>
+            <span>{hasAdditionalUserFee ? "เพิ่มรายการนี้แล้ว" : additionalUsers ? `${additionalUsers} User × 500 บาท • ชำระครั้งเดียว` : "กรอกจำนวน User มากกว่า 3 ก่อน"}</span>
+          </button>
+        </div>
+        <footer><button type="button" onClick={onClose}>ยกเลิก</button></footer>
+      </section>
+    </div>
   );
 }
 

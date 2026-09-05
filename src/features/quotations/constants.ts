@@ -10,6 +10,9 @@ export const SOFTWARE_SERVICE_LABEL = "ค่าบริการซอฟต�
 export const SETUP_LABEL = "Setup";
 export const SETUP_CHILD_SERVICES = ["Setup ทะเบียนรถ", "Setup ข้อมูลทั่วไป"];
 export const CUSTOM_FORM_LABEL = "Custom Form";
+export const ADDITIONAL_USER_FEE_LABEL = "ค่า User เพิ่มเติม";
+export const INCLUDED_USERS_DEFAULT = 3;
+export const ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG = 50_000;
 export const ONSITE_TRAINING_LABEL = "Onsite Training";
 
 export const COMPANY_DOCUMENT_CONFIG = {

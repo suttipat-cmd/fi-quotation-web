@@ -1,7 +1,10 @@
 import { plusDays, today } from "../../../lib/format";
 import {
+  ADDITIONAL_USER_FEE_LABEL,
+  ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG,
   CUSTOM_FORM_LABEL,
   DEFAULT_PAYMENT_TERMS,
+  INCLUDED_USERS_DEFAULT,
   ONSITE_TRAINING_LABEL,
   SETUP_CHILD_SERVICES,
   SETUP_LABEL,
@@ -29,7 +32,8 @@ export const initialQuotationForm = (salesName = ""): QuotationForm => ({
   quotation_discount_value: 0,
   package_reference_quantity: 0,
   package_reference_unit: "คัน",
-  included_users: 3,
+  included_users: INCLUDED_USERS_DEFAULT,
+  additional_user_fee_waived: false,
   billing_cycles: ["ค่าบริการชำระรายเดือน"],
   recurring_addons: [],
   additional_fees: "",
@@ -69,6 +73,28 @@ export const makeServiceItem = (service: Service, quantity = 1): QuotationItem =
   unit: service.default_unit || "ครั้ง",
   unit_price_satang: service.suggested_price_satang ?? 0,
 });
+
+export const additionalUserQuantity = (includedUsers?: number | null) =>
+  Math.max(0, Math.trunc(Number(includedUsers) || 0) - INCLUDED_USERS_DEFAULT);
+
+export const makeAdditionalUserFeeItem = (includedUsers?: number | null): QuotationItem => ({
+  ...makeQuotationItem("ONE_TIME"),
+  service_name: ADDITIONAL_USER_FEE_LABEL,
+  billing_type: "ONE_TIME",
+  calculation_mode: "QUANTITY_X_UNIT_PRICE",
+  quantity: additionalUserQuantity(includedUsers),
+  unit: "User",
+  unit_price_satang: ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG,
+});
+
+export const noteLineLimit = (items: QuotationItem[]) =>
+  items.some((item) => item.service_name === CUSTOM_FORM_LABEL) &&
+  items.some((item) => item.service_name === ADDITIONAL_USER_FEE_LABEL)
+    ? 5
+    : 9;
+
+export const limitNotesToLines = (value: string, maximumLines: number) =>
+  value.replace(/\r/g, "").split("\n").slice(0, maximumLines).join("\n");
 
 export const makeSetupItem = (services: Service[]): QuotationItem => {
   const setupServices = services.filter((service) => SETUP_CHILD_SERVICES.includes(service.name));
@@ -127,7 +153,8 @@ export const formFromQuotation = (quote: Quotation): QuotationForm => ({
   quotation_discount_value: Number(quote.quotation_discount_value || 0),
   package_reference_quantity: Number(quote.package_reference_quantity || 0),
   package_reference_unit: quote.package_reference_unit || "คัน",
-  included_users: Number(quote.included_users) > 0 ? Number(quote.included_users) : 3,
+  included_users: Number(quote.included_users) > 0 ? Number(quote.included_users) : INCLUDED_USERS_DEFAULT,
+  additional_user_fee_waived: Boolean(quote.additional_user_fee_waived),
   billing_cycles:
     Array.isArray(quote.billing_cycles) && quote.billing_cycles.length
       ? quote.billing_cycles.slice(0, 1)
@@ -175,7 +202,7 @@ export const normalizeQuotationItems = (
         : makeServiceItem(service, service.name === ONSITE_TRAINING_LABEL ? 0 : 1);
     });
   const customRows = savedOneTime
-    .filter((item) => item.service_name === CUSTOM_FORM_LABEL)
+    .filter((item) => item.service_name === CUSTOM_FORM_LABEL || item.service_name === ADDITIONAL_USER_FEE_LABEL)
     .map((item) => ({ ...item, id: item.id || crypto.randomUUID() }));
   return [{ ...recurring, id: recurring.id || crypto.randomUUID() }, setup, ...standardItems, ...customRows];
 };
@@ -184,6 +211,9 @@ export const validateQuotationDraft = (items: QuotationItem[], form: QuotationFo
   if (!form.customer_name.trim()) return "กรุณาระบุชื่อลูกค้า";
   if (!items.some((item) => item.service_name.trim() && item.quantity >= 0)) {
     return "กรุณาระบุอย่างน้อยหนึ่งบริการ";
+  }
+  if (form.notes.replace(/\r/g, "").split("\n").length > noteLineLimit(items)) {
+    return `หมายเหตุในเอกสารกรอกได้สูงสุด ${noteLineLimit(items)} บรรทัดสำหรับรายการที่เลือก`;
   }
   return null;
 };

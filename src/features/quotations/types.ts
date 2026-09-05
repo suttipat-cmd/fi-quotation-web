@@ -58,6 +58,7 @@ export type QuotationForm = {
   package_reference_quantity: number;
   package_reference_unit: string;
   included_users: number;
+  additional_user_fee_waived: boolean;
   billing_cycles: string[];
   recurring_addons: string[];
   additional_fees: string;
@@ -98,6 +99,7 @@ export type Quotation = {
   package_reference_quantity?: number | null;
   package_reference_unit?: string | null;
   included_users?: number | null;
+  additional_user_fee_waived?: boolean | null;
   billing_cycle?: string | null;
   billing_cycles?: string[] | null;
   recurring_addons?: string[] | null;
