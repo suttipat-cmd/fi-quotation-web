@@ -29,7 +29,7 @@ import {
   validateQuotationForPdf,
 } from "./features/quotations/domain/draft";
 import { calculateCategoryTotals, calculateItemTotal, calculateQuotationTotals } from "./features/quotations/domain/calculator";
-import { documentAddonName, documentServiceName } from "./features/quotations/domain/document";
+import { documentAddonName, documentServiceName, includedUserCount, softwareServiceTitle } from "./features/quotations/domain/document";
 import { quotationActions } from "./features/quotations/domain/status";
 import { getQuotationItems, saveQuotationDraft, updateQuotationRecipientDetails } from "./features/quotations/services/quotation-service";
 import { quotationPdfBaseName, quotationPdfFileName, sendQuotationEmail, uploadGeneratedPdf } from "./features/quotations/services/document-service";
@@ -2249,7 +2249,7 @@ function RecurringPlan({
         </div>
         <small className="field-help">เลือกแล้ว {form.recurring_addons.length} รายการ</small>
       </fieldset>
-      <div className="two">
+      <div className="three">
         <Field label="จำนวนรถ" required>
           <input
             type="number"
@@ -2263,6 +2263,19 @@ function RecurringPlan({
                 package_reference_quantity: quantity,
                 package_reference_unit: "คัน",
               });
+            }}
+          />
+        </Field>
+        <Field label="จำนวน User ใช้งาน" required>
+          <input
+            type="number"
+            min="1"
+            value={form.included_users || ""}
+            placeholder="ระบุจำนวน User"
+            onChange={(event) => {
+              const quantity = wholeNumber(event.target.value);
+              event.currentTarget.value = quantity ? String(quantity) : "";
+              patch({ included_users: quantity });
             }}
           />
         </Field>
@@ -2477,12 +2490,11 @@ function QuotePaper({ form, items, group, documentNo, paperRef }: { form: Form; 
 function PriceBlock({ category, form, items, summary }: { category: Item["category"]; form: Form; items: Item[]; summary: ReturnType<typeof calculateCategoryTotals> }) {
   const rows = items.filter((item) => item.category === category && item.service_name.trim());
   const recurring = category === "RECURRING";
-  const main = rows[0];
   return (
     <section className={`price-block ${recurring ? "recurring-price-block" : "one-time-price-block"}`}>
       <div className="price-title"><h3>{recurring ? `1. ${form.billing_cycles.join(" / ") || SOFTWARE_SERVICE_LABEL}` : "2. ค่าบริการชำระครั้งเดียว (ค่าแรกเข้า)"}</h3></div>
       <div className="mini-head"><span>รายละเอียด</span><span>{recurring ? "จำนวนรถ" : "จำนวน"}</span><span>ราคารวม</span></div>
-      <div className="price-rows">{recurring ? <div className="mini-row"><span className="service-cell">{documentServiceName(main?.service_name)}{form.recurring_addons.length > 0 && <small>{form.recurring_addons.map(documentAddonName).join(", ")}</small>}</span><span>{form.package_reference_quantity || "—"} คัน</span><b>{money(summary.subtotal)}</b></div> : rows.length ? rows.map((item, index) => <div className="mini-row" key={item.id}><span className="service-cell">{index + 1}. {item.service_name}{item.service_name === SETUP_LABEL && <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>}</span><span>{item.quantity} {item.unit}</span><b>{money(calculateItemTotal(item).net)}</b></div>) : <div className="mini-row muted"><span>ยังไม่มีรายการ</span><span>—</span><b>—</b></div>}</div>
+      <div className="price-rows">{recurring ? <div className="mini-row"><span className="service-cell">{softwareServiceTitle(form.recurring_addons)}<small>จำนวน User ใช้งาน: {includedUserCount(form.included_users)} User</small></span><span>{form.package_reference_quantity || "—"} คัน</span><b>{money(summary.subtotal)}</b></div> : rows.length ? rows.map((item, index) => <div className="mini-row" key={item.id}><span className="service-cell">{index + 1}. {item.service_name}{item.service_name === SETUP_LABEL && <small>ทะเบียนรถ, ข้อมูลทั่วไป</small>}</span><span>{item.quantity} {item.unit}</span><b>{money(calculateItemTotal(item).net)}</b></div>) : <div className="mini-row muted"><span>ยังไม่มีรายการ</span><span>—</span><b>—</b></div>}</div>
       <div className="price-summary price-summary-card"><span className="summary-kicker">สรุปค่าบริการ</span><p><span>รวมก่อนภาษี</span><b>{money(summary.subtotal)}</b></p>{summary.discount > 0 && <p><span>ส่วนลด</span><b>-{money(summary.discount)}</b></p>}<p><span>หัก ณ ที่จ่าย {form.wht_rate}%</span><b>-{money(summary.wht)}</b></p><p><span>ภาษีมูลค่าเพิ่ม {form.vat_rate}%</span><b>{money(summary.vat)}</b></p><p className="net"><span>ยอดรวมสุทธิ</span><b>{money(summary.net)}</b></p></div>
       <p className="table-amount-in-words">{thaiBaht(summary.net)}</p>
     </section>
@@ -2550,10 +2562,9 @@ function DetailForm({
         <EmailTags emails={recipientEmails} onChange={setRecipientEmails} />
         <div className="recipient-save"><button className="primary" disabled={busy || !recipientDirty} onClick={() => onSaveRecipients({ quote, contactName, contactPosition, recipientEmails })}>{busy && <Spinner />}บันทึกข้อมูลผู้รับ</button></div>
       </Section>
-      <Section title={SOFTWARE_SERVICE_LABEL}>
+      <Section title={softwareServiceTitle(form.recurring_addons)}>
         <fieldset className="check-field"><legend>รอบชำระค่าบริการ</legend><div className="check-grid">{PAYMENT_OPTIONS.map((option) => <label className="check-row" key={option}><input type="radio" name="detail-billing-cycle" checked={form.billing_cycles[0] === option} disabled />{option}</label>)}</div></fieldset>
-        <fieldset className="check-field"><legend>บริการหลักที่รวมในแพ็กเกจ</legend><div className="check-grid">{form.recurring_addons.length ? form.recurring_addons.map((service) => <label className="check-row" key={service}><input type="checkbox" checked disabled />{service}</label>) : <span className="muted">ไม่ได้เลือกบริการเพิ่มเติม</span>}</div></fieldset>
-        <div className="two"><Field label="จำนวนรถ"><input readOnly value={`${form.package_reference_quantity || "—"} คัน`} /></Field><Field label="ราคารวม"><input readOnly value={money(recurring?.unit_price_satang || 0)} /></Field></div>
+        <div className="three"><Field label="จำนวนรถ"><input readOnly value={`${form.package_reference_quantity || "—"} คัน`} /></Field><Field label="จำนวน User ใช้งาน"><input readOnly value={`${includedUserCount(form.included_users)} User`} /></Field><Field label="ราคารวม"><input readOnly value={money(recurring?.unit_price_satang || 0)} /></Field></div>
       </Section>
       <ReadOnlyOneTimeItems items={items.filter((item) => item.category === "ONE_TIME")} />
       <CollapsibleSection title="ส่วนลดและภาษี" summary={`VAT ${form.vat_rate}% • หัก ณ ที่จ่าย ${form.wht_rate}%`}>

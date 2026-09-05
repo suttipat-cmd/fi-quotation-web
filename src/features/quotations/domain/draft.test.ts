@@ -18,6 +18,18 @@ describe("quotation completion validation", () => {
     expect(validateQuotationForPdf(defaultQuotationItems(services), form)).toBeNull();
   });
 
+  it("defaults the included user count to three and requires a positive value for PDF", () => {
+    const form = initialQuotationForm();
+    expect(form.included_users).toBe(3);
+    form.customer_name = "บริษัททดสอบ";
+    form.customer_address = "กรุงเทพมหานคร";
+    form.sales_profile_id = "sale-1";
+    form.recurring_addons = ["ERP ขนส่ง"];
+    form.package_reference_quantity = 1;
+    form.included_users = 0;
+    expect(validateQuotationForPdf(defaultQuotationItems(services), form)).toBe("กรุณาระบุจำนวน User ใช้งานมากกว่า 0 ก่อนสร้าง PDF");
+  });
+
   it("requires the PDF-only details that a draft may omit", () => {
     const form = initialQuotationForm("ฝ่ายขาย");
     form.customer_name = "บริษัททดสอบ";

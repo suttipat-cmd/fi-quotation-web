@@ -32,7 +32,7 @@ export const toQuotationPayload = (
   net_amount_satang: totals.net,
   package_reference_quantity: form.package_reference_quantity || null,
   package_reference_unit: form.package_reference_unit || null,
-  included_users: form.included_users || null,
+  included_users: form.included_users > 0 ? form.included_users : 3,
   billing_cycle: form.billing_cycles[0] || null,
   billing_cycles: form.billing_cycles.slice(0, 1),
   recurring_addons: form.recurring_addons,

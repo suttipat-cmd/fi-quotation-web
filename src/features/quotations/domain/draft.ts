@@ -29,7 +29,7 @@ export const initialQuotationForm = (salesName = ""): QuotationForm => ({
   quotation_discount_value: 0,
   package_reference_quantity: 0,
   package_reference_unit: "คัน",
-  included_users: 0,
+  included_users: 3,
   billing_cycles: ["ค่าบริการชำระรายเดือน"],
   recurring_addons: [],
   additional_fees: "",
@@ -127,7 +127,7 @@ export const formFromQuotation = (quote: Quotation): QuotationForm => ({
   quotation_discount_value: Number(quote.quotation_discount_value || 0),
   package_reference_quantity: Number(quote.package_reference_quantity || 0),
   package_reference_unit: quote.package_reference_unit || "คัน",
-  included_users: Number(quote.included_users || 0),
+  included_users: Number(quote.included_users) > 0 ? Number(quote.included_users) : 3,
   billing_cycles:
     Array.isArray(quote.billing_cycles) && quote.billing_cycles.length
       ? quote.billing_cycles.slice(0, 1)
@@ -200,6 +200,9 @@ export const validateQuotationForPdf = (items: QuotationItem[], form: QuotationF
   if (!form.recurring_addons.length) return "กรุณาเลือกบริการหลักอย่างน้อย 1 รายการ";
   if (!Number.isFinite(form.package_reference_quantity) || form.package_reference_quantity <= 0) {
     return "กรุณาระบุจำนวนรถมากกว่า 0 ก่อนสร้าง PDF";
+  }
+  if (!Number.isFinite(form.included_users) || form.included_users <= 0) {
+    return "กรุณาระบุจำนวน User ใช้งานมากกว่า 0 ก่อนสร้าง PDF";
   }
   const recurring = items.find((item) => item.category === "RECURRING");
   if (!recurring || !Number.isFinite(recurring.unit_price_satang) || recurring.unit_price_satang < 0) {
