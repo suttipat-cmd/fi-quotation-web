@@ -1397,10 +1397,10 @@ button:disabled {
 }
 .document-facts {
   display: grid;
-  /* Keep each value beside its own label. The former equal-width columns
-     pushed the values to the far edge of each third of the page. */
-  grid-template-columns: repeat(3, max-content);
-  column-gap: 26px;
+  /* Keep the three headings in their original columns. Values are aligned
+     beside each heading by the rule below, rather than at a column's edge. */
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
   margin: 0;
   padding: 9px 0 8px;
   border-bottom: 1px solid #d8e2ec;
