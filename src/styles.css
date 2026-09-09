@@ -1397,17 +1397,19 @@ button:disabled {
 }
 .document-facts {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  /* Keep each value beside its own label. The former equal-width columns
+     pushed the values to the far edge of each third of the page. */
+  grid-template-columns: repeat(3, max-content);
+  column-gap: 26px;
   margin: 0;
   padding: 9px 0 8px;
   border-bottom: 1px solid #d8e2ec;
 }
 .document-facts > div {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: baseline;
-  gap: 4px;
+  gap: 10px;
   text-align: left;
 }
 .document-facts dt,
