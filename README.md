@@ -62,3 +62,21 @@ Push this branch to `main`, then enable **Settings > Pages > GitHub Actions**. T
 ## Important operational note
 
 The first user signing up as `suttipat@forwardinsight.co.th` becomes `ADMIN`; all other users start as `USER`. Promote users to `SALE` or `ADMIN` through Supabase after they are created, until the Settings user-management UI is added.
+
+## Android update notices
+
+The Android app checks `https://suttipat-cmd.github.io/fi-quotation-web/android-update.json` at launch and when returning to the foreground (at most once per 15 minutes after a successful check). No update is advertised while `public/android-update.json` has `enabled: false`. Checks fail quietly if the site is unreachable. The APK must be hosted on the existing GitHub Pages site under `/fi-quotation-web/android/`, with an HTTPS `.apk` URL.
+
+To publish an update:
+
+1. Increase `versionCode` and `versionName` in `android/app/build.gradle`, build the web assets and sync Android, then create a **release APK** signed with the same private signing key as earlier releases. Preserve and back up the keystore and passwords securely outside the repository. A debug-signed installation cannot be updated with a differently signed release APK; uninstalling it removes local app data.
+2. Publish the signed APK to `https://suttipat-cmd.github.io/fi-quotation-web/android/<filename>.apk` through the existing Pages deployment and verify the download is accessible. Keep the APK out of Git history if preferred by adding it to the Pages artifact in a separate publishing workflow. Do not place signing keys or passwords in the site or repository.
+3. Update `public/android-update.json` and deploy the site only after the file is available:
+
+```json
+{"schemaVersion":1,"enabled":true,"versionCode":3,"versionName":"1.2","downloadUrl":"https://suttipat-cmd.github.io/fi-quotation-web/android/fi-quotation-1.2.apk","notes":"รายละเอียดการปรับปรุง"}
+```
+
+Android requires users to confirm an installation from outside the Play Store. Test the APK on a device and verify the same application ID and signing certificate before publishing the manifest. This repository currently does not contain a signed release APK or an automated APK publishing workflow.
+
+On the configured macOS development machine, `scripts/build-android-release.sh` builds the signed release with JDK 21. It reads the existing signing key and password from `~/Library/Application Support/FI Quotation/android-signing/`; do not commit or share either file. Keep an encrypted, access-controlled backup of both files away from this Mac: future updates must use the same signing key. The script sets the build JVM locale to avoid Android's ZIP date failure under the Thai Buddhist calendar.

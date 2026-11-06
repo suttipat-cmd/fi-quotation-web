@@ -18,6 +18,7 @@ import { QuotationStatusBadge } from "../../../components/ui/QuotationStatusBadg
 import { PixelIcon } from "../../../components/ui/PixelIcon";
 import { quotationActions } from "../domain/status";
 import { categoryNetAmount, onsiteTraining } from "../domain/list-summary";
+import { menuPosition } from "./menu-position";
 import type { Quotation } from "../types";
 
 export type QuotationListAction = "view" | "edit" | "email" | "accept" | "copy";
@@ -81,6 +82,7 @@ function RowActions({
   canManage: boolean;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const actions = quotationActions(quote.status);
   const recipientEmails = Array.isArray(quote.recipient_emails)
@@ -96,18 +98,9 @@ function RowActions({
   const placeMenu = () => {
     const bounds = triggerRef.current?.getBoundingClientRect();
     if (!bounds) return;
-    const width = 210;
-    const actionCount = 1
-      + Number(canManage && actions.canEdit)
-      + Number(canManage && actions.canSendEmail)
-      + Number(canManage && actions.canAccept)
-      + Number(canManage && actions.canCopyAsNew);
-    const height = 10 + actionCount * 39;
-    const left = Math.max(12, Math.min(bounds.right - width, window.innerWidth - width - 12));
-    const top = bounds.bottom + height + 8 > window.innerHeight
-      ? Math.max(12, bounds.top - height - 8)
-      : bounds.bottom + 8;
-    setPosition({ top, left });
+    const width = menuRef.current?.offsetWidth || 210;
+    const height = menuRef.current?.offsetHeight || 0;
+    setPosition(menuPosition(bounds, { width, height }, { width: window.innerWidth, height: window.innerHeight }));
   };
   useLayoutEffect(() => {
     if (!open) return;
@@ -152,7 +145,7 @@ function RowActions({
       {open && createPortal(
         <>
           <button type="button" className="grid-action-backdrop" aria-label="ปิดเมนูการดำเนินการ" onClick={() => onOpenChange(false)} />
-          <div className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
+          <div ref={menuRef} className="grid-action-menu" role="menu" style={{ top: position.top, left: position.left }}>
           <button type="button" role="menuitem" onClick={() => choose("view")}><PixelIcon name="actions/action-search" />ดูรายละเอียด</button>
           {canManage && actions.canEdit && <button type="button" role="menuitem" onClick={() => choose("edit")}><PixelIcon name="actions/action-edit" />แก้ไข</button>}
           {canManage && actions.canSendEmail && (

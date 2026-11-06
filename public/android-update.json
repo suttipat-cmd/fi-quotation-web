@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "enabled": true,
-  "versionCode": 2,
-  "versionName": "1.1",
-  "downloadUrl": "https://suttipat-cmd.github.io/fi-quotation-web/android/fi-quotation-1.1.apk",
-  "notes": "ปรับการใช้งานบนมือถือและเพิ่มระบบแจ้งเตือนเวอร์ชันใหม่"
+  "versionCode": 3,
+  "versionName": "1.2",
+  "downloadUrl": "https://suttipat-cmd.github.io/fi-quotation-web/android/fi-quotation-1.2.apk",
+  "notes": "แก้เมนูล้นจอและปรับหน้าต่างกับปุ่มย้อนกลับบนมือถือ"
 }
