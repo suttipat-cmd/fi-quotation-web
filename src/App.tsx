@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { displayDate, money, thaiBaht } from "./lib/format";
@@ -8,6 +10,7 @@ import { MoneyInput } from "./components/ui/MoneyInput";
 import { Spinner } from "./components/ui/Spinner";
 import { QuotationStatusBadge } from "./components/ui/QuotationStatusBadge";
 import { PixelIcon, pixelAsset } from "./components/ui/PixelIcon";
+import { AndroidUpdateNotice } from "./features/app-update/AndroidUpdateNotice";
 import {
   ADDITIONAL_USER_FEE_LABEL,
   ADDITIONAL_USER_FEE_UNIT_PRICE_SATANG,
@@ -374,6 +377,20 @@ function App() {
     window.addEventListener("beforeunload", preventUnload);
     return () => window.removeEventListener("beforeunload", preventUnload);
   }, [editorDirty]);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let disposed = false;
+    const listener = CapacitorApp.addListener("backButton", () => {
+      if (mobileNavOpen) { setMobileNavOpen(false); return; }
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+      if (dialog) {
+        dialog.querySelector<HTMLButtonElement>('button[aria-label="ปิด"], button[aria-label="ปิดหน้าต่างยกเลิก"]')?.click();
+        return;
+      }
+      if (view !== "dashboard") navigate("dashboard");
+    });
+    return () => { disposed = true; void listener.then((handle) => { if (disposed) void handle.remove(); }); };
+  });
   useEffect(() => {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
@@ -950,7 +967,7 @@ function App() {
         <span>กำลังเปิดระบบ</span>
       </main>
     );
-  if (!session) return <Auth onSession={setSession} />;
+  if (!session) return <><Auth onSession={setSession} /><AndroidUpdateNotice /></>;
   const busy = Boolean(loading);
   const pageContext = view === "dashboard"
     ? "ภาพรวม"
@@ -999,12 +1016,14 @@ function App() {
       </nav>
       <div className="account">
         <div className="account-profile">
+          <button type="button" className="app-avatar-button" aria-label={`ข้อมูลผู้ใช้ ${userName}`} aria-expanded={mobileNavOpen} onClick={() => isMobileViewport && setMobileNavOpen(true)}>
           <img
             className={`account-avatar${profile?.avatar_url ? " has-photo" : ""}`}
             src={profileAvatarUrl(profile)}
             alt=""
             aria-hidden="true"
           />
+          </button>
           <div>
             <strong>{profile?.display_name || session.user.email}</strong>
             <small>
@@ -1079,6 +1098,7 @@ function App() {
       </header>
       {isMobileViewport && mobileNavOpen && <button type="button" className="mobile-nav-backdrop" aria-label="ปิดเมนู" onClick={() => setMobileNavOpen(false)} />}
       {nav}
+      <AndroidUpdateNotice />
       <main
         className={`work ${view === "create" || view === "edit" || view === "detail" ? "editor-work" : ""}`}
       >
@@ -2044,6 +2064,7 @@ function Editor({
                   value={form.issued_at}
                   onChange={(event) => patch({ issued_at: event.target.value })}
                 />
+                <small className="mobile-date-hint">วัน-เดือน-ปี: {displayDate(form.issued_at)}</small>
               </Field>
               <Field label="ใช้ได้ถึง" required>
                 <input
@@ -2053,6 +2074,7 @@ function Editor({
                     patch({ valid_until: event.target.value })
                   }
                 />
+                <small className="mobile-date-hint">วัน-เดือน-ปี: {displayDate(form.valid_until)}</small>
               </Field>
             </div>
             <Field label="ผู้เสนอราคา" required>
@@ -2735,6 +2757,13 @@ function Detail({
   canManage: boolean;
 }) {
   const [showCancellation, setShowCancellation] = useState(false);
+  const [compactActions, setCompactActions] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const update = () => setCompactActions(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancellationNote, setCancellationNote] = useState("");
   const form = formFromQuotation(quote);
@@ -2758,11 +2787,6 @@ function Detail({
               <PixelIcon name="actions/action-edit" /> แก้ไข
             </button>
           )}
-          {canManage && actions.canCopyAsNew && (
-            <button disabled={busy} onClick={onCopy}>
-              <PixelIcon name="actions/action-duplicate" /> คัดลอกเป็นใบใหม่
-            </button>
-          )}
           {canManage && quote.status === "DRAFT" && (
             <button className="primary" disabled={busy} onClick={onPdf}>
               <PixelIcon name="actions/action-pdf" /> สร้าง PDF
@@ -2777,6 +2801,19 @@ function Detail({
               <PixelIcon name="actions/action-email" /> {sentEmailCount ? "ส่งอีกครั้ง" : "ส่งอีเมล"}
             </button>
           )}
+          {canManage && quote.status === "READY" && (
+            <button className="accept-action" disabled={busy} onClick={onAccept}>
+              <PixelIcon name="actions/action-accept" /> ตอบรับ
+            </button>
+          )}
+          <details key={String(compactActions)} className="detail-more-actions" open={!compactActions || undefined}>
+            <summary>เพิ่มเติม <span aria-hidden="true">⋯</span></summary>
+            <div className="detail-more-list">
+          {canManage && actions.canCopyAsNew && (
+            <button disabled={busy} onClick={onCopy}>
+              <PixelIcon name="actions/action-duplicate" /> คัดลอกเป็นใบใหม่
+            </button>
+          )}
           {emailLogs.length > 0 && (
             <button type="button" disabled={busy} onClick={onShowEmailHistory}>
               <PixelIcon name="actions/action-email" /> ประวัติอีเมล ({sentEmailCount})
@@ -2787,16 +2824,13 @@ function Detail({
               <PixelIcon name="actions/action-print" /> พิมพ์
             </button>
           )}
-          {canManage && quote.status === "READY" && (
-            <button className="accept-action" disabled={busy} onClick={onAccept}>
-              <PixelIcon name="actions/action-accept" /> ตอบรับ
-            </button>
-          )}
           {canManage && actions.canCancel && (
             <button className="danger-text-action" disabled={busy} onClick={() => setShowCancellation(true)}>
               ยกเลิกใบเสนอราคา
             </button>
           )}
+            </div>
+          </details>
         </div>
       </header>
       <div className="editor detail-editor">

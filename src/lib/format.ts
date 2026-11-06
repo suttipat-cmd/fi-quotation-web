@@ -14,12 +14,14 @@ export const displayDate = (value?: string) => {
   return year && month && day ? `${day}-${month}-${year}` : "—";
 };
 
-export const today = () => new Date().toISOString().slice(0, 10);
+const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+export const today = () => localDate(new Date());
 
 export const plusDays = (days: number) => {
   const date = new Date();
   date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  return localDate(date);
 };
 
 export function thaiBaht(value: number) {

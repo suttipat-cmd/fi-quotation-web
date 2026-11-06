@@ -302,6 +302,15 @@ button:disabled {
   image-rendering: pixelated;
 }
 .app-user-avatar.has-photo { object-fit: cover; image-rendering: auto; }
+.android-update-notice { position: fixed; z-index: 120; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); max-width: 520px; margin: auto; padding: 16px; border: 1px solid #75a9c0; border-radius: 10px; background: #f8fcfb; color: #193c61; box-shadow: 0 8px 28px #09294566; }
+.android-update-notice strong { font-size: 16px; }
+.android-update-notice p { margin: 5px 0 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.4; }
+.android-update-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.android-update-actions button { min-height: 48px; }
+.app-avatar-button { display: inline-flex; padding: 0; border: 0; background: transparent; }
+.mobile-date-hint { display: none; }
+.detail-more-actions, .detail-more-list { display: contents; }
+.detail-more-actions > summary { display: none; }
 .app-user-copy { display: grid; min-width: 0; line-height: 1.2; }
 .app-user-copy strong { max-width: 180px; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .app-user-copy small { color: #b8d2ee; font-size: 11px; }
@@ -859,7 +868,7 @@ button:disabled {
   background: transparent;
 }
 .notes-help { margin: -4px 0 0; }
-.confirmation-overlay { position: fixed; z-index: 90; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b3088; }
+.confirmation-overlay { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 22px; background: #081b3088; }
 .confirmation-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; }
 .confirmation-modal { position: relative; width: min(410px, 100%); display: grid; justify-items: center; gap: 10px; padding: 23px 26px; border: 3px solid #1463a0; border-radius: 6px; background: #f9f6e8; box-shadow: 8px 8px 0 #08274a, inset 0 0 0 3px #bff3e9; color: #1a3d68; text-align: center; }
 .confirmation-modal > img { width: 124px; height: 92px; object-fit: contain; image-rendering: pixelated; }
@@ -2003,7 +2012,7 @@ button:disabled {
   }
   .quotation-form-page-header .actions button { min-height: 48px; padding: 10px; }
   .detail-document-header { display: grid; }
-  .detail-amounts { grid-template-columns: 1fr; }
+  .detail-amounts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .actions {
     justify-content: flex-start;
   }
@@ -2011,18 +2020,15 @@ button:disabled {
     grid-template-columns: 1fr;
   }
   .status-summary {
-    display: flex;
-    gap: 10px;
-    overflow-x: auto;
-    margin-right: -16px;
-    padding-right: 16px;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
   .status-summary::-webkit-scrollbar { display: none; }
   .status-summary-card {
-    min-width: 160px;
-    scroll-snap-align: start;
+    min-width: 0;
+    min-height: 72px;
+    padding: 10px;
   }
   .list-filter-groups { grid-template-columns: 1fr; }
   .background-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2061,20 +2067,37 @@ button:disabled {
   }
   .quotation-mobile-card:focus-visible { box-shadow: 0 0 0 3px #7edbd2, 3px 3px 0 var(--pixel-shadow); }
   .quotation-mobile-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .quotation-mobile-card-head > div:first-child { display: grid; gap: 2px; }
+  .quotation-mobile-card-head > div:first-child { display: grid; gap: 2px; min-width: 0; }
+  .quotation-mobile-card-head .grid-row-actions { width: auto; flex: 0 0 auto; }
   .quotation-mobile-card-head strong { color: #194476; font-size: 17px; }
   .quotation-mobile-card-head span,
   .quotation-mobile-customer span { color: #73849a; font-size: 12px; }
   .quotation-mobile-customer { display: grid; gap: 2px; min-width: 0; }
-  .quotation-mobile-customer strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quotation-mobile-customer strong { overflow-wrap: anywhere; white-space: normal; }
   .quotation-mobile-meta { display: grid; gap: 7px; color: #536b84; font-size: 12px; }
   .quotation-mobile-meta span { display: flex; gap: 7px; min-width: 0; }
   .quotation-mobile-meta b { flex: 0 0 58px; color: #708197; }
-  .quotation-mobile-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+  .quotation-mobile-amounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
   .quotation-mobile-amounts div { padding: 9px 10px; border: 1px solid #d5e3e3; border-radius: 6px; background: #f7fbfa; }
   .quotation-mobile-amounts dt { color: #718399; font-size: 11px; font-weight: 700; }
   .quotation-mobile-amounts dd { margin: 3px 0 0; color: #194980; font-size: 16px; font-weight: 700; }
   .quotation-mobile-card > .badge { justify-self: start; }
+  .quotation-mobile-amounts > div { min-width: 0; }
+  .editor-work { scroll-padding-bottom: calc(135px + env(safe-area-inset-bottom)); }
+  .editor-work input, .editor-work textarea, .editor-work select { scroll-margin-bottom: 135px; }
+  .mobile-date-hint { display: block; color: #526b80; font-size: 12px; margin-top: 4px; }
+  .dashboard-page-header { padding: 12px 16px; }
+  .quotation-form-page-header { position: relative; top: auto; padding: 10px 16px; }
+  .editor-page-header h1 { font-size: 22px; }
+  .form-panel .card { padding: 16px; }
+  .detail-document-header .badge { justify-self: start; }
+  .detail-amounts dd { font-size: 18px; overflow-wrap: anywhere; }
+  .detail-more-actions { display: block; position: relative; }
+  .detail-more-actions > summary { display: flex; min-height: 48px; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border: 1px solid #c7d9da; border-radius: 5px; background: #fff; color: #244561; font-weight: 700; cursor: pointer; list-style: none; }
+  .detail-more-actions > summary::-webkit-details-marker { display: none; }
+  .detail-more-list { position: absolute; z-index: 15; right: 0; top: calc(100% + 5px); display: grid; width: min(240px, calc(100vw - 40px)); padding: 6px; border: 1px solid #8cb5ca; border-radius: 6px; background: #fff; box-shadow: 0 6px 18px #09294544; }
+  .detail-more-list button { justify-content: flex-start; min-height: 48px; text-align: left; }
+  .email-composer-close, .grid-action-trigger { min-width: 48px; min-height: 48px; }
   .mobile-preview-toggle {
     display: inline-flex;
     min-height: 48px;
